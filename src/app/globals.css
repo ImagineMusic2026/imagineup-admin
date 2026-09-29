@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/*
+ * Tokens do painel, os mesmos do app (imagineup-app/src/theme/colors.ts) e do
+ * design "Painel Admin ImagineUP": fundo escuro, rosa para ação, lima só para
+ * pontos, ciano como acento secundário. Só tema escuro.
+ *
+ * Contraste medido sobre os fundos daqui:
+ * - texto branco nunca abaixo de 50% (5,3:1 no surface);
+ * - botão rosa com texto branco usa o `pink-strong` (5,03:1), não o `pink`;
+ * - `danger` (laranja do app) em texto dá 7:1; o botão destrutivo usa
+ *   `danger-strong` com texto branco (5,4:1).
+ */
+@theme {
+  --color-ink: #0b0b10;
+  --color-surface: #14141b;
+  --color-raised: #16161e;
+  --color-sunken: #1d1d27;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.14);
+  --color-fg: #ffffff;
+  --color-pink: #ff2d6f;
+  --color-pink-strong: #d9105a;
+  --color-lime: #d6ff3f;
+  --color-cyan: #3ddcff;
+  --color-danger: #ff7a45;
+  --color-danger-strong: #c2371e;
+
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 12px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Foco visível em tudo que recebe teclado: o rosa é a cor de ação (5,5:1). */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-pink);
+  outline-offset: 2px;
+}
+
+/* Campos marcam o foco pela borda também, sem perder o contorno acima. */
+:where(input, textarea, select):focus-visible {
+  border-color: var(--color-pink);
+}
+
+::selection {
+  background: rgb(255 45 111 / 0.35);
+  color: #fff;
+}
+
+/* Diálogos nativos (`<dialog>`): fundo escurecido e entrada discreta. */
+dialog {
+  color: inherit;
+}
+
+dialog::backdrop {
+  background: rgb(5 5 8 / 0.72);
+  backdrop-filter: blur(3px);
+}
+
+dialog[open] {
+  animation: dialog-in 180ms ease-out;
+}
+
+dialog[data-variant="drawer"][open] {
+  animation: drawer-in 220ms ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@utility group-label {
+  font-size: 10.5px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Quem pede menos movimento não vê entrada de diálogo nem giro. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

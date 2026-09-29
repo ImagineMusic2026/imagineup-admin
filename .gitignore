@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Valores reais do Firebase ficam só na máquina e na Vercel.
+.env
+.env.local
+.env*.local
+
+*.log
+npm-debug.log*
+
+.DS_Store
+.vercel
