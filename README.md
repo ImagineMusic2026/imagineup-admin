@@ -4,14 +4,13 @@ Painel administrativo do app ImagineUP, da Imagine Music. Só a equipe entra: es
 
 Stack: Next.js 16 (App Router), React 19.2, TypeScript estrito, Tailwind CSS 4 e o SDK JavaScript do Firebase 12. O painel usa o projeto Firebase `imagine-up-app`, o mesmo do app de fãs.
 
-Regras do Firestore e Cloud Functions ficam no repositório do app (`imagineup-app`) e são publicadas só de lá. Este painel apenas lê e chama o que o contrato da equipe define.
+Regras do Firestore e Cloud Functions ficam no repositório do app (`ImagineMusic2026/imagineup-app`) e são publicadas só de lá. Este painel apenas lê e chama o que o contrato da equipe define. O site público do ImagineUP é outro repositório (`ImagineMusic2026/imagineup-LP`).
 
 ## Como rodar
 
 Com o Node 20.9 ou mais novo:
 
 ```bash
-cd painel
 npm install
 cp .env.example .env.local   # e preencha os valores
 npm run dev
@@ -19,7 +18,7 @@ npm run dev
 
 O painel abre em http://localhost:3000. Sem as variáveis do Firebase, as telas mostram "Firebase não configurado" em vez de quebrar.
 
-No Claude Code, a configuração `imagineup-painel` do `.claude/launch.json` da raiz faz o mesmo (`npm --prefix painel run dev`).
+No Claude Code, a configuração `imagineup-admin` do `.claude/launch.json` (local, fora do git) faz o mesmo.
 
 ## Scripts
 
@@ -36,7 +35,7 @@ Antes de publicar, rode os quatro: `lint`, `typecheck`, `test` e `build`.
 
 ## Variáveis de ambiente
 
-Ficam em `painel/.env.local` (fora do git). O `.env.example` tem só os nomes.
+Ficam em `.env.local` (fora do git). O `.env.example` tem só os nomes.
 
 | Nome | Para quê |
 | --- | --- |
@@ -63,7 +62,7 @@ Com isso o painel usa o projeto `demo-imagine-up-app` e se liga ao Auth (9099), 
 ## Estrutura
 
 ```
-painel/
+imagineup-admin/
   public/imagine-logo.png      logo da Imagine (branco)
   src/app/
     layout.tsx                 fontes (Sora e Manrope, servidas pelo painel), título e noindex
@@ -105,7 +104,7 @@ Componentes nunca importam o Firebase: tudo passa por `src/lib`.
 
 ## Publicação (Vercel)
 
-- Projeto separado do site, com Root Directory `painel` e o preset Next.js. O site estático continua no projeto que aponta para `site/`.
+- Projeto próprio na Vercel da cliente, importado deste repositório (público, para os commits de colaboradores publicarem no plano Hobby), com o preset Next.js e sem Root Directory. O site estático é outro projeto, ligado ao `imagineup-LP`.
 - Cadastre as variáveis `NEXT_PUBLIC_FIREBASE_*` (sem a do emulador).
 - Depois de ter o endereço de produção, ele precisa entrar no `PANEL_ORIGINS` (CORS das funções) e no parâmetro `PANEL_URL` (link do convite) no `imagineup-app`, e as funções precisam ser publicadas de novo.
 - O painel sai com `noindex` (metadados, cabeçalho `X-Robots-Tag` e `robots.txt`) e não pode ser aberto dentro de iframe de outro site.
