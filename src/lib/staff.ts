@@ -41,7 +41,7 @@ export const SECTIONS: readonly SectionInfo[] = [
   { id: "growth", route: "/crescimento", label: "Crescimento", group: "monitor", description: "Cadastros, ativos e retenção ao longo do tempo." },
   { id: "ranking", route: "/ranking", label: "Ranking e temporadas", group: "monitor", description: "Ranking dos fãs e temporadas de pontos." },
   { id: "fans", route: "/fas", label: "Fãs", group: "community", description: "Perfis, pontos e histórico dos fãs." },
-  { id: "artists", route: "/artistas", label: "Artistas e centrais", group: "community", description: "Contas de artista verificado e as centrais no app." },
+  { id: "artists", route: "/artistas", label: "Artistas e centrais", group: "community", description: "As centrais dos artistas no app: foto, selo e ordem de destaque." },
   { id: "missions", route: "/missoes", label: "Missões", group: "operation", description: "Missões ativas, agendadas e encerradas." },
   { id: "rewards", route: "/recompensas", label: "Recompensas e resgates", group: "operation", description: "Catálogo de recompensas e pedidos de resgate." },
   { id: "moderation", route: "/moderacao", label: "Moderação", group: "operation", description: "Denúncias e conteúdos para revisar." },

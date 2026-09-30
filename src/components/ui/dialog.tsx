@@ -75,11 +75,11 @@ interface DialogProps {
    * cancelado; o voltar do Android também fecha), o diálogo reabre na hora.
    */
   busy?: boolean;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   tone?: "default" | "danger";
 }
 
-const WIDTHS = { sm: "max-w-[420px]", md: "max-w-[520px]", lg: "max-w-[640px]" };
+const WIDTHS = { sm: "max-w-[420px]", md: "max-w-[520px]", lg: "max-w-[640px]", xl: "max-w-[820px]" };
 
 /**
  * Diálogo modal acessível: `aria-labelledby` no título, foco preso, Esc fecha

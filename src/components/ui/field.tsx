@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useId, useState } from "react";
 
 import { cx } from "@/components/ui/cx";
@@ -56,13 +56,14 @@ export function Field({
   );
 }
 
-export const INPUT_CLASS = cx(
-  "h-11 w-full rounded-[10px] border border-line-strong bg-sunken px-3.5 text-[15px] text-fg outline-none transition-colors",
+const FIELD_BASE = cx(
+  "w-full rounded-[10px] border border-line-strong bg-sunken px-3.5 text-[15px] text-fg outline-none transition-colors",
   "placeholder:text-fg/50 hover:border-fg/25",
   "disabled:cursor-not-allowed disabled:opacity-60",
-  "read-only:border-line read-only:bg-ink read-only:text-fg/80",
   "aria-[invalid=true]:border-danger",
 );
+
+export const INPUT_CLASS = cx("h-11", FIELD_BASE, "read-only:border-line read-only:bg-ink read-only:text-fg/80");
 
 interface TextInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
@@ -148,11 +149,112 @@ export function Checkbox({
   label,
   className,
   ...props
-}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { label: React.ReactNode }) {
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { label: React.ReactNode; ref?: React.Ref<HTMLInputElement> }) {
   return (
     <label className={cx("inline-flex cursor-pointer items-center gap-2.5 text-sm text-fg/85", props.disabled && "cursor-not-allowed opacity-60", className)}>
       <input type="checkbox" {...props} className="size-[18px] shrink-0 cursor-[inherit] accent-pink-strong" />
       <span>{label}</span>
+    </label>
+  );
+}
+
+interface TextAreaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  invalid?: boolean;
+  describedBy?: string;
+  ref?: React.Ref<HTMLTextAreaElement>;
+}
+
+export function TextArea({ invalid, describedBy, className, ...props }: TextAreaProps) {
+  return (
+    <textarea
+      {...props}
+      aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
+      className={cx(FIELD_BASE, "min-h-24 resize-y py-2.5 leading-relaxed read-only:border-line read-only:bg-ink read-only:text-fg/80", className)}
+    />
+  );
+}
+
+interface SelectInputProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+  invalid?: boolean;
+  describedBy?: string;
+  ref?: React.Ref<HTMLSelectElement>;
+}
+
+/** `<select>` nativo com a seta do painel (o teclado e o leitor de tela já sabem usar). */
+export function SelectInput({ invalid, describedBy, className, children, ...props }: SelectInputProps) {
+  return (
+    <div className="relative">
+      <select
+        {...props}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
+        className={cx(FIELD_BASE, "h-11 cursor-pointer appearance-none pr-10", className)}
+      >
+        {children}
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-fg/60" />
+    </div>
+  );
+}
+
+/**
+ * Interruptor: caixa nativa com `role="switch"` (Espaço liga e desliga), nome
+ * pelo rótulo e descrição à parte, para o leitor não repetir a descrição no nome.
+ */
+export function Switch({
+  label,
+  description,
+  checked,
+  onChange,
+  disabled = false,
+  className,
+}: {
+  label: string;
+  description?: React.ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const id = useId();
+  const labelId = `${id}-rotulo`;
+  const descriptionId = `${id}-descricao`;
+  return (
+    <label
+      htmlFor={id}
+      className={cx("flex cursor-pointer items-center justify-between gap-3", disabled && "cursor-not-allowed opacity-60", className)}
+    >
+      <span className="min-w-0">
+        <span id={labelId} className="block text-sm font-semibold text-fg">
+          {label}
+        </span>
+        {description ? (
+          <span id={descriptionId} className="mt-0.5 block text-[12.5px] leading-snug text-fg/60">
+            {description}
+          </span>
+        ) : null}
+      </span>
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        aria-labelledby={labelId}
+        aria-describedby={description ? descriptionId : undefined}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className={cx(
+          "relative h-6 w-10 shrink-0 rounded-full border border-line-strong bg-fg/15 transition-colors",
+          "after:absolute after:top-[3px] after:left-[3px] after:size-4 after:rounded-full after:bg-white after:transition-transform",
+          "peer-checked:border-pink peer-checked:bg-pink-strong peer-checked:after:translate-x-4",
+          "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-pink",
+        )}
+      />
     </label>
   );
 }

@@ -1,20 +1,23 @@
 "use client";
 
-import { LoaderCircle, MailCheck, MailWarning, MailX, Pencil, Power, RefreshCw, UserMinus, UserPlus } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { MailCheck, MailWarning, MailX, Pencil, Power, RefreshCw, UserMinus, UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { InviteDialog } from "@/components/equipe/invite-dialog";
 import { InviteResult } from "@/components/equipe/invite-result";
-import { ConfirmDialog, EditMemberDialog, type ConfirmRequest } from "@/components/equipe/member-dialogs";
+import { EditMemberDialog } from "@/components/equipe/member-dialogs";
 import { PageHeader } from "@/components/painel/page-header";
 import { NoAccess } from "@/components/painel/placeholders";
+import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
 import { ActionsMenu, type MenuAction } from "@/components/ui/actions-menu";
 import { Badge, InitialsAvatar, RoleBadge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog, type ConfirmRequest } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
-import { callableErrorMessage, firestoreErrorMessage } from "@/lib/errors";
+import { useLiveList, type Loadable } from "@/components/ui/use-live-list";
+import { callableErrorMessage } from "@/lib/errors";
 import {
   TEAM_PAGE,
   canManageTeam,
@@ -44,32 +47,6 @@ export function TeamPage() {
     );
   }
   return <TeamManager self={self} />;
-}
-
-type Loadable<T> = { status: "loading" } | { status: "ready"; data: T } | { status: "error"; message: string };
-
-/**
- * Lista em tempo real. Depois de um erro o Firestore encerra a escuta de vez,
- * então `retry` abre uma escuta nova (ex.: regras ainda sendo publicadas).
- */
-function useLiveList<T>(
-  subscribe: (onChange: (data: T) => void, onError: (error: unknown) => void) => () => void,
-): [Loadable<T>, () => void] {
-  const [state, setState] = useState<Loadable<T>>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
-  useEffect(
-    () =>
-      subscribe(
-        (data) => setState({ status: "ready", data }),
-        (error) => setState({ status: "error", message: firestoreErrorMessage(error) }),
-      ),
-    [subscribe, attempt],
-  );
-  const retry = useCallback(() => {
-    setState({ status: "loading" });
-    setAttempt((value) => value + 1);
-  }, []);
-  return [state, retry];
 }
 
 /** Relógio de minuto em minuto, para "Vence em..." não envelhecer na tela. */
@@ -258,54 +235,6 @@ function TeamManager({ self }: { self: StaffMember }) {
   );
 }
 
-function Card({ id, title, meta, children }: { id: string; title: string; meta?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section aria-labelledby={id} className="rounded-[var(--radius-card)] border border-line bg-surface">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-5 py-4">
-        <h2 id={id} tabIndex={-1} className="m-0 font-display text-base font-semibold outline-none">
-          {title}
-        </h2>
-        {meta ? <p className="m-0 text-[13px] text-fg/60">{meta}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/**
- * Erro de leitura com "Tentar de novo". O botão some ao tentar, então o foco
- * vai para o título da seção, e o "Carregando..." é lido em seguida.
- */
-function LoadError({ message, headingId, onRetry }: { message: string; headingId: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-start gap-3 p-5">
-      <Notice tone="error" className="self-stretch">
-        {message}
-      </Notice>
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => {
-          onRetry();
-          requestAnimationFrame(() => document.getElementById(headingId)?.focus());
-        }}
-      >
-        <RefreshCw aria-hidden="true" className="size-3.5" />
-        Tentar de novo
-      </Button>
-    </div>
-  );
-}
-
-function LoadingRow({ label }: { label: string }) {
-  return (
-    <p role="status" className="m-0 flex items-center gap-2 px-5 py-6 text-sm text-fg/65">
-      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-      {label}
-    </p>
-  );
-}
-
 const MEMBER_GRID = "lg:grid lg:grid-cols-[minmax(0,1.7fr)_minmax(0,0.7fr)_minmax(0,1.5fr)_minmax(0,0.8fr)_44px] lg:items-center lg:gap-4";
 
 function MembersSection({
@@ -321,7 +250,7 @@ function MembersSection({
 }) {
   const count = state.status === "ready" ? state.data.length : null;
   return (
-    <Card
+    <SectionCard
       id="titulo-membros"
       title="Membros"
       meta={count === null ? null : `${count} ${count === 1 ? "pessoa" : "pessoas"}`}
@@ -377,7 +306,7 @@ function MembersSection({
           </ul>
         </>
       ) : null}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -408,7 +337,7 @@ function InvitesSection({
 }) {
   const count = state.status === "ready" ? state.data.length : null;
   return (
-    <Card id="titulo-convites" title="Convites pendentes" meta={count === null ? null : `${count} ${count === 1 ? "convite" : "convites"}`}>
+    <SectionCard id="titulo-convites" title="Convites pendentes" meta={count === null ? null : `${count} ${count === 1 ? "convite" : "convites"}`}>
       {error ? (
         <div className="px-5 pt-4">
           <Notice tone="error">{error}</Notice>
@@ -483,6 +412,6 @@ function InvitesSection({
           </ul>
         </>
       ) : null}
-    </Card>
+    </SectionCard>
   );
 }

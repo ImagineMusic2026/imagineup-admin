@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, query, where, type Unsubscribe } from "firebase/firestore";
+import { collection, doc, getDocs, onSnapshot, query, where, type Unsubscribe } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
 import { parseStaffInvite, parseStaffMember, sortInvites, sortMembers, type StaffInvite, type StaffMember } from "@/lib/staff";
@@ -60,5 +60,16 @@ export function subscribeToPendingInvites(
       onChange(sortInvites(snapshot.docs.map((item) => parseStaffInvite(item.id, item.data()))));
     },
     onError,
+  );
+}
+
+/**
+ * Equipe ativa, lida uma vez (lista de gestores das centrais). Só admin pode
+ * listar `staff`: para os outros, as regras recusam e a tela segue sem a lista.
+ */
+export async function getActiveTeam(): Promise<StaffMember[]> {
+  const snapshot = await getDocs(collection(db(), "staff"));
+  return sortMembers(snapshot.docs.map((item) => parseStaffMember(item.id, item.data()))).filter(
+    (member) => member.status === "active",
   );
 }

@@ -4,7 +4,8 @@
  * rodam direto no Node.
  *
  * Os códigos têm prefixo: `auth/...` do Authentication, `functions/...` das
- * Cloud Functions e códigos sem prefixo (`permission-denied`) do Firestore.
+ * Cloud Functions, `storage/...` do Storage e códigos sem prefixo
+ * (`permission-denied`) do Firestore.
  * Só passe `auth/` para o mapa de Auth: o `FirestoreError` também tem `code`.
  */
 
@@ -57,7 +58,7 @@ export function authErrorMessage(code: string): string {
   return AUTH_MESSAGES[code] ?? GENERIC;
 }
 
-/** Motivos (`details.reason`) que as Cloud Functions da equipe devolvem. */
+/** Motivos (`details.reason`) que as Cloud Functions da equipe e dos artistas devolvem. */
 export const REASON_MESSAGES: Record<string, string> = {
   "not-admin": "Só um admin ativo pode fazer isso.",
   "already-staff": "Essa pessoa já faz parte da equipe.",
@@ -71,7 +72,36 @@ export const REASON_MESSAGES: Record<string, string> = {
   canceled: "Este convite foi cancelado. Peça um novo ao admin que te convidou.",
   "account-exists": "Esse e-mail já tem uma conta no app ImagineUP. Entre com a senha dessa conta para liberar o painel.",
   "email-mismatch": "Você entrou com outra conta. Entre com o e-mail que recebeu o convite.",
+  // Artistas e centrais
+  "invalid-handle": "Confira o @: use de 3 a 30 letras minúsculas, números ou _, sem começar e terminar com __.",
+  "handle-taken": "Esse @ já está em uso. Escolha outro.",
+  "handle-reserved": "Esse @ é reservado. Escolha outro.",
+  "invalid-manager": "O gestor escolhido não está ativo na equipe. Escolha outra pessoa.",
+  "published-needs-photo": "Uma central no ar precisa de foto. Troque a foto em vez de tirar, ou tire a central do ar antes.",
+  "published-needs-image-rights": "Uma central no ar precisa da autorização de uso de imagem. Tire a central do ar antes de desmarcar.",
+  "missing-photo": "Para publicar, falta a foto da central.",
+  "missing-image-rights": "Para publicar, falta marcar a autorização de uso de imagem.",
+  "unknown-artist": "A lista de centrais mudou enquanto você mexia. Confira a ordem e tente de novo.",
+  "was-published": "Só dá para apagar rascunho que nunca foi publicado. Para sumir do app, tire a central do ar.",
 };
+
+const STORAGE_MESSAGES: Record<string, string> = {
+  "storage/unauthenticated": "Sua sessão terminou. Entre de novo.",
+  "storage/unauthorized": "O envio da foto foi recusado. Confira se você pode editar artistas e se a foto é JPG, PNG ou WebP de até 5 MB.",
+  "storage/retry-limit-exceeded": "A conexão caiu durante o envio da foto. Tente de novo.",
+  "storage/canceled": "O envio da foto foi cancelado.",
+  "storage/quota-exceeded": "O espaço de fotos do projeto acabou. Avise quem cuida do Firebase.",
+  "storage/no-default-bucket": "O armazenamento de fotos não está configurado no painel.",
+  "storage/bucket-not-found": "O armazenamento de fotos não está configurado no painel.",
+  "storage/project-not-found": "O armazenamento de fotos não está configurado no painel.",
+  "storage/server-file-wrong-size": "A foto chegou incompleta. Tente de novo.",
+};
+
+/** Erro do envio de fotos para o Storage (`storage/...`). */
+export function storageErrorMessage(error: unknown): string {
+  const { code } = readError(error);
+  return STORAGE_MESSAGES[code] ?? "Não foi possível enviar a foto. Tente de novo.";
+}
 
 const FUNCTIONS_CODE_MESSAGES: Record<string, string> = {
   "functions/unauthenticated": "Sua sessão terminou. Entre de novo.",
@@ -122,6 +152,19 @@ export function callableErrorMessage(error: unknown): string {
   return FUNCTIONS_CODE_MESSAGES[info.code] ?? GENERIC;
 }
 
+/**
+ * Falhas de uma Cloud Function sem motivo do servidor que podem ter acontecido
+ * depois de a gravação dar certo: a conexão caiu, o servidor demorou ou a
+ * resposta se perdeu. Nesses casos não dá para saber se o pedido foi gravado.
+ * Com `details.reason`, o servidor recusou de propósito e nada foi gravado.
+ */
+const UNCERTAIN_CODES = new Set(["", "functions/internal", "functions/unavailable", "functions/deadline-exceeded", "functions/unknown"]);
+
+export function mayHaveRunOnServer(error: unknown): boolean {
+  const { code, reason } = readError(error);
+  return !reason && UNCERTAIN_CODES.has(code);
+}
+
 /** Erro de leitura do Firestore (listas em tempo real). */
 export function firestoreErrorMessage(error: unknown): string {
   const { code } = readError(error);
@@ -135,6 +178,7 @@ export function errorMessage(error: unknown): string {
   const { code } = readError(error);
   if (code.startsWith("auth/")) return authErrorMessage(code);
   if (code.startsWith("functions/")) return callableErrorMessage(error);
+  if (code.startsWith("storage/")) return storageErrorMessage(error);
   if (code) return firestoreErrorMessage(error);
   return GENERIC;
 }
