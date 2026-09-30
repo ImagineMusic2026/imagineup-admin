@@ -12,7 +12,9 @@ import { storage } from "@/lib/firebase";
  * metadado customizado, que o `updateArtist` lê para gravar no documento.
  *
  * Quem pode enviar é decidido pelo `storage.rules` do app (quem edita artistas,
- * imagem de até 5 MB). Os arquivos antigos ficam: quem apaga é o servidor.
+ * imagem de até 5 MB). O painel não apaga nada: ao gravar a foto nova, o
+ * `updateArtist` apaga os outros arquivos da pasta (versões antigas e envios
+ * abandonados).
  */
 
 function upload(instance: FirebaseStorage, path: string, image: EncodedImage) {

@@ -12,6 +12,8 @@ import {
   FEATURED_COUNT,
   PUBLISH_REQUIREMENT_LABELS,
   artistMissingForPublish,
+  deleteArtistLabel,
+  deleteBlockedText,
   featuredArtistIds,
   formatDay,
   formatFans,
@@ -129,10 +131,59 @@ function PublishButton({
   );
 }
 
+// Alvo de 44 px no celular e em tela de toque; 36 px no computador com mouse.
+// No celular a lixeira vai para a ponta da linha, longe dos outros botões.
+const DELETE_BUTTON =
+  "ml-auto grid size-11 shrink-0 place-items-center rounded-lg border border-line-strong text-fg/70 transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger xl:ml-0 xl:pointer-fine:size-9 data-[blocked]:cursor-not-allowed data-[blocked]:opacity-55 data-[blocked]:hover:border-line-strong data-[blocked]:hover:bg-transparent data-[blocked]:hover:text-fg/70";
+
+/**
+ * Lixeira, só de admin: apaga a central em qualquer status, depois da
+ * confirmação. Com fãs, ela continua focável (`aria-disabled`) e diz o motivo;
+ * o clique mostra o motivo na linha (`onBlocked`), a mesma regra do servidor.
+ */
+function DeleteButton({
+  artist,
+  onDelete,
+  onBlocked,
+  reasonPrefix,
+}: {
+  artist: ArtistEntry;
+  onDelete: (artist: ArtistEntry) => void;
+  onBlocked: (artist: ArtistEntry, reason: string) => void;
+  /** Os ids precisam ser únicos: a mesma central aparece nas duas listas. */
+  reasonPrefix: string;
+}) {
+  const reason = deleteBlockedText(artist);
+  const label = deleteArtistLabel(artist.name);
+  const reasonId = `${reasonPrefix}-${artist.id}`;
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        aria-disabled={reason !== null || undefined}
+        aria-describedby={reason !== null ? reasonId : undefined}
+        data-blocked={reason !== null || undefined}
+        onClick={() => {
+          if (reason !== null) onBlocked(artist, reason);
+          else onDelete(artist);
+        }}
+        className={DELETE_BUTTON}
+      >
+        <Trash2 aria-hidden="true" className="size-4" />
+      </button>
+      <span id={reasonId} hidden>
+        {reason ?? ""}
+      </span>
+    </>
+  );
+}
+
 // A coluna das ações tem largura fixa: com `auto`, o cabeçalho (vazio) e as
 // linhas (com botões) dividiriam as outras colunas de jeitos diferentes.
 const DRAFT_GRID_ADMIN =
-  "xl:grid xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,1.3fr)_320px] xl:items-center xl:gap-4";
+  "xl:grid xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,1.3fr)_268px] xl:items-center xl:gap-4";
 const DRAFT_GRID =
   "xl:grid xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,1.3fr)_220px] xl:items-center xl:gap-4";
 const DRAFT_GRID_READONLY =
@@ -150,6 +201,7 @@ export function DraftsSection({
   onPublish,
   onBlocked,
   onDelete,
+  onDeleteBlocked,
 }: {
   drafts: ArtistEntry[];
   now: Date;
@@ -162,6 +214,7 @@ export function DraftsSection({
   onPublish: (artist: ArtistEntry) => void;
   onBlocked: (artist: ArtistEntry, reason: string) => void;
   onDelete: (artist: ArtistEntry) => void;
+  onDeleteBlocked: (artist: ArtistEntry, reason: string) => void;
 }) {
   const grid = !canEdit ? DRAFT_GRID_READONLY : canDelete ? DRAFT_GRID_ADMIN : DRAFT_GRID;
   return (
@@ -213,7 +266,7 @@ export function DraftsSection({
                     )}
                   </div>
                   {canEdit ? (
-                    <div className="mt-3 flex flex-wrap gap-2 xl:mt-0 xl:justify-end">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 xl:mt-0 xl:justify-end">
                       <Button size="sm" variant="secondary" onClick={() => onEdit(artist)} aria-label={`Editar ${artist.name}`}>
                         <Pencil aria-hidden="true" className="size-3.5" />
                         Editar
@@ -226,17 +279,8 @@ export function DraftsSection({
                         onBlocked={onBlocked}
                         reasonPrefix="motivo-rascunho"
                       />
-                      {canDelete && artist.publishedAt === null ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onDelete(artist)}
-                          aria-label={`Apagar rascunho de ${artist.name}`}
-                          className="text-danger hover:bg-danger/10 hover:text-danger"
-                        >
-                          <Trash2 aria-hidden="true" className="size-3.5" />
-                          Apagar
-                        </Button>
+                      {canDelete ? (
+                        <DeleteButton artist={artist} onDelete={onDelete} onBlocked={onDeleteBlocked} reasonPrefix="lixeira-rascunho" />
                       ) : null}
                     </div>
                   ) : (
@@ -255,6 +299,8 @@ export function DraftsSection({
   );
 }
 
+const ALL_GRID_ADMIN =
+  "xl:grid xl:grid-cols-[96px_minmax(0,1.7fr)_minmax(0,0.9fr)_minmax(0,0.5fr)_minmax(0,0.7fr)_252px] xl:items-center xl:gap-4";
 const ALL_GRID =
   "xl:grid xl:grid-cols-[96px_minmax(0,1.7fr)_minmax(0,0.9fr)_minmax(0,0.5fr)_minmax(0,0.7fr)_204px] xl:items-center xl:gap-4";
 const ALL_GRID_READONLY =
@@ -269,6 +315,7 @@ export function AllArtistsSection({
   artists,
   canEdit,
   canCreate,
+  canDelete,
   publishingId,
   announcement,
   notice,
@@ -278,10 +325,13 @@ export function AllArtistsSection({
   onPublish,
   onBlocked,
   onUnpublish,
+  onDelete,
+  onDeleteBlocked,
 }: {
   artists: ArtistEntry[];
   canEdit: boolean;
   canCreate: boolean;
+  canDelete: boolean;
   publishingId: string | null;
   announcement: { key: number; text: string } | null;
   notice: ListNotice | null;
@@ -291,8 +341,10 @@ export function AllArtistsSection({
   onPublish: (artist: ArtistEntry) => void;
   onBlocked: (artist: ArtistEntry, reason: string) => void;
   onUnpublish: (artist: ArtistEntry) => void;
+  onDelete: (artist: ArtistEntry) => void;
+  onDeleteBlocked: (artist: ArtistEntry, reason: string) => void;
 }) {
-  const grid = canEdit ? ALL_GRID : ALL_GRID_READONLY;
+  const grid = !canEdit ? ALL_GRID_READONLY : canDelete ? ALL_GRID_ADMIN : ALL_GRID;
   const featured = featuredArtistIds(artists);
   const last = artists.length - 1;
   return (
@@ -387,7 +439,7 @@ export function AllArtistsSection({
                     <ArtistStatusBadge status={artist.status} />
                   </div>
                   {canEdit ? (
-                    <div className="flex w-full flex-wrap gap-2 pt-0.5 xl:w-auto xl:justify-end xl:pt-0">
+                    <div className="flex w-full flex-wrap items-center gap-2 pt-0.5 xl:w-auto xl:justify-end xl:pt-0">
                       <Button size="sm" variant="secondary" onClick={() => onEdit(artist)} aria-label={`Editar ${artist.name}`}>
                         <Pencil aria-hidden="true" className="size-3.5" />
                         Editar
@@ -401,6 +453,9 @@ export function AllArtistsSection({
                         onBlocked={onBlocked}
                         reasonPrefix="motivo-central"
                       />
+                      {canDelete ? (
+                        <DeleteButton artist={artist} onDelete={onDelete} onBlocked={onDeleteBlocked} reasonPrefix="lixeira-central" />
+                      ) : null}
                     </div>
                   ) : (
                     <div className="flex w-full pt-0.5 xl:w-auto xl:justify-end xl:pt-0">

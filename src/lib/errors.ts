@@ -82,7 +82,7 @@ export const REASON_MESSAGES: Record<string, string> = {
   "missing-photo": "Para publicar, falta a foto da central.",
   "missing-image-rights": "Para publicar, falta marcar a autorização de uso de imagem.",
   "unknown-artist": "A lista de centrais mudou enquanto você mexia. Confira a ordem e tente de novo.",
-  "was-published": "Só dá para apagar rascunho que nunca foi publicado. Para sumir do app, tire a central do ar.",
+  "has-fans": "Essa central tem fãs. Tire do ar em vez de apagar.",
 };
 
 const STORAGE_MESSAGES: Record<string, string> = {

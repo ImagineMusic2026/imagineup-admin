@@ -4,12 +4,14 @@ import test from "node:test";
 import "./alias.mjs";
 
 const {
+  ARTIST_HAS_FANS_TEXT,
   GENRES,
   PRIVATE_FAILED_TEXT,
   PRIVATE_LOADING_TEXT,
   RESERVED_HANDLES,
   applyOrder,
   artistChanges,
+  artistDeletedMessage,
   artistFormFromArtist,
   artistMissingForPublish,
   artistsSummary,
@@ -21,6 +23,9 @@ const {
   countArtists,
   createArtistInput,
   createArtistsJoin,
+  deleteArtistConfirmText,
+  deleteArtistLabel,
+  deleteBlockedText,
   emptyArtistForm,
   featuredArtistIds,
   formatDay,
@@ -596,6 +601,47 @@ test("textos das linhas", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Apagar
+// ---------------------------------------------------------------------------
+
+test("apagar: confirmação por status, com o nome e o @", () => {
+  const artist = { name: "Trio Bem Bahia", handle: "triobembahia" };
+  const live = deleteArtistConfirmText({ ...artist, status: "published" });
+  assert.deepEqual(live, {
+    title: "Apagar central?",
+    body: "Trio Bem Bahia sai do app na hora e é apagada com a foto e o contato. O @triobembahia fica livre de novo. Não dá para desfazer.",
+    confirmLabel: "Apagar central",
+    busyLabel: "Apagando...",
+  });
+  const draftBody =
+    "Trio Bem Bahia é apagada com a foto e o contato, e o @triobembahia fica livre de novo. Não dá para desfazer.";
+  for (const status of ["draft", "unpublished"]) {
+    const text = deleteArtistConfirmText({ ...artist, status });
+    assert.equal(text.title, "Apagar central?", status);
+    assert.equal(text.confirmLabel, "Apagar central", status);
+    assert.equal(text.body, draftBody, status);
+    assert.doesNotMatch(text.body, /sai do app/, status);
+  }
+  assert.equal(deleteArtistLabel("Trio Bem Bahia"), "Apagar central Trio Bem Bahia");
+  assert.equal(artistDeletedMessage("Trio Bem Bahia"), "Central Trio Bem Bahia apagada.");
+  for (const status of ["published", "draft", "unpublished"]) {
+    for (const value of Object.values(deleteArtistConfirmText({ ...artist, status }))) assert.doesNotMatch(value, DASHES, value);
+  }
+});
+
+test("apagar: central com fãs fica bloqueada, com a mesma frase do servidor", () => {
+  assert.equal(deleteBlockedText({ fanCount: 0 }), null);
+  assert.equal(deleteBlockedText({ fanCount: 3 }), "Essa central tem fãs. Tire do ar em vez de apagar.");
+  assert.equal(deleteBlockedText({ fanCount: 1 }), ARTIST_HAS_FANS_TEXT);
+  assert.equal(ARTIST_HAS_FANS_TEXT, REASON_MESSAGES["has-fans"]);
+  // A leitura defensiva nunca inventa fãs: negativo, fração abaixo de 1 e texto contam como zero.
+  for (const fanCount of [-2, 0.5, "7", null, Number.NaN]) {
+    assert.equal(deleteBlockedText(parseArtist("x", { fanCount })), null, String(fanCount));
+  }
+  assert.equal(deleteBlockedText(parseArtist("x", { fanCount: 3 })), ARTIST_HAS_FANS_TEXT);
+});
+
+// ---------------------------------------------------------------------------
 // Foto
 // ---------------------------------------------------------------------------
 
@@ -662,7 +708,7 @@ test("motivos novos das funções dos artistas", () => {
     "missing-photo": ["functions/failed-precondition", /foto/],
     "missing-image-rights": ["functions/failed-precondition", /autorização/],
     "unknown-artist": ["functions/invalid-argument", /lista de centrais mudou/],
-    "was-published": ["functions/failed-precondition", /nunca foi publicado/],
+    "has-fans": ["functions/failed-precondition", /tem fãs/],
     "not-admin": ["functions/permission-denied", /admin/],
   };
   for (const [reason, [code, pattern]] of Object.entries(cases)) {
@@ -675,6 +721,12 @@ test("motivos novos das funções dos artistas", () => {
     "Esse @ já é de um fã.",
   );
   for (const message of Object.values(REASON_MESSAGES)) assert.doesNotMatch(message, DASHES, message);
+  // Apagar vale em qualquer status: o motivo antigo saiu.
+  assert.equal(REASON_MESSAGES["was-published"], undefined);
+  assert.equal(
+    callableErrorMessage({ code: "functions/failed-precondition", message: "failed-precondition", details: { reason: "has-fans" } }),
+    "Essa central tem fãs. Tire do ar em vez de apagar.",
+  );
 });
 
 test("erros do envio da foto", () => {

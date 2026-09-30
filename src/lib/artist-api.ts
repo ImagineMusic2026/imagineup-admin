@@ -43,7 +43,10 @@ export function reorderArtists(artistIds: string[]): Promise<{ ok: true }> {
   return call<{ artistIds: string[] }, { ok: true }>("reorderArtists", { artistIds });
 }
 
-/** Só admin, e só rascunho que nunca foi publicado. */
+/**
+ * Só admin, em qualquer status, e nunca central com fãs (reason `has-fans`).
+ * O servidor apaga os dois documentos, a reserva do @ e as fotos.
+ */
 export function deleteArtist(artistId: string): Promise<{ ok: true }> {
   return call<{ artistId: string }, { ok: true }>("deleteArtist", { artistId });
 }

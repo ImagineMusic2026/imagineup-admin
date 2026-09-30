@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArtistDialog, type ArtistDialogRequest, type ArtistSaved, type DraftCreated } from "@/components/artistas/artist-dialog";
 import {
+  ALL_HEADING_ID,
   AllArtistsSection,
   DRAFTS_HEADING_ID,
   DraftsSection,
@@ -22,8 +23,10 @@ import { deleteArtist, reorderArtists, setArtistStatus } from "@/lib/artist-api"
 import { subscribeToArtists } from "@/lib/artist-data";
 import {
   applyOrder,
+  artistDeletedMessage,
   artistsSummary,
   countArtists,
+  deleteArtistConfirmText,
   moveId,
   positionAnnouncement,
   sameIds,
@@ -325,19 +328,27 @@ function ArtistsManager({ member }: { member: StaffMember }) {
     });
   }
 
-  function askDelete(artist: ArtistEntry) {
+  function askDelete(artist: ArtistEntry, list: ListName) {
     clearNotice();
-    afterConfirm.current = { focus: DRAFTS_HEADING_ID, place: { list: "drafts", artistId: null } };
+    // A linha sai das duas listas: o aviso vai para o topo da lista de onde a
+    // lixeira foi clicada e o foco para o título dela.
+    afterConfirm.current = { focus: list === "drafts" ? DRAFTS_HEADING_ID : ALL_HEADING_ID, place: { list, artistId: null } };
+    const text = deleteArtistConfirmText(artist);
     setConfirm({
-      title: "Apagar rascunho?",
-      body: `O rascunho de ${artist.name} é apagado com a foto e o contato, e o @${artist.handle} fica livre de novo. Não dá para desfazer.`,
-      confirmLabel: "Apagar rascunho",
-      busyLabel: "Apagando...",
+      title: text.title,
+      body: text.body,
+      confirmLabel: text.confirmLabel,
+      busyLabel: text.busyLabel,
       cancelLabel: "Voltar",
       tone: "danger",
       action: () => deleteArtist(artist.id),
-      successMessage: `Rascunho de ${artist.name} apagado.`,
+      successMessage: artistDeletedMessage(artist.name),
     });
+  }
+
+  /** Lixeira de central com fãs: o motivo aparece na linha, e nada é pedido ao servidor. */
+  function deleteBlocked(artist: ArtistEntry, reason: string, list: ListName) {
+    showNotice("info", reason, { list, artistId: artist.id });
   }
 
   // Quem só vê a seção só abre os detalhes; criar e editar somem se a permissão cair.
@@ -389,13 +400,15 @@ function ArtistsManager({ member }: { member: StaffMember }) {
             onView={(artist) => openView(artist, "drafts")}
             onPublish={(artist) => void publish(artist, "drafts")}
             onBlocked={(artist, reason) => publishBlocked(artist, reason, "drafts")}
-            onDelete={askDelete}
+            onDelete={(artist) => askDelete(artist, "drafts")}
+            onDeleteBlocked={(artist, reason) => deleteBlocked(artist, reason, "drafts")}
           />
 
           <AllArtistsSection
             artists={artists}
             canEdit={canEdit}
             canCreate={canEdit}
+            canDelete={admin}
             publishingId={publishingId}
             announcement={order.announcement}
             notice={listNotice("all")}
@@ -405,6 +418,8 @@ function ArtistsManager({ member }: { member: StaffMember }) {
             onPublish={(artist) => void publish(artist, "all")}
             onBlocked={(artist, reason) => publishBlocked(artist, reason, "all")}
             onUnpublish={askUnpublish}
+            onDelete={(artist) => askDelete(artist, "all")}
+            onDeleteBlocked={(artist, reason) => deleteBlocked(artist, reason, "all")}
           />
         </>
       )}

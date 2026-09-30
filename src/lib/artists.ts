@@ -17,6 +17,7 @@
  */
 
 import { PHOTO_SIZE, THUMB_SIZE, type ArtistPhotoPaths, type Size } from "@/lib/artist-photo";
+import { REASON_MESSAGES } from "@/lib/errors";
 import { toDate } from "@/lib/staff";
 import { isValidEmail, normalizeEmail } from "@/lib/validation";
 import { cleanLine, isVisibleLine } from "@/lib/visible-line";
@@ -721,6 +722,49 @@ export function publishBlockedText(missing: readonly PublishRequirement[]): stri
   if (photo) return "Para publicar, falta a foto.";
   if (rights) return "Para publicar, falta marcar a autorização de uso de imagem.";
   return "";
+}
+
+// ---------------------------------------------------------------------------
+// Apagar (só admin, em qualquer status)
+// ---------------------------------------------------------------------------
+
+/**
+ * Central com fãs não é apagada: sai do ar. É a mesma regra do `deleteArtist`
+ * (reason `has-fans`), com a mesma frase.
+ */
+export const ARTIST_HAS_FANS_TEXT = REASON_MESSAGES["has-fans"];
+
+/** Por que a lixeira não apaga esta central, ou `null` quando pode apagar. */
+export function deleteBlockedText(artist: Pick<Artist, "fanCount">): string | null {
+  return artist.fanCount > 0 ? ARTIST_HAS_FANS_TEXT : null;
+}
+
+/** `aria-label` e `title` da lixeira. */
+export function deleteArtistLabel(name: string): string {
+  return `Apagar central ${name}`;
+}
+
+export interface DeleteArtistConfirmText {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  busyLabel: string;
+}
+
+/**
+ * Textos da confirmação vermelha. Central no ar avisa que sai do app na hora;
+ * rascunho e fora do ar só dizem o que é apagado. O @ volta a ficar livre.
+ */
+export function deleteArtistConfirmText(artist: Pick<Artist, "name" | "handle" | "status">): DeleteArtistConfirmText {
+  const body =
+    artist.status === "published"
+      ? `${artist.name} sai do app na hora e é apagada com a foto e o contato. O @${artist.handle} fica livre de novo. Não dá para desfazer.`
+      : `${artist.name} é apagada com a foto e o contato, e o @${artist.handle} fica livre de novo. Não dá para desfazer.`;
+  return { title: "Apagar central?", body, confirmLabel: "Apagar central", busyLabel: "Apagando..." };
+}
+
+export function artistDeletedMessage(name: string): string {
+  return `Central ${name} apagada.`;
 }
 
 // ---------------------------------------------------------------------------
