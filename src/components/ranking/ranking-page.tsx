@@ -241,8 +241,9 @@ function RankingContent({ member }: { member: StaffMember }) {
         </div>
       )}
 
-      <LiveRanking key={reloadKey} member={member} />
-      <PastSeasons key={reloadKey} member={member} now={now} />
+      {/* Chaves diferentes: vizinhos com a mesma chave deixam o cartão antigo preso na página. */}
+      <LiveRanking key={`ao-vivo-${reloadKey}`} member={member} />
+      <PastSeasons key={`passadas-${reloadKey}`} member={member} now={now} />
 
       <SeasonDialog
         request={canEdit ? dialog : null}
