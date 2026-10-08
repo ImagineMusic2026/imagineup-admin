@@ -156,6 +156,16 @@ export function createFirestoreFake() {
       }
       return pathA < pathB ? -1 : pathA > pathB ? 1 : 0;
     });
+    // startAt e endAt valem no primeiro campo da ordem (a busca pelo @ por começo).
+    if (target.startAt || target.endAt) {
+      const field = orders[0].field;
+      rows = rows.filter(([path, data]) => {
+        const value = valueAt(data, path.split("/").pop(), field);
+        if (target.startAt && compare(value, target.startAt[0]) < 0) return false;
+        if (target.endAt && compare(value, target.endAt[0]) > 0) return false;
+        return true;
+      });
+    }
     if (target.startAfter) {
       const at = rows.findIndex(([path]) => path === target.startAfter.ref.path);
       rows = at >= 0 ? rows.slice(at + 1) : rows;
