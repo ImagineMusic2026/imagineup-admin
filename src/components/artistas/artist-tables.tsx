@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Eye, Pencil, Trash2 } from "lucide-react";
 import { ArtistStatusBadge, ArtistThumb } from "@/components/artistas/artist-bits";
 import { SectionCard } from "@/components/painel/section-card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Notice } from "@/components/ui/notice";
 import {
@@ -456,10 +456,12 @@ export function AllArtistsSection({
                       {canDelete ? (
                         <DeleteButton artist={artist} onDelete={onDelete} onBlocked={onDeleteBlocked} reasonPrefix="lixeira-central" />
                       ) : null}
+                      <ContentLinks artist={artist} />
                     </div>
                   ) : (
-                    <div className="flex w-full pt-0.5 xl:w-auto xl:justify-end xl:pt-0">
+                    <div className="flex w-full flex-wrap items-center gap-2 pt-0.5 xl:w-auto xl:justify-end xl:pt-0">
                       <ViewButton artist={artist} onView={onView} />
+                      <ContentLinks artist={artist} />
                     </div>
                   )}
                   {notice?.artistId === artist.id ? <InlineNotice notice={notice} className="w-full xl:col-span-full" /> : null}
@@ -470,5 +472,19 @@ export function AllArtistsSection({
         </>
       )}
     </SectionCard>
+  );
+}
+
+/** "Ver mural" e "Ver agenda" da central, com o filtro no endereço. */
+function ContentLinks({ artist }: { artist: ArtistEntry }) {
+  return (
+    <>
+      <ButtonLink href={`/artistas/mural?central=${encodeURIComponent(artist.id)}`} size="sm" variant="ghost" aria-label={`Ver mural de ${artist.name}`}>
+        Mural
+      </ButtonLink>
+      <ButtonLink href={`/artistas/agenda?central=${encodeURIComponent(artist.id)}`} size="sm" variant="ghost" aria-label={`Ver agenda de ${artist.name}`}>
+        Agenda
+      </ButtonLink>
+    </>
   );
 }

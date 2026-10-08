@@ -8,6 +8,8 @@ import "./alias.mjs";
 const fakeDb = { name: "firestore-de-teste" };
 const listeners = [];
 const stored = new Map();
+const contentQueries = [];
+const contentFound = new Set();
 
 function snapshotOf(docs) {
   return { docs: Object.entries(docs).map(([id, data]) => ({ id, data: () => data })) };
@@ -28,6 +30,14 @@ mock.module("firebase/firestore", {
       const data = stored.get(ref.path);
       return { id: ref.path.split("/").pop(), exists: () => data !== undefined, data: () => data };
     },
+    // A lixeira (`artistHasContent`): as consultas viram o caminho e os filtros, e o teste diz se há documento.
+    where: (field, op, value) => ({ field, op, value }),
+    limit: (count) => ({ limit: count }),
+    query: (ref, ...constraints) => ({ path: ref.path, constraints }),
+    getDocs: async (target) => {
+      contentQueries.push(target);
+      return { empty: !contentFound.has(target.path) };
+    },
   },
 });
 
@@ -35,7 +45,7 @@ mock.module("@/lib/firebase", {
   namedExports: { db: () => fakeDb },
 });
 
-const { getArtistPrivate, subscribeToArtists } = await import("@/lib/artist-data");
+const { artistHasContent, getArtistPrivate, subscribeToArtists } = await import("@/lib/artist-data");
 
 const PUBLIC = {
   netto: { handle: "netto", name: "Netto Brito", status: "published", order: 1, managerName: "vazou" },
@@ -113,4 +123,19 @@ test("privado lido uma vez em artistPrivate/{id}; sem documento, null", async ()
   assert.equal(found.managerName, "Iara Costa");
   assert.equal(found.createdBy, "uid-1");
   assert.equal(await getArtistPrivate("trio"), null);
+});
+
+test("a lixeira pergunta se a central tem post ou show (rascunho inclusive)", async () => {
+  contentQueries.length = 0;
+  contentFound.clear();
+  assert.equal(await artistHasContent("rocksalles"), false);
+  assert.deepEqual(
+    contentQueries.map((target) => [target.path, target.constraints[0]]),
+    [
+      ["posts", { field: "artistId", op: "==", value: "rocksalles" }],
+      ["events", { field: "artistIds", op: "array-contains", value: "rocksalles" }],
+    ],
+  );
+  contentFound.add("events");
+  assert.equal(await artistHasContent("rocksalles"), true);
 });

@@ -3,7 +3,6 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Missing } from "@/components/ui/detail-list";
 import type { StatusStyle } from "@/components/ui/status-chip";
 import { formatDay, formatNumber, formatTime } from "@/lib/format";
@@ -66,9 +65,9 @@ export function CopyCode({ code }: { code: string }) {
   return (
     <span className="relative z-10 inline-flex items-center gap-1.5">
       <span className="font-mono text-[13px] text-fg">{code}</span>
-      <Button size="sm" variant="ghost" className="size-8 px-0" aria-label={`Copiar ${code}`} title="Copiar" onClick={() => void copy()}>
+      <button type="button" className="grid size-8 shrink-0 place-items-center rounded-lg text-fg/75 transition-colors hover:bg-fg/[0.06] hover:text-fg disabled:cursor-not-allowed disabled:opacity-35" aria-label={`Copiar ${code}`} title="Copiar" onClick={() => void copy()}>
         {state === "copied" ? <Check aria-hidden="true" className="size-4 text-cyan" /> : <Copy aria-hidden="true" className="size-4" />}
-      </Button>
+      </button>
       <span aria-live="polite" className="sr-only">
         {state === "copied" ? `${code} copiado.` : state === "failed" ? "Não deu para copiar. Selecione o código e copie à mão." : ""}
       </span>

@@ -9,7 +9,7 @@ import { ImageField, type ImageValue } from "@/components/ui/image-field";
 import { Notice } from "@/components/ui/notice";
 import { useLoad } from "@/components/ui/use-load";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
-import { callableErrorMessage, errorDetails, reasonOf, storageErrorMessage } from "@/lib/errors";
+import { callableErrorMessage, errorDetails, mayHaveRunOnServer, reasonOf, storageErrorMessage } from "@/lib/errors";
 import { formatDay } from "@/lib/format";
 import { ImageError, processImage, type ProcessedImage } from "@/lib/image-prep";
 import { uploadImage } from "@/lib/media-storage";
@@ -187,7 +187,7 @@ function RewardDialogBody({
       } catch (failure) {
         const field = reasonOf(failure) === "invalid-request" ? rewardFieldOf(errorDetails(failure).field) : null;
         if (field) setErrors((current) => ({ ...current, [field]: callableErrorMessage(failure) }));
-        fail(`A recompensa não foi criada. ${callableErrorMessage(failure)}`);
+        fail(mayHaveRunOnServer(failure) ? "Não deu para confirmar se a recompensa foi criada. Salve de novo: a nova tentativa não cria outra." : `A recompensa não foi criada. ${callableErrorMessage(failure)}`);
         return;
       }
       server.current.reward = draftOf(rewardId, input);
