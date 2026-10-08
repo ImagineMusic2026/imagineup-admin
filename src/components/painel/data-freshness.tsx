@@ -1,11 +1,14 @@
 "use client";
 
 import { CalendarCheck, Clock, RefreshCw, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
+import { errorMessage } from "@/lib/errors";
 import { formatDay, formatTime } from "@/lib/format";
-import type { CloseState } from "@/lib/stats";
+import type { CloseState, StatsDay } from "@/lib/stats";
+import { getTodayStats } from "@/lib/stats-data";
 
 /**
  * De quando são os números da tela, pelo estado do fechamento das 00:20
@@ -18,6 +21,26 @@ export type TodayState =
   | { status: "loading" }
   | { status: "ready"; loadedAt: Date }
   | { status: "error"; message: string };
+
+/**
+ * O "Ver hoje até agora" de uma tela: lê os shards de hoje só quando a pessoa
+ * pede (até 65 leituras), e de novo no "Atualizar hoje".
+ */
+export function useTodayStats(): { state: TodayState; day: StatsDay | null; load: () => void } {
+  const [today, setToday] = useState<{ state: TodayState; day: StatsDay | null }>({ state: { status: "idle" }, day: null });
+
+  async function load() {
+    setToday((current) => ({ ...current, state: { status: "loading" } }));
+    try {
+      const day = await getTodayStats(Date.now());
+      setToday({ state: { status: "ready", loadedAt: new Date() }, day });
+    } catch (error) {
+      setToday((current) => ({ ...current, state: { status: "error", message: errorMessage(error) } }));
+    }
+  }
+
+  return { state: today.state, day: today.state.status === "ready" ? today.day : null, load: () => void load() };
+}
 
 /** A frase do estado do fechamento. */
 export function freshnessText(state: CloseState, closedAt: Date | null, now: Date): string {
@@ -44,20 +67,20 @@ export function DataFreshness({
   /** O `closedAt` mais novo dos dias lidos. */
   closedAt: Date | null;
   now: Date;
-  today: TodayState;
-  /** Lê os shards de hoje (o primeiro clique e o "Atualizar hoje"). */
-  onLoadToday: () => void;
+  today?: TodayState;
+  /** Lê os shards de hoje (o primeiro clique e o "Atualizar hoje"); sem ele, a tela não oferece o hoje. */
+  onLoadToday?: () => void;
 }) {
   const warn = state.kind === "late" || state.kind === "not-started";
   const Icon = warn ? TriangleAlert : state.kind === "yesterday-open" ? Clock : CalendarCheck;
-  const loading = today.status === "loading";
+  const loading = today?.status === "loading";
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <p className={cx("m-0 flex items-start gap-2 text-[13px] leading-snug", warn ? "text-danger" : "text-fg/70")}>
         <Icon aria-hidden="true" className="mt-px size-4 shrink-0" />
         {freshnessText(state, closedAt, now)}
       </p>
-      {state.kind !== "not-started" ? (
+      {state.kind !== "not-started" && today && onLoadToday ? (
         <div className="flex flex-wrap items-center gap-2">
           {today.status === "ready" ? (
             <span className="text-[13px] text-fg/70 tabular-nums">Hoje até {formatTime(today.loadedAt)} (parcial)</span>

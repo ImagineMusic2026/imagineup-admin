@@ -54,7 +54,7 @@ export function Tabs<K extends string>({
 
   return (
     <div className={cx("flex min-w-0 flex-col gap-5", className)}>
-      <div role="tablist" aria-label={label} className="flex gap-1 overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label={label} className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line">
         {tabs.map((tab, index) => {
           const isSelected = tab.id === activeTab?.id;
           return (

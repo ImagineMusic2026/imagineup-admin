@@ -62,6 +62,8 @@ function useRovingBars(count: number) {
   const [active, setActive] = useState(count - 1);
   const [focused, setFocused] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  // A legenda segue a última interação: o foco do teclado ou o ponteiro.
+  const [last, setLast] = useState<"focus" | "hover">("focus");
   const refs = useRef<(SVGGElement | null)[]>([]);
   const tabStop = Math.max(0, Math.min(active, count - 1));
 
@@ -81,7 +83,7 @@ function useRovingBars(count: number) {
     tabStop,
     focused,
     hovered,
-    shown: hovered ?? focused,
+    shown: last === "focus" ? (focused ?? hovered) : (hovered ?? focused),
     bind(index: number) {
       return {
         ref: (element: SVGGElement | null) => {
@@ -92,9 +94,13 @@ function useRovingBars(count: number) {
         onFocus: () => {
           setActive(index);
           setFocused(index);
+          setLast("focus");
         },
         onBlur: () => setFocused((current) => (current === index ? null : current)),
-        onPointerEnter: () => setHovered(index),
+        onPointerEnter: () => {
+          setHovered(index);
+          setLast("hover");
+        },
         onPointerLeave: () => setHovered((current) => (current === index ? null : current)),
       };
     },
@@ -224,8 +230,8 @@ export interface CompareGroup {
 export interface CompareSeries {
   key: string;
   label: string;
-  /** Um valor por grupo, na mesma ordem. */
-  values: number[];
+  /** Um valor por grupo, na mesma ordem; `null` é sem número (o estoque sem retrato), sem barra. */
+  values: (number | null)[];
 }
 
 /** Estilos das 2 ou 3 séries: sólido, claro e listrado (nunca só a cor: a legenda diz qual é qual). */
@@ -252,15 +258,15 @@ export function CompareBars({
   groups: CompareGroup[];
   series: CompareSeries[];
   tone?: ChartTone;
-  /** Um valor por extenso: "120 entradas". */
-  formatValue: (value: number, series: CompareSeries) => string;
+  /** Um valor por extenso: "120 entradas"; `null` é sem número. */
+  formatValue: (value: number | null, series: CompareSeries) => string;
   className?: string;
 }) {
   const id = useId();
   const patternId = `${id}-listras`;
   const roving = useRovingBars(groups.length);
   const shown = series.slice(0, 3);
-  const max = Math.max(0, ...shown.flatMap((item) => item.values));
+  const max = Math.max(0, ...shown.flatMap((item) => item.values.map((value) => value ?? 0)));
   const width = Math.max(1, groups.length) * SLOT;
   const barWidth = (SLOT - 2) / Math.max(1, shown.length);
   const legendGroup = roving.shown ?? groups.length - 1;
@@ -270,7 +276,7 @@ export function CompareBars({
   function nameOf(index: number): string {
     const group = groups[index];
     if (!group) return "";
-    const values = shown.map((item) => `${item.label} ${formatValue(item.values[index] ?? 0, item)}`);
+    const values = shown.map((item) => `${item.label} ${formatValue(item.values[index] ?? null, item)}`);
     return `${group.longLabel ?? group.label}: ${values.join(", ")}`;
   }
 
@@ -307,6 +313,7 @@ export function CompareBars({
               <rect x={x} y={0} width={SLOT} height={TOP} className={roving.shown === index ? "fill-fg/[0.05]" : "fill-transparent"} />
               {shown.map((item, at) => {
                 const height = barHeight(item.values[index] ?? 0, max);
+                if (height === 0) return null;
                 return (
                   <rect
                     key={item.key}

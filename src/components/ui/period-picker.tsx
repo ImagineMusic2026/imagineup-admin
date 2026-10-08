@@ -54,9 +54,10 @@ export function PeriodPicker({
                 value={days}
                 checked={checked}
                 onChange={() => onChange(days)}
+                aria-label={`${days} dias`}
                 className="sr-only"
               />
-              {days} dias
+              <span aria-hidden="true">{days} dias</span>
             </label>
           );
         })}

@@ -457,9 +457,9 @@ export function originKindLabel(kind: string): string {
   return ORIGIN_KIND_LABELS[kind] ?? kind;
 }
 
-/** Rótulo de uma chave de `utm_source` ou `utm_campaign`. */
-export function utmLabel(key: string): string {
-  if (key === "_none") return ORIGIN_NONE_LABEL;
+/** Rótulo de uma chave de `utm_source` ou `utm_campaign` (o `_none` da origem diz "Sem origem"). */
+export function utmLabel(key: string, noneLabel: string = ORIGIN_NONE_LABEL): string {
+  if (key === "_none") return noneLabel;
   if (key === "_other") return ORIGIN_OTHER_LABEL;
   return key;
 }
