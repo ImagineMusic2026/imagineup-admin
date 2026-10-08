@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { SectionPage } from "@/components/painel/section-page";
+import { RankingPage } from "@/components/ranking/ranking-page";
 
 export const metadata: Metadata = { title: "Ranking e temporadas" };
 
 export default function Page() {
-  return <SectionPage section="ranking" />;
+  return <RankingPage />;
 }
