@@ -12,15 +12,17 @@ import {
   type ListNotice,
   type MoveDirection,
 } from "@/components/artistas/artist-tables";
+import { ArtistsNav } from "@/components/artistas/artists-nav";
 import { PageHeader } from "@/components/painel/page-header";
 import { NoAccess } from "@/components/painel/placeholders";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
 import { Button } from "@/components/ui/button";
+import { MetricCard, MetricGrid } from "@/components/ui/metric-card";
 import { ConfirmDialog, type ConfirmRequest } from "@/components/ui/confirm-dialog";
 import { Notice } from "@/components/ui/notice";
 import { useLiveList } from "@/components/ui/use-live-list";
 import { deleteArtist, reorderArtists, setArtistStatus } from "@/lib/artist-api";
-import { subscribeToArtists } from "@/lib/artist-data";
+import { artistHasContent, subscribeToArtists } from "@/lib/artist-data";
 import {
   applyOrder,
   artistDeletedMessage,
@@ -32,7 +34,7 @@ import {
   sameIds,
   type ArtistEntry,
 } from "@/lib/artists";
-import { callableErrorMessage } from "@/lib/errors";
+import { REASON_MESSAGES, callableErrorMessage } from "@/lib/errors";
 import { createLatestSender } from "@/lib/latest-sender";
 import { canEditSection, canSeeSection, isAdmin, sectionInfo, type StaffMember } from "@/lib/staff";
 import { useStaffMember } from "@/lib/staff-context";
@@ -328,8 +330,17 @@ function ArtistsManager({ member }: { member: StaffMember }) {
     });
   }
 
-  function askDelete(artist: ArtistEntry, list: ListName) {
+  async function askDelete(artist: ArtistEntry, list: ListName) {
     clearNotice();
+    // Central com post ou show (rascunho inclusive): o servidor recusa com `has-content`; a linha avisa antes.
+    try {
+      if (await artistHasContent(artist.id)) {
+        deleteBlocked(artist, REASON_MESSAGES["has-content"], list);
+        return;
+      }
+    } catch {
+      // Sem a leitura, a confirmação segue e o servidor confere.
+    }
     // A linha sai das duas listas: o aviso vai para o topo da lista de onde a
     // lixeira foi clicada e o foco para o título dela.
     afterConfirm.current = { focus: list === "drafts" ? DRAFTS_HEADING_ID : ALL_HEADING_ID, place: { list, artistId: null } };
@@ -357,6 +368,7 @@ function ArtistsManager({ member }: { member: StaffMember }) {
   return (
     <>
       <PageHeader title={INFO.label} subtitle={counts ? artistsSummary(counts) : INFO.description} />
+      <ArtistsNav current="centrais" />
 
       {/* Anúncios para leitor de tela em regiões que já existem; os avisos visíveis ficam onde a ação aconteceu. */}
       <div aria-live="polite" className="sr-only">
@@ -384,10 +396,10 @@ function ArtistsManager({ member }: { member: StaffMember }) {
         </SectionCard>
       ) : (
         <>
-          <dl className="m-0 grid gap-3 sm:grid-cols-2">
-            <Kpi label="Centrais no ar" value={counts.published} />
-            <Kpi label="Aguardando publicação" value={counts.drafts} accent />
-          </dl>
+          <MetricGrid columns={2}>
+            <MetricCard label="Centrais no ar" value={counts.published} />
+            <MetricCard label="Aguardando publicação" value={counts.drafts} tone="accent" />
+          </MetricGrid>
 
           <DraftsSection
             drafts={drafts}
@@ -400,7 +412,7 @@ function ArtistsManager({ member }: { member: StaffMember }) {
             onView={(artist) => openView(artist, "drafts")}
             onPublish={(artist) => void publish(artist, "drafts")}
             onBlocked={(artist, reason) => publishBlocked(artist, reason, "drafts")}
-            onDelete={(artist) => askDelete(artist, "drafts")}
+            onDelete={(artist) => void askDelete(artist, "drafts")}
             onDeleteBlocked={(artist, reason) => deleteBlocked(artist, reason, "drafts")}
           />
 
@@ -418,7 +430,7 @@ function ArtistsManager({ member }: { member: StaffMember }) {
             onPublish={(artist) => void publish(artist, "all")}
             onBlocked={(artist, reason) => publishBlocked(artist, reason, "all")}
             onUnpublish={askUnpublish}
-            onDelete={(artist) => askDelete(artist, "all")}
+            onDelete={(artist) => void askDelete(artist, "all")}
             onDeleteBlocked={(artist, reason) => deleteBlocked(artist, reason, "all")}
           />
         </>
@@ -446,17 +458,6 @@ function ArtistsManager({ member }: { member: StaffMember }) {
         }}
       />
     </>
-  );
-}
-
-function Kpi({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
-  return (
-    <div className="rounded-[var(--radius-card)] border border-line bg-surface px-5 py-4">
-      <dt className="group-label text-fg/55">{label}</dt>
-      <dd className={`m-0 mt-2.5 font-display text-[28px] leading-none font-semibold tabular-nums ${accent ? "text-cyan" : "text-fg"}`}>
-        {value}
-      </dd>
-    </div>
   );
 }
 

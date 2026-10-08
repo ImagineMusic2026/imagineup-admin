@@ -83,7 +83,107 @@ export const REASON_MESSAGES: Record<string, string> = {
   "missing-image-rights": "Para publicar, falta marcar a autorização de uso de imagem.",
   "unknown-artist": "A lista de centrais mudou enquanto você mexia. Confira a ordem e tente de novo.",
   "has-fans": "Essa central tem fãs. Tire do ar em vez de apagar.",
+  "has-content":
+    "Essa central tem posts ou shows. Tire do ar em vez de apagar, ou apague antes os rascunhos que nunca foram ao ar.",
+  // Acesso (todas as callables do painel)
+  "not-staff": "Só a equipe ativa do painel pode fazer isso.",
+  "no-section": "Seu acesso ao painel não permite fazer isso nesta seção.",
+  // Configuração versionada (régua, missões, conquistas, temporada)
+  "config-changed": "A configuração mudou enquanto você editava. Recarregue os dados, confira e salve de novo.",
+  // Mural e agenda
+  "was-published": "Isso já esteve no ar. Tire do ar em vez de apagar.",
+  "event-has-posts": "Há posts de show apontando para este show. Troque o show desses posts antes.",
+  "event-has-rewards": "Há recompensas da loja ligadas a este show. Tire o show delas ou apague o rascunho antes.",
+  "missing-media": "Envie a foto ou a capa do vídeo antes de publicar.",
+  "published-needs-media": "Um post no ar precisa da mídia. Tire do ar antes de remover.",
+  "event-not-published": "Publique o show antes do post de show.",
+  "event-artist-mismatch": "O show precisa ter a central do post.",
+  // Moderação
+  "not-reported": "Esse comentário não está na fila da Moderação.",
+  "comment-hidden": "Esse comentário está oculto. Para mostrar de novo, use reexibir.",
+  // Loja
+  "invalid-transition": "Esse pedido não pode ir para esse status.",
+  "stock-below-redeemed": "O estoque não pode ficar abaixo do que já foi resgatado.",
+  "event-not-open": "O show desta recompensa já passou ou não está no ar. Troque o show antes de publicar.",
+  // Missões, conquistas e régua
+  "mission-locked": "A missão já começou: tipo, alvo, meta, período e início não mudam. Arquive e crie outra.",
+  "achievement-locked": "A conquista já foi publicada: a regra não muda. Título, ícone e cor continuam editáveis.",
+  "level-in-use": "Uma conquista ainda pede um nível que a régua nova não tem. Arquive a conquista antes.",
+  "too-many-active": "Já há missões demais no ar. Arquive alguma antes de publicar outra.",
+  "too-many-missions": "O catálogo chegou ao limite de missões. Arquive alguma antes de criar outra.",
+  // Temporada
+  "season-started": "A temporada já começou: ela não sai nem muda de início. Para encerrar antes da hora, use Encerrar temporada.",
+  "season-overlap": "As datas batem com outra temporada: uma começa depois do fim da anterior.",
+  "season-closing": "A temporada está sendo fechada agora. Tente de novo em alguns minutos.",
+  "season-not-due": "A temporada ainda não terminou. Para encerrar antes da hora, use Encerrar temporada.",
+  "has-next": "Há uma próxima temporada cadastrada. Tire a próxima antes de ficar sem temporada.",
+  "season-end-in-past": "O fim da temporada já passou. Para encerrar agora, use Encerrar temporada.",
+  "season-ended": "A temporada já terminou: só o nome, o título do 1º lugar e o top do card mudam.",
+  "season-id-locked": "A temporada já começou: o id não muda. Nome, fim e título continuam editáveis.",
+  "season-id-used": "Esse id de temporada já foi usado. Escolha outro.",
+  "season-not-active": "Essa temporada não está em andamento. Abra de novo e confira a temporada atual.",
+  // Missões e conquistas (as frases do servidor, de reserva)
+  "invalid-target": "Esse alvo não vale para esse tipo de missão.",
+  "target-not-found": "O alvo da missão não existe.",
+  "mission-not-found": "Missão não encontrada.",
+  "no-season": "Não há temporada atual configurada.",
+  "achievement-not-found": "Conquista não encontrada.",
+  "too-many-achievements": "O catálogo chegou ao limite de conquistas.",
+  // Loja
+  "reward-not-found": "Recompensa não encontrada.",
+  "not-published": "Só uma recompensa no ar pode ser encerrada. Apague o rascunho em vez de encerrar.",
+  "has-redemptions": "Essa recompensa já tem pedidos. Encerre em vez de apagar.",
+  "redemption-not-found": "Pedido não encontrado.",
+  "reason-not-allowed": "O motivo e a devolução da vaga só valem para recusar um pedido.",
+  // Mural e agenda (as frases do servidor, de reserva)
+  "artist-not-found": "Central não encontrada.",
+  "post-not-found": "Post não encontrado.",
+  "event-not-found": "Show não encontrado.",
+  "invalid-kind": "Escolha o tipo do post: foto, vídeo, texto ou show.",
+  "invalid-text": "O texto do post pode ter até 2.000 caracteres, sem caracteres invisíveis. Post de texto ou de show precisa de texto.",
+  "media-not-allowed": "Post de texto ou de show não leva foto nem vídeo.",
+  "invalid-media": "Envie a mídia de novo: o arquivo não é deste post.",
+  "media-not-found": "A mídia não chegou ao armazenamento. Envie de novo.",
+  "invalid-photo": "Envie a foto de novo: o arquivo não é deste item.",
+  "photo-not-found": "A foto não chegou ao armazenamento. Envie de novo.",
+  "invalid-title": "Informe o nome do show, de 1 a 80 caracteres, numa linha só.",
+  "invalid-artists": "Escolha de 1 a 6 centrais, sem repetir.",
+  "invalid-city": "Informe a cidade, de 1 a 60 caracteres, numa linha só.",
+  "invalid-state": "Escolha a UF da lista.",
+  "invalid-venue": "O local pode ter até 80 caracteres, numa linha só.",
+  "invalid-starts-at": "Informe uma data e hora que existam, até 2 anos à frente.",
+  "invalid-time-zone": "Escolha o fuso da lista.",
+  "event-in-past": "A data do show já passou.",
+  // Moderação
+  "comment-not-found": "Comentário não encontrado.",
+  "invalid-action": "Ação inválida: ocultar, manter ou reexibir.",
+  // Fãs
+  "fan-not-found": "Fã não encontrado.",
+  "negative-counter": "O ajuste deixaria um contador negativo.",
+  "adjust-above-limit": "O ajuste passa do limite de pontos por contador. Fale com um admin.",
+  "adjust-daily-limit": "Você chegou ao limite de ajustes de hoje neste contador. Fale com um admin.",
+  "adjustment-id-reused": "Um ajuste desta tentativa já foi gravado. Confira o extrato antes de ajustar de novo.",
+  "lookup-daily-limit": "Você chegou ao limite de 50 buscas por e-mail hoje.",
+  "username-changed": "O @ deste fã mudou. Confira o @ de agora antes de trocar.",
+  "username-of-central": "Este @ é de uma central, não de um fã.",
 };
+
+/** O `details.reason` de um erro, ou `null`. */
+export function reasonOf(error: unknown): string | null {
+  return readError(error).reason;
+}
+
+/** O `details` de um erro de callable (`field`, `version`, `entry`...), ou um objeto vazio. */
+export function errorDetails(error: unknown): Record<string, unknown> {
+  if (!error || typeof error !== "object") return {};
+  const details = (error as { details?: unknown }).details;
+  return details && typeof details === "object" ? (details as Record<string, unknown>) : {};
+}
+
+/** A configuração mudou enquanto a pessoa editava: a tela lê o documento de novo antes de salvar outra vez. */
+export function isConfigChanged(error: unknown): boolean {
+  return reasonOf(error) === "config-changed";
+}
 
 const STORAGE_MESSAGES: Record<string, string> = {
   "storage/unauthenticated": "Sua sessão terminou. Entre de novo.",
@@ -165,10 +265,27 @@ export function mayHaveRunOnServer(error: unknown): boolean {
   return !reason && UNCERTAIN_CODES.has(code);
 }
 
-/** Erro de leitura do Firestore (listas em tempo real). */
+/** Falha incerta de uma ação: a tela lê de novo antes de a pessoa repetir. */
+export const UNCERTAIN_CHANGE_TEXT = "Não deu para confirmar se a mudança foi gravada. Confira a lista antes de repetir.";
+
+/**
+ * Erro de uma ação de mudança: a falha sem motivo do servidor (a rede caiu, o
+ * servidor demorou, a callable ainda não existe) pode ter gravado, e diz isso;
+ * o resto, a frase do servidor.
+ */
+export function actionErrorMessage(error: unknown): string {
+  return mayHaveRunOnServer(error) ? UNCERTAIN_CHANGE_TEXT : callableErrorMessage(error);
+}
+
+/**
+ * Erro de leitura do Firestore. As leituras só acontecem dentro de uma seção
+ * que a pessoa vê, então o `permission-denied` é o servidor sem a regra
+ * publicada, e o `failed-precondition`, a consulta sem o índice publicado.
+ */
 export function firestoreErrorMessage(error: unknown): string {
   const { code } = readError(error);
-  if (code === "permission-denied") return "Você não tem permissão para ver isto.";
+  if (code === "permission-denied") return "O servidor ainda não libera estes dados. Se continuar, fale com quem cuida do servidor.";
+  if (code === "failed-precondition") return "Esta lista ainda não tem índice publicado no servidor. Tente de novo em alguns minutos.";
   if (code === "unavailable") return NETWORK;
   return "Não foi possível carregar os dados. Tente de novo.";
 }

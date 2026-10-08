@@ -40,11 +40,11 @@ export const SECTIONS: readonly SectionInfo[] = [
   { id: "overview", route: "/", label: "Visão geral", group: "monitor", description: "Retrato do app: ativos, cadastros, pontos e missões." },
   { id: "growth", route: "/crescimento", label: "Crescimento", group: "monitor", description: "Cadastros, ativos e retenção ao longo do tempo." },
   { id: "ranking", route: "/ranking", label: "Ranking e temporadas", group: "monitor", description: "Ranking dos fãs e temporadas de pontos." },
-  { id: "fans", route: "/fas", label: "Fãs", group: "community", description: "Perfis, pontos e histórico dos fãs." },
+  { id: "fans", route: "/fas", label: "Fãs", group: "community", description: "Busca, ficha, pontos e origem dos fãs." },
   { id: "artists", route: "/artistas", label: "Artistas e centrais", group: "community", description: "As centrais dos artistas no app: foto, selo e ordem de destaque." },
-  { id: "missions", route: "/missoes", label: "Missões", group: "operation", description: "Missões ativas, agendadas e encerradas." },
+  { id: "missions", route: "/missoes", label: "Missões", group: "operation", description: "Missões, conquistas e a régua de pontos." },
   { id: "rewards", route: "/recompensas", label: "Recompensas e resgates", group: "operation", description: "Catálogo de recompensas e pedidos de resgate." },
-  { id: "moderation", route: "/moderacao", label: "Moderação", group: "operation", description: "Denúncias e conteúdos para revisar." },
+  { id: "moderation", route: "/moderacao", label: "Moderação", group: "operation", description: "Denúncias, comentários e as ferramentas de cada fã." },
   { id: "audit", route: "/logs", label: "Logs e auditoria", group: "system", description: "Quem fez o quê no painel, e quando." },
 ];
 
@@ -388,17 +388,5 @@ export function inviteExpiryLabel(expiresAt: Date | null, now: Date): string {
   return `Vence em ${days} ${days === 1 ? "dia" : "dias"}`;
 }
 
-const DATE_TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", {
-  day: "numeric",
-  month: "long",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-  timeZone: "America/Sao_Paulo",
-});
-
-/** "6 de outubro, 14:30", no fuso de São Paulo (o mesmo do e-mail do convite). */
-export function formatDateTime(date: Date): string {
-  const parts = Object.fromEntries(DATE_TIME_FORMAT.formatToParts(date).map((part) => [part.type, part.value]));
-  return `${parts.day} de ${parts.month}, ${parts.hour}:${parts.minute}`;
-}
+/** Mora em `format.ts`; daqui segue saindo para os imports de antes. */
+export { formatDateTime } from "@/lib/format";

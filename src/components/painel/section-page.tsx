@@ -35,9 +35,10 @@ export function SectionPage({ section }: { section: SectionId }) {
 
 /**
  * Início (`/`): é a Visão geral. Quem não vê a Visão geral vai para a primeira
- * seção liberada, na ordem da lateral.
+ * seção liberada, na ordem da lateral. Sem o conteúdo (`overview`), mostra o
+ * "Em construção".
  */
-export function HomePage() {
+export function HomePage({ overview }: { overview?: React.ReactNode } = {}) {
   const member = useStaffMember();
   const router = useRouter();
   const canSeeOverview = canSeeSection(member, "overview");
@@ -47,7 +48,7 @@ export function HomePage() {
     if (target && target !== "/") router.replace(target);
   }, [target, router]);
 
-  if (canSeeOverview) return <SectionPage section="overview" />;
+  if (canSeeOverview) return overview ? <>{overview}</> : <SectionPage section="overview" />;
 
   if (target) {
     return (

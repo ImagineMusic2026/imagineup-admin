@@ -1,7 +1,5 @@
-import { httpsCallable } from "firebase/functions";
-
 import type { ArtistStatus, CreateArtistInput, HandleCheckResult, UpdateArtistInput } from "@/lib/artists";
-import { functions } from "@/lib/firebase";
+import { call } from "@/lib/callable";
 
 /**
  * Chamadas às Cloud Functions dos artistas (callables em southamerica-east1),
@@ -12,12 +10,6 @@ import { functions } from "@/lib/firebase";
  * Erros chegam como `FunctionsError` com `details.reason`; a tela traduz com
  * `callableErrorMessage` (errors.ts).
  */
-
-async function call<Request, Response>(name: string, data: Request): Promise<Response> {
-  const callable = httpsCallable<Request, Response>(functions(), name);
-  const result = await callable(data);
-  return result.data;
-}
 
 /** Quem vê a seção: o @ está livre? */
 export function checkArtistHandle(handle: string): Promise<HandleCheckResult> {

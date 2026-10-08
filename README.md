@@ -29,7 +29,7 @@ No Claude Code, a configuração `imagineup-admin` do `.claude/launch.json` (loc
 | `npm start` | Serve o build |
 | `npm run lint` | ESLint (`eslint .`) |
 | `npm run typecheck` | TypeScript sem gerar arquivos (`tsc --noEmit`) |
-| `npm test` | Testes das regras puras (equipe, artistas, recorte da foto, erros), da sessão e das escutas dos artistas (`node --test`, com dublês no lugar do Firebase) |
+| `npm test` | Testes das regras puras (equipe, artistas, recorte da foto, erros, formatos, dias, números do dia, régua, lotes), da sessão e das leituras (`node --test`, com dublês no lugar do Firebase) |
 
 Antes de publicar, rode os quatro: `lint`, `typecheck`, `test` e `build`.
 
@@ -78,11 +78,25 @@ imagineup-admin/
       equipe/                  equipe e convites (só admin)
   src/components/
     ui/                        botão, campos (texto, lista, interruptor), avisos, diálogo,
-                               confirmação, menu, copiar link, lista em tempo real
-    painel/                    lateral, guard, cabeçalho, cartão de seção, estados das seções
+                               confirmação, menu, copiar link, lista em tempo real;
+                               do bloco 11: leitura única (use-load, use-paged-list),
+                               cartões de número, gráficos de barras, período, tabela
+                               com "Carregar mais", busca, filtros, selo de situação,
+                               abas, estado vazio, detalhes, campo de imagem, lote,
+                               "Atualizar", Subir e Descer (order-buttons)
+    painel/                    lateral, guard, cabeçalho, cartão de seção, estados das seções,
+                               porta da seção (section-gate), avatar do fã, data dos números
     auth/                      telas de login e de convite
     equipe/                    listas, convite e troca de nível
-    artistas/                  página /artistas, tabelas, diálogo de criar e editar, campo da foto
+    artistas/                  /artistas (centrais), /artistas/mural e /artistas/agenda, a navegação
+                               entre as três, os diálogos de central, post, comentários e show
+    visao-geral/ crescimento/  Visão geral; Crescimento com cadastros, ativos e o Comparativo
+    ranking/                   temporada atual e próxima, ranking ao vivo, temporadas passadas
+    fas/                       lista e busca, a ficha com as abas e o ajuste de pontos
+    missoes/                   missões e meta, conquistas, régua de pontos
+    recompensas/               pedidos (com os contatos), catálogo e números
+    moderacao/                 fila, resolvidos, ocultos, suspensos e a página do fã
+    logs/                      auditoria com os filtros e os detalhes
   src/lib/
     firebase.ts                inicialização preguiçosa e emuladores
     auth-context.tsx           sessão do Firebase Auth
@@ -99,7 +113,31 @@ imagineup-admin/
     errors.ts                  mensagens de erro em português (puro)
     validation.ts              validação dos formulários (puro)
     invite.ts                  regras da página do convite (puro)
-  tests/                       testes com node:test
+    callable.ts                o `call` das Cloud Functions, com o prazo longo de 130 s
+    format.ts                  números, pontos, porcentagens, variação, datas e horas (puro)
+    day.ts                     dias, semanas e meses de São Paulo, espelho do servidor (puro)
+    stats.ts                   os números do dia: soma, fechamento, séries, ativos e retenção (puro)
+    stats-data.ts              dias fechados (statsDaily), statsMeta/close e os shards de hoje
+    firestore-page.ts          páginas por cursor e count()
+    fan-profile.ts             perfil do fã (puro) e fan-profile-data.ts, as leituras dele
+    levels.ts                  régua de níveis, espelho do servidor (puro)
+    game-names-data.ts         títulos das missões e nomes das conquistas
+    artist-names-data.ts       nomes das centrais em leitura única
+    moderation-api.ts          callables da Moderação (o moderateComment também serve o Mural)
+    image-prep.ts              imagem recortada e reduzida no navegador (puro nas contas)
+    media-storage.ts           envio de imagens e do vídeo para o Storage
+    batch.ts                   ações em lote, uma chamada por vez (puro)
+    overview.ts growth.ts compare.ts   contas da Visão geral e de Crescimento (puras)
+    audit.ts audit-data.ts     rótulos, alvos e filtros dos Logs; as consultas de staffAudit
+    fans.ts fan-data.ts fan-search.ts fan-api.ts   a seção Fãs: contas, leituras, busca e callables
+    season.ts season-data.ts season-api.ts         Ranking e temporadas
+    missions.ts achievements.ts points-config.ts   missões, conquistas e régua (puros)
+    game-data.ts game-api.ts   leituras e callables de Missões e régua
+    rewards.ts reward-data.ts reward-api.ts        Recompensas e resgates
+    moderation.ts moderation-data.ts               a Moderação (puro e leituras)
+    posts.ts post-data.ts post-api.ts post-media.ts   o Mural (o vídeo e a capa no navegador)
+    events.ts event-data.ts event-api.ts           a Agenda (fusos e UFs copiados do servidor)
+  tests/                       testes com node:test; fakes/firestore.mjs é o dublê das leituras
 ```
 
 Componentes nunca importam o Firebase: tudo passa por `src/lib`.
@@ -111,6 +149,32 @@ Componentes nunca importam o Firebase: tudo passa por `src/lib`.
 - **Convites.** O admin escolhe nome sugerido, e-mail, nível e seções em Equipe. O servidor grava o convite, manda o e-mail e devolve o link, que vale 7 dias e uma vez só (reenviar gera outro link e invalida o anterior). O token vai depois do `#`, que o navegador nunca manda para servidor nenhum.
 - **Aceite.** Se o e-mail ainda não tem conta, a pessoa escolhe nome e senha (8 ou mais caracteres). Se já tem conta no app ImagineUP, entra com a senha dessa conta e o painel é ligado à mesma conta; o perfil de fã continua existindo. A sessão aberta pelo convite fica só na aba, como no login sem "Lembrar de mim".
 - **Segurança.** O que a tela esconde é conforto. Quem protege os dados são as regras do Firestore e as Cloud Functions, que leem `staff/{uid}` a cada pedido.
+
+## Telas do bloco 11: leitura e números
+
+O contrato das telas novas é a seção 26 de `imagineup-app/docs/arquitetura-api.md`. As convenções que valem para todas:
+
+- **Sem escuta em tempo real.** Nenhuma tela nova usa `onSnapshot` (decisão do dono, para não gastar leitura): tudo lê ao abrir e no botão "Atualizar", com a hora da última leitura. O `useLoad` faz a leitura única (a função de leitura vem do `useCallback`), e o `usePagedList` faz as listas com "Carregar mais" por cursor (25 por vez, 50 nos Logs) e o total por `count()`. As escutas de antes ficam: o acesso de quem está logado, Equipe e a lista de centrais.
+- **Porta da seção.** Toda página nova usa o `SectionGate`. Ações só com `canEditSection`; o Leitor vê tudo, sem botões.
+- **Números do dia.** O servidor fecha cada dia às 00:20 (`closeStatsDays`) num documento `statsDaily/{dia}`. As telas leem os dias fechados por faixa (até 90 por consulta) e o `statsMeta/close`, e o `DataFreshness` diz até quando os números vão. Só o dia de ontem, antes do fechamento dele, é somado no navegador; hoje, só pelo botão "Ver hoje até agora". Os períodos são de 7, 30 ou 90 dias terminando ontem. O retrato da noite (fãs, membros por central) vale o do último dia que tem um, e os ativos da semana e do mês somam `newInWeek` e `newInMonth`, nunca `actives.day`.
+- **Cores.** Lima só para pontos (o tom `points` do `MetricCard` e dos gráficos); ciano para estados bons e destaques; rosa só em botões e foco. Selos de situação pelo `StatusChip`, nunca em lima.
+- **Ações.** O erro aparece dentro do diálogo com a frase do servidor; a falha sem motivo (`mayHaveRunOnServer`) diz "Não deu para confirmar se a mudança foi gravada" (`actionErrorMessage`) e a tela lê de novo.
+- **Configuração versionada.** Régua, missões, conquistas e temporada levam o `version` lido como `expectedVersion`. O `config-changed` mostra "A configuração mudou enquanto você editava. Recarregue os dados, confira e salve de novo." com "Recarregar dados", que lê o documento de novo e refaz o formulário. Ações em sequência (ordem, "Arquivar encerradas") encadeiam a versão de cada resposta.
+- **Ids do painel.** `createReward`, `createPost` e `createEvent` recebem o id gerado no navegador (`doc(collection(...)).id`): a nova tentativa depois de uma resposta perdida não cria outro rascunho. A criação em passos (criar, enviar a mídia, gravar, publicar) retoma do passo que falhou. O `createMission` sem resposta é conferido em `config/missions/versions/{n}`.
+- **Lotes.** "Arquivar encerradas", "Recusar pedidos abertos" e "Ocultar todos os comentários" rodam uma chamada por vez, com o progresso, o botão de parar e o resumo (`batch.ts`, `BatchProgress`).
+- **Dados de fã.** Os contatos de um pedido (`getRedemptionContacts`) vivem só no diálogo: fechou, saem da memória. Quem denunciou um comentário nunca aparece.
+
+### O que cada tela faz
+
+- **Visão geral** (`/`): os cartões do período (7, 30 ou 90 dias) contra o período anterior, os gráficos por dia e as listas do topo.
+- **Crescimento** (`/crescimento`): cadastros e origem, ativos e retenção, e o Comparativo de centrais, campanhas e períodos.
+- **Ranking e temporadas** (`/ranking`): a temporada atual e a próxima, o ranking ao vivo (`getPanelRanking`), as passadas com o pódio, encerrar e rodar a virada.
+- **Fãs** (`/fas` e `/fas/[uid]`): lista, busca por nome, @, código, uid e e-mail; a ficha com extrato, centrais, curtidas, presenças, comentários, convites e resgates; o ajuste de pontos.
+- **Missões e régua** (`/missoes`): missões com a meta da temporada, filtros, alvo pela central, publicar, encerrar, arquivar e trazer de volta; conquistas; a régua em três blocos com "Salvar" próprio.
+- **Recompensas e resgates** (`/recompensas`): pedidos por situação com a busca pelo código e os contatos; o catálogo com foto, estoque e ordem; os números do período.
+- **Moderação** (`/moderacao` e `/moderacao/fas/[uid]`): a fila, os resolvidos, os ocultos e os suspensos; na página do fã, suspender, ocultar em lote, trocar o @ e tirar a foto.
+- **Logs e auditoria** (`/logs`): as entradas com os filtros por período, seção, pessoa, ação e alvo, e os detalhes de cada uma.
+- **Artistas** (`/artistas`, `/artistas/mural`, `/artistas/agenda`): as centrais; o mural com a mídia e os comentários; a agenda com o fuso de cada show.
 
 ## Artistas e centrais
 

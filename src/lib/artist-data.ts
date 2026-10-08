@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, onSnapshot, type Unsubscribe } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where, type Unsubscribe } from "firebase/firestore";
 
 import {
   createArtistsJoin,
@@ -67,4 +67,16 @@ export async function getArtist(artistId: string): Promise<Artist | null> {
 export async function getArtistPrivate(artistId: string): Promise<ArtistPrivate | null> {
   const snapshot = await getDoc(doc(db(), "artistPrivate", artistId));
   return snapshot.exists() ? parseArtistPrivate(snapshot.data()) : null;
+}
+
+/**
+ * A central tem post ou show (rascunho inclusive)? O `deleteArtist` recusa
+ * com `has-content`; a lixeira avisa antes, como no `has-fans`. Duas leituras.
+ */
+export async function artistHasContent(artistId: string): Promise<boolean> {
+  const [posts, events] = await Promise.all([
+    getDocs(query(collection(db(), "posts"), where("artistId", "==", artistId), limit(1))),
+    getDocs(query(collection(db(), "events"), where("artistIds", "array-contains", artistId), limit(1))),
+  ]);
+  return !posts.empty || !events.empty;
 }

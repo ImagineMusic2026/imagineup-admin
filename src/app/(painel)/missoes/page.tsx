@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { SectionPage } from "@/components/painel/section-page";
+import { MissionsPage } from "@/components/missoes/missions-page";
 
 export const metadata: Metadata = { title: "Missões" };
 
 export default function Page() {
-  return <SectionPage section="missions" />;
+  return <MissionsPage />;
 }

@@ -107,6 +107,10 @@ export function Dialog({ open, onClose, title, description, children, busy = fal
       }}
       onClose={() => {
         if (!open) return;
+        // O evento chega depois de o diálogo já ter aberto de novo (o efeito
+        // que abre rodou, foi desfeito e rodou outra vez, como no modo estrito
+        // do React ao montar): não é um fechamento de verdade.
+        if (ref.current?.open) return;
         if (busy) {
           // Fechou por fora durante o pedido: volta a abrir, com o foco onde estava.
           const dialog = ref.current;

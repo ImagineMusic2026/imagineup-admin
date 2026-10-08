@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
-import { callableErrorMessage } from "@/lib/errors";
+import { actionErrorMessage, callableErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
 
 export interface ConfirmRequest {
   title: string;
@@ -16,6 +16,11 @@ export interface ConfirmRequest {
   tone: "default" | "danger";
   action: () => Promise<unknown>;
   successMessage: string;
+  /**
+   * Falha sem motivo do servidor (pode ter gravado): o diálogo diz isso em
+   * vez da frase do código, e a tela lê de novo. Sem ele, a mensagem de antes.
+   */
+  onUncertain?: () => void;
 }
 
 /**
@@ -53,7 +58,12 @@ export function ConfirmDialog({
       await request.action();
     } catch (failure) {
       if (round.current !== mine) return;
-      setError(callableErrorMessage(failure));
+      if (request.onUncertain && mayHaveRunOnServer(failure)) {
+        setError(actionErrorMessage(failure));
+        request.onUncertain();
+      } else {
+        setError(callableErrorMessage(failure));
+      }
       setBusy(false);
       return;
     }
