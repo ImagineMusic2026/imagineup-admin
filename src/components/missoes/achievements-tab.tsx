@@ -4,7 +4,8 @@ import { Archive, Eye, Pencil, Plus, Send } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { AchievementDialog, type AchievementDialogRequest } from "@/components/missoes/achievement-dialog";
-import { AchievementBadgeIcon, OrderButtons, useOrderFocus, type MoveDirection } from "@/components/missoes/game-bits";
+import { AchievementBadgeIcon } from "@/components/missoes/game-bits";
+import { OrderButtons, useOrderFocus, type MoveDirection } from "@/components/ui/order-buttons";
 import { DataFreshness } from "@/components/painel/data-freshness";
 import { SectionCard } from "@/components/painel/section-card";
 import { ActionsMenu, type MenuAction } from "@/components/ui/actions-menu";

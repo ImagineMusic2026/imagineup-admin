@@ -4,7 +4,7 @@ import { Ban, Boxes, Eye, ImageOff, Pencil, Plus, RotateCcw, Send, Square, Trash
 import Image from "next/image";
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { OrderButtons, useOrderFocus, type MoveDirection } from "@/components/missoes/game-bits";
+import { OrderButtons, useOrderFocus, type MoveDirection } from "@/components/ui/order-buttons";
 import { Points, REWARD_STYLES } from "@/components/recompensas/reward-bits";
 import { RewardDialog, type RewardDialogRequest } from "@/components/recompensas/reward-dialog";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";

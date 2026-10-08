@@ -3,7 +3,7 @@
 import { Archive, ArchiveRestore, Eye, Pencil, Plus, Send, Square, Star } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { OrderButtons, useOrderFocus, type MoveDirection } from "@/components/missoes/game-bits";
+import { OrderButtons, useOrderFocus, type MoveDirection } from "@/components/ui/order-buttons";
 import { GoalDialog, type GoalDialogRequest } from "@/components/missoes/goal-dialog";
 import { MissionDialog, eventLabel, postLabel, type MissionDialogRequest } from "@/components/missoes/mission-dialog";
 import { DataFreshness } from "@/components/painel/data-freshness";
