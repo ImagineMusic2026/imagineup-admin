@@ -91,7 +91,7 @@ function RankingContent({ member }: { member: StaffMember }) {
     setConfirm({
       title: `Encerrar ${season.name} agora?`,
       body: "A temporada termina agora para todos os fãs, e o ranking fecha na virada, em até 11 minutos. Isso não se desfaz.",
-      confirmLabel: "Encerrar agora",
+      confirmLabel: "Encerrar temporada",
       busyLabel: "Encerrando...",
       cancelLabel: "Voltar",
       tone: "danger",
@@ -174,7 +174,7 @@ function RankingContent({ member }: { member: StaffMember }) {
                     ) : null}
                   </DetailList>
                   {canRunClose(phase, config.season, now) ? (
-                    <p className="m-0 text-[13px] text-fg/70">A virada automática não rodou. Isto faz o mesmo agora.</p>
+                    <p className="m-0 text-[13px] text-fg/70">A virada roda sozinha a cada 10 minutos. Se ainda não rodou, isto faz o mesmo agora.</p>
                   ) : null}
                   {canEdit ? (
                     <div className="flex flex-wrap gap-2">
@@ -183,7 +183,7 @@ function RankingContent({ member }: { member: StaffMember }) {
                       </Button>
                       {phase === "active" ? (
                         <Button size="sm" variant="danger" onClick={askEnd}>
-                          Encerrar agora
+                          Encerrar temporada
                         </Button>
                       ) : null}
                       {canRunClose(phase, config.season, now) ? (
