@@ -90,10 +90,15 @@ export async function runSequential<T>(
 
 /**
  * O resumo por extenso: "12 recusados, 2 já estavam assim e 1 falhou."
- * `doneLabel` é o particípio no plural ("recusados", "arquivadas").
+ * `doneLabel` é o particípio no plural ("recusados", "arquivadas"); com
+ * `doneOne` ("arquivada"), o singular quando só um foi feito.
  */
-export function batchSummaryText(summary: Pick<BatchSummary<unknown>, "done" | "unchanged" | "failed" | "stopped" | "attempted" | "total">, doneLabel: string): string {
-  const parts = [`${summary.done} ${doneLabel}`];
+export function batchSummaryText(
+  summary: Pick<BatchSummary<unknown>, "done" | "unchanged" | "failed" | "stopped" | "attempted" | "total">,
+  doneLabel: string,
+  doneOne: string = doneLabel,
+): string {
+  const parts = [`${summary.done} ${summary.done === 1 ? doneOne : doneLabel}`];
   if (summary.unchanged > 0) parts.push(`${summary.unchanged} já ${summary.unchanged === 1 ? "estava" : "estavam"} assim`);
   if (summary.failed > 0) parts.push(`${summary.failed} ${summary.failed === 1 ? "falhou" : "falharam"}`);
   const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} e ${parts[parts.length - 1]}`;

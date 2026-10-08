@@ -13,6 +13,7 @@ export function BatchProgress({
   progress,
   summary,
   doneLabel,
+  doneOne,
   running,
   stopping,
   onStop,
@@ -21,6 +22,8 @@ export function BatchProgress({
   summary: BatchSummary<unknown> | null;
   /** O particípio no plural: "recusados", "arquivadas", "ocultos". */
   doneLabel: string;
+  /** O particípio no singular, para o resumo de um só: "arquivada". */
+  doneOne?: string;
   running: boolean;
   stopping: boolean;
   onStop: () => void;
@@ -57,7 +60,7 @@ export function BatchProgress({
         </div>
       ) : null}
       {summary && !running ? (
-        <Notice tone={summary.failed > 0 ? "error" : "success"}>{batchSummaryText(summary, doneLabel)}</Notice>
+        <Notice tone={summary.failed > 0 ? "error" : "success"}>{batchSummaryText(summary, doneLabel, doneOne)}</Notice>
       ) : null}
     </div>
   );

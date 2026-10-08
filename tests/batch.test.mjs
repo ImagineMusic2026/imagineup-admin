@@ -46,7 +46,7 @@ test("para no erro que não adianta repetir e quando a pessoa pede", async () =>
   assert.equal(stoppedByError.attempted, 2);
   assert.equal(stoppedByError.stopped, true);
   assert.equal(stoppedByError.stopError, configChanged);
-  assert.equal(batchSummaryText(stoppedByError, "arquivadas"), "1 arquivadas e 1 falhou. Parou antes do fim: 1 ficou sem tentar.");
+  assert.equal(batchSummaryText(stoppedByError, "arquivadas", "arquivada"), "1 arquivada e 1 falhou. Parou antes do fim: 1 ficou sem tentar.");
 
   let stop = false;
   const stoppedByPerson = await runSequential(
