@@ -16,6 +16,8 @@ export const TOP_TARGET_DEFAULT = 10;
 export const TOP_TARGET_MAX = 50;
 /** A virada roda a cada 10 min; passou disto do fim sem arquivo, ela está atrasada. */
 export const CLOSE_LATE_MS = 30 * 60_000;
+/** A folga do `closeDue` do servidor: antes dela, o `closeSeasonNow` recusa com `season-not-due`. */
+export const CLOSE_GRACE_MS = 60_000;
 
 export interface SeasonDef {
   id: string;
@@ -83,9 +85,10 @@ export function seasonPhase(season: Pick<SeasonDef, "startsAt" | "endsAt">, arch
   return "awaiting-close";
 }
 
-/** O "Rodar a virada agora" aparece só esperando a virada ou com ela atrasada. */
-export function canRunClose(phase: SeasonPhase): boolean {
-  return phase === "awaiting-close" || phase === "late";
+/** O "Rodar a virada agora" aparece só esperando a virada ou com ela atrasada, e passada a folga do servidor. */
+export function canRunClose(phase: SeasonPhase | null, season: Pick<SeasonDef, "endsAt"> | null, now: number): boolean {
+  if (!season || (phase !== "awaiting-close" && phase !== "late")) return false;
+  return now >= season.endsAt.getTime() + CLOSE_GRACE_MS;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

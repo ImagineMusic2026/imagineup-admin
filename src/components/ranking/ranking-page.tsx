@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { SeasonDialog, type SeasonDialogRequest } from "@/components/ranking/season-dialog";
 import { FanAvatar } from "@/components/painel/fan-avatar";
@@ -60,23 +60,29 @@ function RankingContent({ member }: { member: StaffMember }) {
   const [now, setNow] = useState(() => Date.now());
   const state = useLoad(getSeasonState);
   const [dialog, setDialog] = useState<SeasonDialogRequest | null>(null);
-  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [confirm, setConfirm] = useState<(ConfirmRequest & { focusId: string }) | null>(null);
   const [notice, setNotice] = useState<{ key: number; tone: "success" | "error" | "info"; text: string } | null>(null);
   const [closing, setClosing] = useState<{ seasonId: string; name: string } | null>(null);
-  const [rankingKey, setRankingKey] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [focusTarget, setFocusTarget] = useState<{ id: string; key: number } | null>(null);
+  // Num efeito: roda depois de o diálogo que fechou devolver o foco ao botão, que pode ter sumido com a ação.
+  useEffect(() => {
+    if (focusTarget) document.getElementById(focusTarget.id)?.focus();
+  }, [focusTarget]);
 
   const data = state.state.status === "ready" ? state.state.data : null;
   const config = data?.config ?? null;
   const phase = config?.season ? seasonPhase(config.season, data?.archiveStatus ?? null, now) : null;
 
-  function show(tone: "success" | "error" | "info", text: string) {
+  function show(tone: "success" | "error" | "info", text: string, focusId?: string) {
     setNotice((current) => ({ key: (current?.key ?? 0) + 1, tone, text }));
+    if (focusId) setFocusTarget((current) => ({ id: focusId, key: (current?.key ?? 0) + 1 }));
   }
 
   function refresh() {
     setNow(Date.now());
     state.reload();
-    setRankingKey((value) => value + 1);
+    setReloadKey((value) => value + 1);
   }
 
   function askEnd() {
@@ -92,6 +98,7 @@ function RankingContent({ member }: { member: StaffMember }) {
       action: () => endSeason({ expectedVersion: config.version, seasonId: season.id }),
       successMessage: `${season.name} encerrada. A virada fecha o ranking em alguns minutos.`,
       onUncertain: refresh,
+      focusId: "titulo-temporada",
     });
   }
 
@@ -108,6 +115,7 @@ function RankingContent({ member }: { member: StaffMember }) {
       action: () => scheduleNextSeason({ expectedVersion: config.version, next: null }),
       successMessage: `${next.name} saiu da agenda.`,
       onUncertain: refresh,
+      focusId: "titulo-proxima",
     });
   }
 
@@ -165,7 +173,7 @@ function RankingContent({ member }: { member: StaffMember }) {
                       </Detail>
                     ) : null}
                   </DetailList>
-                  {canRunClose(phase) ? (
+                  {canRunClose(phase, config.season, now) ? (
                     <p className="m-0 text-[13px] text-fg/70">A virada automática não rodou. Isto faz o mesmo agora.</p>
                   ) : null}
                   {canEdit ? (
@@ -178,7 +186,7 @@ function RankingContent({ member }: { member: StaffMember }) {
                           Encerrar agora
                         </Button>
                       ) : null}
-                      {canRunClose(phase) ? (
+                      {canRunClose(phase, config.season, now) ? (
                         <Button size="sm" variant="primary" onClick={() => setClosing({ seasonId: config.season!.id, name: config.season!.name })}>
                           Rodar a virada agora
                         </Button>
@@ -233,15 +241,15 @@ function RankingContent({ member }: { member: StaffMember }) {
         </div>
       )}
 
-      <LiveRanking key={rankingKey} member={member} />
-      <PastSeasons member={member} now={now} />
+      <LiveRanking key={reloadKey} member={member} />
+      <PastSeasons key={reloadKey} member={member} now={now} />
 
       <SeasonDialog
         request={canEdit ? dialog : null}
         onClose={() => setDialog(null)}
         onSaved={(message) => {
+          show("success", message, dialog?.target === "next" ? "titulo-proxima" : "titulo-temporada");
           setDialog(null);
-          show("success", message);
           refresh();
         }}
       />
@@ -249,8 +257,8 @@ function RankingContent({ member }: { member: StaffMember }) {
         request={canEdit ? confirm : null}
         onClose={() => setConfirm(null)}
         onDone={(message) => {
+          show("success", message, confirm?.focusId);
           setConfirm(null);
-          show("success", message);
           refresh();
         }}
       />
@@ -259,7 +267,7 @@ function RankingContent({ member }: { member: StaffMember }) {
         onClose={() => setClosing(null)}
         onDone={(message) => {
           setClosing(null);
-          show("success", message);
+          show("success", message, "titulo-temporada");
           refresh();
         }}
       />

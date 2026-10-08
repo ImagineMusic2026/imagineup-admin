@@ -35,8 +35,11 @@ test("a situação pelo relógio e pelo arquivo da virada", () => {
   assert.equal(season.seasonPhase(def, null, sp("2026-10-19T23:30:00")), "late");
   assert.equal(season.seasonPhase(def, "closing", sp("2026-10-20T08:00:00")), "late");
   assert.equal(season.seasonPhase(def, "closed", sp("2026-10-20T08:00:00")), "awaiting-close");
-  assert.equal(season.canRunClose("late"), true);
-  assert.equal(season.canRunClose("active"), false);
+  assert.equal(season.canRunClose("late", def, sp("2026-10-19T23:30:00")), true);
+  assert.equal(season.canRunClose("awaiting-close", def, sp("2026-10-19T22:46:00")), true);
+  assert.equal(season.canRunClose("awaiting-close", def, sp("2026-10-19T22:45:30")), false);
+  assert.equal(season.canRunClose("active", def, sp("2026-10-08T03:00:00")), false);
+  assert.equal(season.canRunClose(null, null, sp("2026-10-20T08:00:00")), false);
 });
 
 test("o resumo do cabeçalho", () => {
