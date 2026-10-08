@@ -1,23 +1,11 @@
-import { httpsCallable } from "firebase/functions";
-
-import { functions } from "@/lib/firebase";
+import { call } from "@/lib/callable";
 import type { EmailStatus, Role, SectionId } from "@/lib/staff";
 
 /**
- * Chamadas às Cloud Functions da equipe (callables de 2ª geração em
- * southamerica-east1), com os formatos do contrato. O token de login vai junto
- * automaticamente; quem valida papel, seções e convite é o servidor.
- *
- * Erros chegam como `FunctionsError` com `code` ("functions/permission-denied"),
- * a frase do servidor em `message` e `details.reason`. A tela traduz com
- * `callableErrorMessage` (errors.ts).
+ * Chamadas às Cloud Functions da equipe, com os formatos do contrato. Quem
+ * valida papel, seções e convite é o servidor; o `call` (callable.ts) cuida
+ * do resto.
  */
-
-async function call<Request, Response>(name: string, data: Request): Promise<Response> {
-  const callable = httpsCallable<Request, Response>(functions(), name);
-  const result = await callable(data);
-  return result.data;
-}
 
 export interface InviteLinkResult {
   inviteId: string;

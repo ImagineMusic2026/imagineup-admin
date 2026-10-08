@@ -93,7 +93,10 @@ test("erro do Auth dentro de um fluxo de convite continua com a mensagem de Auth
 });
 
 test("Firestore e o mapa geral", () => {
-  assert.equal(firestoreErrorMessage({ code: "permission-denied" }), "Você não tem permissão para ver isto.");
+  assert.equal(
+    firestoreErrorMessage({ code: "permission-denied" }),
+    "O servidor ainda não libera estes dados. Se continuar, fale com quem cuida do servidor.",
+  );
   assert.equal(errorMessage({ code: "auth/invalid-email" }), "E-mail inválido.");
   assert.equal(errorMessage({ code: "unavailable" }), "Sem conexão. Verifique a internet e tente de novo.");
   assert.equal(errorMessage(new Error("boom")), "Não foi possível concluir. Tente de novo.");
@@ -108,4 +111,78 @@ test("motivo de volta ao login vai no endereço", async () => {
   assert.equal(parseExitReason(null), null);
   assert.equal(EXIT_REASON_MESSAGES["sem-acesso"], "Esta conta não tem acesso ao painel.");
   assert.equal(EXIT_REASON_MESSAGES.desativado, "Seu acesso ao painel foi desativado. Fale com um admin.");
+});
+
+test("motivos do bloco 11: frase própria quando o servidor não manda a dele", async () => {
+  const { REASON_MESSAGES } = await import("@/lib/errors");
+  for (const reason of [
+    "not-staff",
+    "no-section",
+    "self",
+    "config-changed",
+    "has-content",
+    "was-published",
+    "event-has-posts",
+    "event-has-rewards",
+    "missing-media",
+    "published-needs-media",
+    "event-not-published",
+    "event-artist-mismatch",
+    "not-reported",
+    "comment-hidden",
+    "invalid-transition",
+    "stock-below-redeemed",
+    "event-not-open",
+    "mission-locked",
+    "achievement-locked",
+    "level-in-use",
+    "too-many-active",
+    "too-many-missions",
+    "season-started",
+    "season-overlap",
+    "season-closing",
+    "season-not-due",
+    "negative-counter",
+    "adjust-above-limit",
+    "adjust-daily-limit",
+    "adjustment-id-reused",
+    "lookup-daily-limit",
+    "username-changed",
+    "username-of-central",
+    "fan-not-found",
+  ]) {
+    assert.ok(REASON_MESSAGES[reason], reason);
+    assert.equal(
+      callableErrorMessage({ code: "functions/failed-precondition", message: "failed-precondition", details: { reason } }),
+      REASON_MESSAGES[reason],
+    );
+  }
+  // A frase do servidor continua ganhando.
+  assert.equal(
+    callableErrorMessage({
+      code: "functions/failed-precondition",
+      message: "Essa central tem posts ou shows. Tire do ar em vez de apagar. [400]",
+      details: { reason: "has-content" },
+    }),
+    "Essa central tem posts ou shows. Tire do ar em vez de apagar.",
+  );
+});
+
+test("detalhes, configuração mudada e falha incerta", async () => {
+  const { actionErrorMessage, errorDetails, isConfigChanged, reasonOf, UNCERTAIN_CHANGE_TEXT } = await import("@/lib/errors");
+  const changed = { code: "functions/failed-precondition", message: "x", details: { reason: "config-changed", version: 5 } };
+  assert.equal(reasonOf(changed), "config-changed");
+  assert.equal(isConfigChanged(changed), true);
+  assert.deepEqual(errorDetails(changed), { reason: "config-changed", version: 5 });
+  assert.deepEqual(errorDetails(new Error("x")), {});
+  assert.equal(actionErrorMessage({ code: "functions/deadline-exceeded", message: "deadline-exceeded" }), UNCERTAIN_CHANGE_TEXT);
+  assert.equal(actionErrorMessage({ code: "functions/internal", message: "internal [0]" }), UNCERTAIN_CHANGE_TEXT);
+  assert.equal(
+    actionErrorMessage({ code: "functions/permission-denied", message: "Você não pode mudar a sua própria conta de fã pelo painel.", details: { reason: "self" } }),
+    "Você não pode mudar a sua própria conta de fã pelo painel.",
+  );
+  assert.equal(
+    firestoreErrorMessage({ code: "failed-precondition" }),
+    "Esta lista ainda não tem índice publicado no servidor. Tente de novo em alguns minutos.",
+  );
 });

@@ -721,8 +721,9 @@ test("motivos novos das funções dos artistas", () => {
     "Esse @ já é de um fã.",
   );
   for (const message of Object.values(REASON_MESSAGES)) assert.doesNotMatch(message, DASHES, message);
-  // Apagar vale em qualquer status: o motivo antigo saiu.
-  assert.equal(REASON_MESSAGES["was-published"], undefined);
+  // Apagar central vale em qualquer status: o `was-published` de hoje é o de
+  // posts, shows e recompensas (bloco 11), e nunca chega da lixeira das centrais.
+  assert.doesNotMatch(REASON_MESSAGES["was-published"], /central/);
   assert.equal(
     callableErrorMessage({ code: "functions/failed-precondition", message: "failed-precondition", details: { reason: "has-fans" } }),
     "Essa central tem fãs. Tire do ar em vez de apagar.",
