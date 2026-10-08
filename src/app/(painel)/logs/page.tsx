@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { SectionPage } from "@/components/painel/section-page";
+import { LogsPage } from "@/components/logs/logs-page";
 
 export const metadata: Metadata = { title: "Logs e auditoria" };
 
 export default function Page() {
-  return <SectionPage section="audit" />;
+  return <LogsPage />;
 }
