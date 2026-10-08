@@ -108,7 +108,7 @@ export function AchievementsTab({
       cancelLabel: "Voltar",
       tone: publishing ? "default" : "danger",
       action: () => track(setAchievementStatus({ expectedVersion: version, achievementId: achievement.id, status })),
-      successMessage: publishing ? `${achievement.title} está no ar.` : `${achievement.title} arquivada.`,
+      successMessage: publishing ? `Conquista ${achievement.title} no ar.` : `Conquista ${achievement.title} arquivada.`,
       onUncertain: onReload,
     });
   }

@@ -234,7 +234,7 @@ export function MissionsTab({ member, canEdit, configs, now, onChanged, onNotice
       cancelLabel: "Voltar",
       tone: "default",
       action: () => track(setMissionStatus({ expectedVersion: version, missionId: mission.id, status: "active" })),
-      successMessage: later ? `${mission.title} agendada.` : `${mission.title} está no ar.`,
+      successMessage: later ? `Missão ${mission.title} agendada.` : `Missão ${mission.title} no ar.`,
     });
   }
 
@@ -247,7 +247,7 @@ export function MissionsTab({ member, canEdit, configs, now, onChanged, onNotice
       cancelLabel: "Voltar",
       tone: "danger",
       action: () => track(setMissionStatus({ expectedVersion: version, missionId: mission.id, status: "archived" })),
-      successMessage: `${mission.title} arquivada.`,
+      successMessage: `Missão ${mission.title} arquivada.`,
     });
   }
 
@@ -260,7 +260,7 @@ export function MissionsTab({ member, canEdit, configs, now, onChanged, onNotice
       cancelLabel: "Voltar",
       tone: "default",
       action: () => track(setMissionStatus({ expectedVersion: version, missionId: mission.id, status: "active" })),
-      successMessage: `${mission.title} voltou ao catálogo, no ar.`,
+      successMessage: `Missão ${mission.title} de volta ao catálogo, no ar.`,
     });
   }
 
@@ -273,7 +273,7 @@ export function MissionsTab({ member, canEdit, configs, now, onChanged, onNotice
       cancelLabel: "Voltar",
       tone: "danger",
       action: () => track(updateMission({ expectedVersion: version, missionId: mission.id, changes: { endsAt: Date.now() } })),
-      successMessage: `${mission.title} encerrada.`,
+      successMessage: `Missão ${mission.title} encerrada.`,
     });
   }
 

@@ -197,7 +197,11 @@ function MissionDialogBody({
     if (blocked) return;
     const checked = validateMission(form);
     setErrors(checked.errors);
-    if (!checked.input) return;
+    if (!checked.input) {
+      const target = event.currentTarget as HTMLFormElement;
+      requestAnimationFrame(() => target.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
+      return;
+    }
     const input = checked.input;
     setMessage(null);
     setChanged(false);

@@ -46,3 +46,27 @@ const BIDI_ISOLATES = /[⁦-⁩]/g;
 export function cleanLine(text: string): string {
   return text.replace(BIDI_ISOLATES, '').normalize('NFC').trim();
 }
+
+/**
+ * Prepara um texto de várias linhas (a descrição e as instruções de uma
+ * recompensa, a legenda de um post), espelho do `cleanMultiline` do servidor:
+ * tira os isolantes bidi colados, junta os acentos (NFC), troca `\r\n` e `\r`
+ * por `\n`, corta os espaços das pontas de cada linha, junta as linhas vazias
+ * seguidas numa e tira as das pontas.
+ */
+export function cleanMultiline(text: string): string {
+  const lines: string[] = [];
+  const normalized = text.replace(BIDI_ISOLATES, "").normalize("NFC").replace(/\r\n?/g, "\n");
+  for (const raw of normalized.split("\n")) {
+    const line = raw.trim();
+    if (line === "" && (lines.length === 0 || lines.at(-1) === "")) continue;
+    lines.push(line);
+  }
+  while (lines.at(-1) === "") lines.pop();
+  return lines.join("\n");
+}
+
+/** Toda linha não vazia de um texto já limpo (`cleanMultiline`) é visível. */
+export function isVisibleMultiline(text: string): boolean {
+  return text.split("\n").every((line) => line === "" || isVisibleLine(line));
+}
