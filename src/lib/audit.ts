@@ -53,6 +53,7 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "comment.restored": { label: "Comentário reexibido", section: "moderation" },
   "fan.username.reset": { label: "@ do fã trocado", section: "moderation" },
   "fan.photo.removed": { label: "Foto do fã removida", section: "moderation" },
+  "fan.profile.cleared": { label: "Bio e redes do fã apagadas", section: "moderation" },
   "fan.suspended": { label: "Conta suspensa", section: "moderation" },
   "fan.unsuspended": { label: "Suspensão retirada", section: "moderation" },
   "fan.comments.hidden": { label: "Comentários do fã ocultados", section: "moderation" },
@@ -330,6 +331,7 @@ const FIELD_LABELS: Record<string, string> = {
   title: "título",
   subtitle: "subtítulo",
   bio: "bio",
+  socials: "redes sociais",
   genre: "gênero",
   city: "cidade",
   state: "UF",
@@ -463,7 +465,7 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
   if (typeof title === "string" && title) lines.push(`Nome: ${title}`);
 
   const changed = fieldList(take("changed")) ?? fieldList(take("fields"));
-  if (changed) lines.push(`Campos mudados: ${changed}`);
+  if (changed) lines.push(`${entry.action === "fan.profile.cleared" ? "Campos apagados" : "Campos mudados"}: ${changed}`);
 
   const from = take("from");
   const to = take("to");

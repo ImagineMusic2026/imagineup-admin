@@ -75,3 +75,15 @@ test("a suspensão: a nota opcional e as frases", () => {
   assert.equal(moderation.hiddenSummary(25), "25 comentários ocultados.");
   assert.match(moderation.resetUsernameText("promoseg"), /O @promoseg fica livre para qualquer pessoa\.$/);
 });
+
+test("apagar bio e redes: os campos com o que apagar e o aviso pelo que saiu", () => {
+  assert.deepEqual(moderation.clearableProfileFields({ bio: "Seguidores reais!", socialsStored: true }), ["bio", "socials"]);
+  assert.deepEqual(moderation.clearableProfileFields({ bio: null, socialsStored: true }), ["socials"]);
+  assert.deepEqual(moderation.clearableProfileFields({ bio: "Oi", socialsStored: false }), ["bio"]);
+  assert.deepEqual(moderation.clearableProfileFields({ bio: null, socialsStored: false }), []);
+  assert.equal(moderation.clearedProfileText("Promo", ["bio", "socials"]), "A bio e as redes de Promo foram apagadas.");
+  assert.equal(moderation.clearedProfileText("Promo", ["bio"]), "A bio de Promo foi apagada.");
+  assert.equal(moderation.clearedProfileText("Promo", ["socials"]), "As redes de Promo foram apagadas.");
+  assert.equal(moderation.clearedProfileText("Promo", []), "Nada a apagar: a bio e as redes já estavam vazias.");
+  assert.equal(moderation.PROFILE_TEXT_FIELD_LABELS.socials, "Redes sociais");
+});

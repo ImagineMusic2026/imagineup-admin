@@ -33,6 +33,9 @@ export const ACTION_CAP_KEYS = [
   "fan_block",
   "photo_set",
   "reward_redeem",
+  "photo_upload",
+  "profile_save",
+  "name_change",
 ] as const;
 export type ActionCapKey = (typeof ACTION_CAP_KEYS)[number];
 
@@ -47,6 +50,31 @@ export const ACTION_CAP_LABELS: Record<ActionCapKey, string> = {
   fan_block: "Bloqueios",
   photo_set: "Trocas de foto",
   reward_redeem: "Resgates",
+  photo_upload: "Envios de foto",
+  profile_save: "Salvamentos do perfil",
+  name_change: "Trocas de nome",
+};
+
+/**
+ * O padrão de cada teto no servidor (`DEFAULT_ACTION_CAPS`, 22.3, 27.4 e
+ * 28.3): vale quando o documento gravado não tem a chave, ou tem um valor
+ * fora da regra, como o servidor faz ao ler. Sem isso a chave ausente viraria
+ * 0, e o bloco inteiro dos tetos deixaria de salvar.
+ */
+export const DEFAULT_ACTION_CAPS: Record<ActionCapKey, number> = {
+  central_entry: 30,
+  invite_visit_sent: 20,
+  invite_link: 30,
+  like_set: 300,
+  comment_sent: 100,
+  rsvp_set: 50,
+  comment_report: 30,
+  fan_block: 30,
+  photo_set: 10,
+  reward_redeem: 10,
+  photo_upload: 20,
+  profile_save: 20,
+  name_change: 5,
 };
 
 export const VALUE_MAX = 10_000;
@@ -72,6 +100,11 @@ function intOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) ? value : fallback;
 }
 
+/** O teto gravado, se estiver na regra (inteiro de 1 a 10.000); senão, o padrão do servidor. */
+function capOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= CAP_MAX ? value : fallback;
+}
+
 /** O documento gravado, ou `null` sem documento ou na versão 0 (as ações ficam desligadas). */
 export function parsePointsConfig(data: Record<string, unknown> | undefined): PointsConfig | null {
   if (!data || intOr(data.version, 0) < 1) return null;
@@ -88,7 +121,7 @@ export function parsePointsConfig(data: Record<string, unknown> | undefined): Po
     dailyLimits: Object.fromEntries(
       VALUE_SOURCES.map((source) => [source, typeof limits[source] === "number" ? (limits[source] as number) : null]),
     ) as Record<ValueSource, number | null>,
-    actionCaps: Object.fromEntries(ACTION_CAP_KEYS.map((key) => [key, intOr(caps[key], 0)])) as Record<ActionCapKey, number>,
+    actionCaps: Object.fromEntries(ACTION_CAP_KEYS.map((key) => [key, capOr(caps[key], DEFAULT_ACTION_CAPS[key])])) as Record<ActionCapKey, number>,
     levels,
     updatedAt: toDate(data.updatedAt),
     updatedBy: typeof by.name === "string" ? by.name : null,

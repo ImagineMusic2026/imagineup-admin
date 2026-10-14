@@ -1,5 +1,6 @@
 import { LONG_CALL_TIMEOUT_MS, call } from "@/lib/callable";
 import type { SuspensionReason } from "@/lib/fan-profile";
+import type { ProfileTextField } from "@/lib/moderation";
 
 /**
  * Callables da seção `moderation` (21.9 e 26.4), todas com edição da seção.
@@ -44,4 +45,13 @@ export function resetFanUsername(input: { uid: string; username: string }): Prom
 
 export function clearFanPhoto(uid: string): Promise<{ ok: true }> {
   return call("clearFanPhoto", { uid });
+}
+
+/**
+ * Apaga a bio, as redes ou as duas (28.6). `cleared` traz os campos que
+ * saíram, na ordem `bio`, `socials`; vazio quando não havia o que apagar
+ * (sem gravar nem auditar). A auditoria guarda os campos, nunca o texto.
+ */
+export function clearFanProfileText(input: { uid: string; fields: ProfileTextField[] }): Promise<{ ok: true; cleared: ProfileTextField[] }> {
+  return call("clearFanProfileText", input);
 }

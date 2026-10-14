@@ -39,6 +39,29 @@ export const KEEP_CONFIRM_TEXT = "O comentário continua no app e sai da fila. U
 export const SUSPEND_TEXT =
   "O fã continua lendo o app, mas não comenta, não curte, não ganha pontos (nem pelo convite) e não muda o perfil até você tirar a suspensão. Ele ainda consegue desfazer curtidas e presenças, sair de centrais e bloquear quem o incomoda.";
 export const CLEAR_PHOTO_TEXT = "A foto some do perfil e dos comentários em alguns minutos.";
+export const CLEAR_BIO_SOCIALS_TEXT = "A bio e as redes somem do perfil do fã. O texto apagado não fica guardado.";
+export const NOTHING_TO_CLEAR_TEXT = "Nada a apagar: a bio e as redes já estavam vazias.";
+
+/** O que a `clearFanProfileText` apaga (28.6), na ordem do servidor. */
+export const PROFILE_TEXT_FIELDS = ["bio", "socials"] as const;
+export type ProfileTextField = (typeof PROFILE_TEXT_FIELDS)[number];
+
+export const PROFILE_TEXT_FIELD_LABELS: Record<ProfileTextField, string> = { bio: "Bio", socials: "Redes sociais" };
+
+/** Os campos que têm o que apagar: a bio com texto e as redes com algum texto, mesmo fora do padrão. */
+export function clearableProfileFields(profile: { bio: string | null; socialsStored: boolean }): ProfileTextField[] {
+  return PROFILE_TEXT_FIELDS.filter((field) => (field === "bio" ? profile.bio !== null : profile.socialsStored));
+}
+
+/** O aviso depois da `clearFanProfileText`, pelos campos que saíram de fato. */
+export function clearedProfileText(name: string, cleared: readonly ProfileTextField[]): string {
+  const bio = cleared.includes("bio");
+  const socials = cleared.includes("socials");
+  if (bio && socials) return `A bio e as redes de ${name} foram apagadas.`;
+  if (bio) return `A bio de ${name} foi apagada.`;
+  if (socials) return `As redes de ${name} foram apagadas.`;
+  return NOTHING_TO_CLEAR_TEXT;
+}
 
 export function resetUsernameText(username: string): string {
   return `O fã fica com um @ automático novo e pode escolher outro na hora. O @${username} fica livre para qualquer pessoa.`;
