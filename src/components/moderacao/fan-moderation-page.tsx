@@ -3,6 +3,7 @@
 import { ArrowLeft, AtSign, Eraser, EyeOff, ImageOff, UserCheck, UserX } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
+import { ProfileReportCard, profileDecisionRequest, type ProfileDecision } from "@/components/moderacao/profile-report-card";
 import { QueueCard, shortWhen } from "@/components/moderacao/queue-card";
 import { FanAvatar } from "@/components/painel/fan-avatar";
 import { FanBio, FanSocialLinks } from "@/components/painel/fan-socials";
@@ -44,10 +45,11 @@ import {
   hideAlsoLabel,
   resetUsernameText,
   validateSuspensionNote,
+  type ProfileQueueItem,
   type ProfileTextField,
   type QueueItem,
 } from "@/lib/moderation";
-import { countVisibleComments, createContentReader, getFanQueuePage, type ContentReader } from "@/lib/moderation-data";
+import { countVisibleComments, createContentReader, getFanQueuePage, getProfileQueueItem, type ContentReader } from "@/lib/moderation-data";
 import { canEditSection, canSeeSection, type StaffMember } from "@/lib/staff";
 
 type Notify = (tone: "success" | "error" | "info", text: string) => void;
@@ -78,6 +80,13 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
     useCallback(() => {
       void round;
       return countVisibleComments(uid);
+    }, [uid, round]),
+  );
+  // A denúncia de perfil do fã, pelo id (29.7); sem item, nada sobre perfil.
+  const profileReport = useLoad(
+    useCallback(() => {
+      void round;
+      return getProfileQueueItem(uid);
     }, [uid, round]),
   );
   const fan = profile.state.status === "ready" ? profile.state.data : null;
@@ -158,6 +167,10 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
       successMessage: `O @${target.username} foi trocado por um automático.`,
       onUncertain: refresh,
     });
+  }
+
+  function decideProfile(item: ProfileQueueItem, decision: ProfileDecision, label: string) {
+    setConfirm({ ...profileDecisionRequest(item, decision, label, refresh), onUncertain: refresh });
   }
 
   function askClearPhoto(target: FanProfile) {
@@ -271,6 +284,16 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
           </div>
         </div>
       </SectionCard>
+
+      {profileReport.state.status === "error" ? (
+        <SectionCard id="titulo-denuncia-perfil" title="Denúncia de perfil">
+          <LoadError message={profileReport.state.message} headingId="titulo-denuncia-perfil" onRetry={profileReport.reload} />
+        </SectionCard>
+      ) : profileReport.state.status === "ready" && profileReport.state.data ? (
+        <SectionCard id="titulo-denuncia-perfil" title="Denúncia de perfil">
+          <ProfileReportCard item={profileReport.state.data} now={date} canEdit={canEdit} linkToFan={false} profile={fan} refreshKey={round} onDecide={decideProfile} />
+        </SectionCard>
+      ) : null}
 
       <FanQueue member={member} uid={uid} reader={reader} now={date} round={round} />
       <FanComments member={member} uid={uid} canEdit={canEdit} now={date} round={round} onNotice={show} onChanged={changed} />
