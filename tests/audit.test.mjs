@@ -14,7 +14,7 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 63);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 64);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
@@ -128,4 +128,8 @@ test("o details por extenso", () => {
   assert.deepEqual(audit.detailLines({ action: "artist.reordered", details: { artistIds: ["a", "b", "c"] } }), ["centrais: 3 itens"]);
   assert.deepEqual(audit.detailLines({ action: "fan.suspended", details: { uid: "x", reason: "spam", note: "Script" } }), ["Motivo: Spam", "Nota: Script"]);
   assert.deepEqual(audit.detailLines({ action: "x", details: {} }), []);
+  assert.equal(audit.AUDIT_ACTIONS["fan.profile.cleared"].label, "Bio e redes do fã apagadas");
+  assert.equal(audit.AUDIT_ACTIONS["fan.profile.cleared"].section, "moderation");
+  assert.deepEqual(audit.detailLines({ action: "fan.profile.cleared", details: { uid: "x", fields: ["bio", "socials"] } }), ["Campos apagados: bio e redes sociais"]);
+  assert.deepEqual(audit.detailLines({ action: "fan.profile.cleared", details: { uid: "x", fields: ["socials"] } }), ["Campos apagados: redes sociais"]);
 });

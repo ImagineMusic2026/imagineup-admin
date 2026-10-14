@@ -92,3 +92,28 @@ test("o level-in-use lista as conquistas que pedem o degrau que sai", () => {
     "Conquistas que pedem um nível que sai: Backstage (nível 8), Lenda (nível 10) e sumiu.",
   );
 });
+
+test("os tetos novos na ordem do servidor, com o padrão dele na chave ausente ou fora da regra", () => {
+  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-3), ["photo_upload", "profile_save", "name_change"]);
+  assert.equal(points.ACTION_CAP_KEYS.length, 13);
+  assert.equal(points.ACTION_CAP_LABELS.photo_upload, "Envios de foto");
+  assert.equal(points.ACTION_CAP_LABELS.profile_save, "Salvamentos do perfil");
+  assert.equal(points.ACTION_CAP_LABELS.name_change, "Trocas de nome");
+
+  // O documento gravado em 08/10/2026 não tem as três chaves: valem 20, 20 e 5.
+  assert.equal(CONFIG.actionCaps.photo_upload, 20);
+  assert.equal(CONFIG.actionCaps.profile_save, 20);
+  assert.equal(CONFIG.actionCaps.name_change, 5);
+  const torto = points.parsePointsConfig({ ...DOC, actionCaps: { ...DOC.actionCaps, like_set: 0, comment_sent: 20000, fan_block: 2.5, profile_save: 15 } });
+  assert.equal(torto.actionCaps.like_set, 300);
+  assert.equal(torto.actionCaps.comment_sent, 100);
+  assert.equal(torto.actionCaps.fan_block, 30);
+  assert.equal(torto.actionCaps.profile_save, 15);
+
+  // Com o padrão no lugar, o bloco inteiro salva, e só o que mudou vai.
+  const form = points.capsFormOf(CONFIG);
+  assert.equal(form.name_change, "5");
+  assert.deepEqual(points.validateCaps({ ...form, like_set: "250" }, CONFIG).changes, { like_set: 250 });
+  assert.deepEqual(points.validateCaps({ ...form, name_change: "3" }, CONFIG).changes, { name_change: 3 });
+  assert.equal(points.validateCaps({ ...form, profile_save: "0" }, CONFIG).errors.profile_save, "De 1 a 10.000.");
+});

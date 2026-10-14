@@ -25,14 +25,48 @@ const at = (iso) => Timestamp.fromMillis(Date.parse(iso));
 
 function seed() {
   firestore.reset();
-  firestore.set("users/camila", { displayName: "Camila Ribeiro", username: "camilarib", createdAt: at("2026-09-29T12:00:00Z"), searchKeys: ["ca", "cam", "cami", "camila", "ri", "rib"] });
-  firestore.set("users/bia", { displayName: "Bia Santos", username: "biasan", createdAt: at("2026-10-07T12:00:00Z"), searchKeys: ["bi", "bia"] });
+  firestore.set("users/camila", {
+    displayName: "Camila Ribeiro",
+    username: "camilarib",
+    createdAt: at("2026-09-29T12:00:00Z"),
+    searchKeys: ["ca", "cam", "cami", "camila", "ri", "rib"],
+    bio: "Feira de Santana.\nFã do Netto desde o primeiro show.",
+    gender: "woman",
+    privateAccount: false,
+    socials: { instagram: "camila.teste.up", tiktok: "camila.teste.up", linkedin: "camila-teste-imagineup", x: "camilatesteup", site: "golpe.example" },
+  });
+  firestore.set("users/bia", {
+    displayName: "Bia Santos",
+    username: "biasan",
+    createdAt: at("2026-10-07T12:00:00Z"),
+    searchKeys: ["bi", "bia"],
+    bio: "Salvador.",
+    gender: "undisclosed",
+    privateAccount: true,
+    socials: { instagram: "bia.teste.up", tiktok: "bia.teste.up", linkedin: null, x: "https://x.com/golpe" },
+  });
   firestore.set("users/r48", { displayName: "Renata", username: "renatatei", createdAt: at("2026-10-01T12:00:00Z"), suspendedAt: at("2026-10-07T12:00:00Z") });
   firestore.set("wallets/camila", { balance: 12480, xp: 12480 });
   firestore.set("wallets/bia", { balance: 0, xp: 50, goalReached: { seasonId: "sj" } });
   firestore.set("users/bia/centrals/nettobrito", { uid: "bia", artistId: "nettobrito", joinedAt: at("2026-10-07T13:00:00Z") });
   firestore.set("fanInvites/camila", { uid: "camila", code: "CAMILA12" });
 }
+
+test("o perfil novo chega às linhas: bio, gênero, conta privada e só as redes no padrão", async () => {
+  seed();
+  const page = await getFanListPage({ kind: "newest" }, null, createFanProfileReader());
+  const byUid = Object.fromEntries(page.items.map((row) => [row.uid, row.profile]));
+  assert.equal(byUid.camila.gender, "woman");
+  assert.equal(byUid.camila.bio, "Feira de Santana.\nFã do Netto desde o primeiro show.");
+  assert.deepEqual(byUid.camila.socials.map((social) => social.network), ["instagram", "tiktok", "linkedin", "x"]);
+  assert.equal(byUid.bia.privateAccount, true);
+  assert.equal(byUid.bia.gender, "undisclosed");
+  assert.deepEqual(byUid.bia.socials.map((social) => social.href), ["https://www.instagram.com/bia.teste.up/", "https://www.tiktok.com/@bia.teste.up"]);
+  assert.equal(byUid.r48.bio, null);
+  assert.equal(byUid.r48.gender, null);
+  assert.deepEqual(byUid.r48.socials, []);
+  assert.equal(byUid.r48.socialsStored, false);
+});
 
 test("a lista de fãs nas formas de consulta de 26.11", async () => {
   seed();
