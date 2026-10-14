@@ -136,6 +136,88 @@ export function queueCountText(total: number): string {
   return total === 1 ? "1 comentário na fila" : `${formatNumber(total)} comentários na fila`;
 }
 
+// ---------------------------------------------------------------------------
+// Denúncia de perfil (29.3): a `profileReportQueue`, um item por fã denunciado
+// ---------------------------------------------------------------------------
+
+export type ProfileResolution = "kept" | "actioned" | "withdrawn" | "author_deleted";
+
+/** Os rótulos das resoluções do item de perfil (29.7), à parte dos do comentário. */
+export const PROFILE_RESOLUTION_LABELS: Record<ProfileResolution, string> = {
+  kept: "Mantido",
+  actioned: "Resolvido com ação",
+  withdrawn: "Denúncias retiradas",
+  author_deleted: "Conta excluída",
+};
+
+const PROFILE_RESOLUTIONS: readonly string[] = ["kept", "actioned", "withdrawn", "author_deleted"];
+
+export const PROFILE_QUEUE_EMPTY_TEXT = "Nenhum perfil denunciado esperando.";
+export const PROFILE_RESOLVED_EMPTY_TEXT = "Nenhuma denúncia de perfil resolvida ainda.";
+export const KEEP_PROFILE_TEXT = "O perfil continua como está e sai da lista. Uma denúncia nova de outra pessoa traz de volta.";
+export const ACTION_PROFILE_TEXT =
+  "Use antes as ferramentas da página do fã: apagar bio e redes, trocar o @, tirar a foto, suspender ou ocultar os comentários. O item fecha com o perfil de agora; se ele mudar depois, quem já denunciou pode abrir de novo.";
+export const ACCOUNT_DELETED_TEXT = "Conta excluída";
+
+export interface ProfileQueueItem {
+  /** O id do item é o uid do fã denunciado. */
+  uid: string;
+  /** Denúncias da rodada. */
+  reportCount: number;
+  reasons: Record<ReportReason, number>;
+  status: "open" | "resolved";
+  resolution: ProfileResolution | null;
+  /** A rodada: 1 ao criar, mais 1 a cada reabertura. A callable confere. */
+  round: number;
+  /** O começo da rodada. */
+  openedAt: Date | null;
+  firstReportedAt: Date | null;
+  lastReportedAt: Date | null;
+  resolvedAt: Date | null;
+  /** `null` quando o sistema fechou (denúncias retiradas ou conta excluída). */
+  resolvedBy: { uid: string; name: string } | null;
+}
+
+export function parseProfileQueueItem(id: string, data: Record<string, unknown>): ProfileQueueItem {
+  const reasons = data.reasons && typeof data.reasons === "object" ? (data.reasons as Record<string, unknown>) : {};
+  const by = data.resolvedBy && typeof data.resolvedBy === "object" ? (data.resolvedBy as { uid?: unknown; name?: unknown }) : null;
+  const round = typeof data.round === "number" && Number.isInteger(data.round) && data.round >= 1 ? data.round : 1;
+  return {
+    uid: id,
+    reportCount: count(data.reportCount),
+    reasons: Object.fromEntries(REPORT_REASONS.map((reason) => [reason, count(reasons[reason])])) as Record<ReportReason, number>,
+    status: data.status === "resolved" ? "resolved" : "open",
+    resolution: typeof data.resolution === "string" && PROFILE_RESOLUTIONS.includes(data.resolution) ? (data.resolution as ProfileResolution) : null,
+    round,
+    openedAt: toDate(data.openedAt),
+    firstReportedAt: toDate(data.firstReportedAt),
+    lastReportedAt: toDate(data.lastReportedAt),
+    resolvedAt: toDate(data.resolvedAt),
+    resolvedBy: by && typeof by.uid === "string" && typeof by.name === "string" && by.name ? { uid: by.uid, name: by.name } : null,
+  };
+}
+
+/** "2 perfis denunciados" (só os abertos). */
+export function profileQueueCountText(total: number): string {
+  if (total === 0) return "Nenhum perfil denunciado";
+  return total === 1 ? "1 perfil denunciado" : `${formatNumber(total)} perfis denunciados`;
+}
+
+/** "o mais antigo há 3 h", pelo começo da rodada (`openedAt`), e não pela primeira denúncia de todas. */
+export function profileOldestText(items: readonly Pick<ProfileQueueItem, "openedAt">[], now: Date): string | null {
+  const times = items.map((item) => item.openedAt?.getTime()).filter((value): value is number => typeof value === "number");
+  if (times.length === 0) return null;
+  return `o mais antigo ${formatRelative(new Date(Math.min(...times)), now)}`;
+}
+
+/** As decisões que a equipe ainda pode tomar no item: no aberto as duas; no resolvido pela equipe, a outra. */
+export function profileDecisions(item: Pick<ProfileQueueItem, "status" | "resolution">): ("kept" | "actioned")[] {
+  if (item.status === "open") return ["kept", "actioned"];
+  if (item.resolution === "kept") return ["actioned"];
+  if (item.resolution === "actioned") return ["kept"];
+  return [];
+}
+
 export interface CommentInfo {
   postId: string;
   commentId: string;

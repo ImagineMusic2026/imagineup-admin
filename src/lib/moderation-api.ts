@@ -48,6 +48,16 @@ export function clearFanPhoto(uid: string): Promise<{ ok: true }> {
 }
 
 /**
+ * Fecha a denúncia de perfil (29.6): "Manter" (`kept`) ou "Resolver"
+ * (`actioned`), com o `round` que o card leu. O item que reabriu depois que o
+ * card abriu recusa com `stale-report`; o que não está mais na fila, com
+ * `profile-not-reported`. A mesma resolução de novo não grava.
+ */
+export function resolveProfileReport(input: { uid: string; resolution: "kept" | "actioned"; round: number }): Promise<{ ok: true; resolution: "kept" | "actioned" }> {
+  return call("resolveProfileReport", input);
+}
+
+/**
  * Apaga a bio, as redes ou as duas (28.6). `cleared` traz os campos que
  * saíram, na ordem `bio`, `socials`; vazio quando não havia o que apagar
  * (sem gravar nem auditar). A auditoria guarda os campos, nunca o texto.

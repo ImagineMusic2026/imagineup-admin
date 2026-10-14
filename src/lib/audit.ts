@@ -1,4 +1,5 @@
 import { joinPt } from "@/lib/format";
+import { PROFILE_RESOLUTION_LABELS, type ProfileResolution } from "@/lib/moderation";
 import { ROLES, SECTION_IDS, isRole, isSectionId, sectionInfo, toDate, type SectionId } from "@/lib/staff";
 
 /**
@@ -54,6 +55,7 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "fan.username.reset": { label: "@ do fã trocado", section: "moderation" },
   "fan.photo.removed": { label: "Foto do fã removida", section: "moderation" },
   "fan.profile.cleared": { label: "Bio e redes do fã apagadas", section: "moderation" },
+  "fan.profile.report.resolved": { label: "Denúncia de perfil resolvida", section: "moderation" },
   "fan.suspended": { label: "Conta suspensa", section: "moderation" },
   "fan.unsuspended": { label: "Suspensão retirada", section: "moderation" },
   "fan.comments.hidden": { label: "Comentários do fã ocultados", section: "moderation" },
@@ -498,6 +500,15 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
       typeof total === "number" && total !== 0 ? `de sempre ${signed(total)}` : null,
     ].filter(Boolean);
     lines.push(`Na central @${String(artistId)}: ${parts.join(", ") || "sem mudança"}`);
+  }
+
+  if (entry.action === "fan.profile.report.resolved") {
+    const resolution = take("resolution");
+    if (typeof resolution === "string") lines.push(`Resolução: ${PROFILE_RESOLUTION_LABELS[resolution as ProfileResolution] ?? resolution}`);
+    const reports = take("reportCount");
+    if (typeof reports === "number") lines.push(`Denúncias na rodada: ${number(reports)}`);
+    const round = take("round");
+    if (typeof round === "number") lines.push(`Rodada: ${number(round)}`);
   }
 
   const reason = take("reason");

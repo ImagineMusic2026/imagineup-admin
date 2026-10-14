@@ -14,7 +14,7 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 64);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 65);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
@@ -132,4 +132,16 @@ test("o details por extenso", () => {
   assert.equal(audit.AUDIT_ACTIONS["fan.profile.cleared"].section, "moderation");
   assert.deepEqual(audit.detailLines({ action: "fan.profile.cleared", details: { uid: "x", fields: ["bio", "socials"] } }), ["Campos apagados: bio e redes sociais"]);
   assert.deepEqual(audit.detailLines({ action: "fan.profile.cleared", details: { uid: "x", fields: ["socials"] } }), ["Campos apagados: redes sociais"]);
+  assert.equal(audit.AUDIT_ACTIONS["fan.profile.report.resolved"].label, "Denúncia de perfil resolvida");
+  assert.equal(audit.AUDIT_ACTIONS["fan.profile.report.resolved"].section, "moderation");
+  assert.deepEqual(audit.detailLines({ action: "fan.profile.report.resolved", details: { uid: "x", resolution: "actioned", reportCount: 3, round: 2 } }), [
+    "Resolução: Resolvido com ação",
+    "Denúncias na rodada: 3",
+    "Rodada: 2",
+  ]);
+  assert.deepEqual(audit.detailLines({ action: "fan.profile.report.resolved", details: { uid: "x", resolution: "kept", reportCount: 1, round: 1 } }), [
+    "Resolução: Mantido",
+    "Denúncias na rodada: 1",
+    "Rodada: 1",
+  ]);
 });

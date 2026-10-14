@@ -157,6 +157,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   // Moderação
   "comment-not-found": "Comentário não encontrado.",
   "invalid-action": "Ação inválida: ocultar, manter ou reexibir.",
+  "profile-not-reported": "Esse perfil não está na fila da Moderação.",
+  "stale-report": "A denúncia mudou desde que o card abriu. Abra de novo.",
   // Fãs
   "fan-not-found": "Fã não encontrado.",
   "negative-counter": "O ajuste deixaria um contador negativo.",

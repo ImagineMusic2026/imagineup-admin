@@ -87,3 +87,69 @@ test("apagar bio e redes: os campos com o que apagar e o aviso pelo que saiu", (
   assert.equal(moderation.clearedProfileText("Promo", []), "Nada a apagar: a bio e as redes já estavam vazias.");
   assert.equal(moderation.PROFILE_TEXT_FIELD_LABELS.socials, "Redes sociais");
 });
+
+test("o item de perfil lido: rodada, motivos, resolução e quem resolveu, defensivo", () => {
+  const item = moderation.parseProfileQueueItem("u1", {
+    uid: "u1",
+    reportCount: 3,
+    reasons: { spam: 2, offensive: 1, harassment: -1, other: "x" },
+    status: "resolved",
+    resolution: "actioned",
+    round: 2,
+    openedAt: ts("2026-10-12T10:00:00"),
+    firstReportedAt: ts("2026-10-01T10:00:00"),
+    lastReportedAt: ts("2026-10-12T11:00:00"),
+    resolvedAt: ts("2026-10-12T12:00:00"),
+    resolvedBy: { uid: "s1", name: "Ana" },
+    resolvedDigest: "abc",
+    schemaVersion: 1,
+  });
+  assert.equal(item.uid, "u1");
+  assert.equal(item.reportCount, 3);
+  assert.deepEqual(item.reasons, { spam: 2, offensive: 1, harassment: 0, other: 0, none: 0 });
+  assert.equal(item.status, "resolved");
+  assert.equal(item.resolution, "actioned");
+  assert.equal(item.round, 2);
+  assert.equal(item.openedAt.getTime(), sp("2026-10-12T10:00:00"));
+  assert.deepEqual(item.resolvedBy, { uid: "s1", name: "Ana" });
+  assert.equal("resolvedDigest" in item, false);
+
+  const cases = [
+    [{ status: "outro" }, "status", "open"],
+    [{ resolution: "hidden" }, "resolution", null],
+    [{ resolution: "withdrawn" }, "resolution", "withdrawn"],
+    [{ round: 0 }, "round", 1],
+    [{ round: 1.5 }, "round", 1],
+    [{ round: "2" }, "round", 1],
+    [{ reportCount: -4 }, "reportCount", 0],
+    [{ resolvedBy: { name: "Ana" } }, "resolvedBy", null],
+    [{ resolvedBy: null }, "resolvedBy", null],
+    [{ openedAt: "ontem" }, "openedAt", null],
+  ];
+  for (const [fields, key, expected] of cases) {
+    assert.deepEqual(moderation.parseProfileQueueItem("u2", fields)[key], expected, `${key}: ${JSON.stringify(fields)}`);
+  }
+});
+
+test("a lista de perfis: a contagem, o mais antigo pela rodada e as decisões possíveis", () => {
+  assert.equal(moderation.profileQueueCountText(0), "Nenhum perfil denunciado");
+  assert.equal(moderation.profileQueueCountText(1), "1 perfil denunciado");
+  assert.equal(moderation.profileQueueCountText(2), "2 perfis denunciados");
+  const now = new Date(sp("2026-10-14T12:00:00"));
+  // O reaberto conta do começo da rodada, não da primeira denúncia de todas.
+  const items = [
+    { openedAt: new Date(sp("2026-10-14T09:00:00")), firstReportedAt: new Date(sp("2026-09-01T09:00:00")) },
+    { openedAt: new Date(sp("2026-10-14T11:00:00")) },
+  ];
+  assert.equal(moderation.profileOldestText(items, now), "o mais antigo há 3 h");
+  assert.equal(moderation.profileOldestText([], now), null);
+  assert.deepEqual(moderation.profileDecisions({ status: "open", resolution: null }), ["kept", "actioned"]);
+  assert.deepEqual(moderation.profileDecisions({ status: "resolved", resolution: "kept" }), ["actioned"]);
+  assert.deepEqual(moderation.profileDecisions({ status: "resolved", resolution: "actioned" }), ["kept"]);
+  assert.deepEqual(moderation.profileDecisions({ status: "resolved", resolution: "withdrawn" }), []);
+  assert.deepEqual(moderation.profileDecisions({ status: "resolved", resolution: "author_deleted" }), []);
+  assert.equal(moderation.PROFILE_RESOLUTION_LABELS.kept, "Mantido");
+  assert.equal(moderation.PROFILE_RESOLUTION_LABELS.actioned, "Resolvido com ação");
+  assert.equal(moderation.PROFILE_RESOLUTION_LABELS.withdrawn, "Denúncias retiradas");
+  assert.equal(moderation.PROFILE_RESOLUTION_LABELS.author_deleted, "Conta excluída");
+});
