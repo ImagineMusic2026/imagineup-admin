@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowLeft, Coins, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Coins, Lock, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AdjustDialog, type AdjustAttempt } from "@/components/fas/adjust-dialog";
 import { CentralsTab, CommentsTab, EngagementTab, InvitesTab, LedgerTab, MissionsTab, RedemptionsTab } from "@/components/fas/fan-tabs";
 import { FanAvatar } from "@/components/painel/fan-avatar";
+import { FanBio, FanSocialLinks } from "@/components/painel/fan-socials";
 import { SectionGate } from "@/components/painel/section-gate";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useLoad } from "@/components/ui/use-load";
 import { artistNameOf, getArtistNames } from "@/lib/artist-names-data";
 import { dayKey } from "@/lib/day";
-import { fanDisplayName, suspensionReasonLabel } from "@/lib/fan-profile";
+import { fanDisplayName, genderLabel, suspensionReasonLabel } from "@/lib/fan-profile";
 import { createFanProfileReader } from "@/lib/fan-profile-data";
 import { getCurrentSeason, getFanCard, getFanCentrals, getLevels } from "@/lib/fan-data";
 import { earnedLast7Days, rankPositionNow, referralAwardText, referralPath, seasonPointsNow, utmText } from "@/lib/fans";
@@ -183,6 +184,33 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
         />
         <MetricCard label="Ganhos em 7 dias" tone="points" value={formatNumber(earnedLast7Days(wallet, dayKey(now.getTime())))} unit="pts" hint="Hoje e os 6 dias anteriores." />
       </MetricGrid>
+
+      <SectionCard id="titulo-perfil" title="Perfil">
+        <div className="px-5 py-4">
+          <DetailList>
+            <Detail term="Gênero">{profile.gender ? genderLabel(profile.gender) : <Missing>{genderLabel(null)}</Missing>}</Detail>
+            <Detail term="Bio e redes no app">
+              {profile.privateAccount ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  <Badge tone="neutral">
+                    <Lock aria-hidden="true" className="size-3.5" />
+                    Conta privada
+                  </Badge>
+                  <span className="text-fg/75">Os outros fãs não veem.</span>
+                </span>
+              ) : (
+                "Os outros fãs veem."
+              )}
+            </Detail>
+            <Detail term="Bio" wide>
+              <FanBio bio={profile.bio} />
+            </Detail>
+            <Detail term="Redes" wide>
+              <FanSocialLinks socials={profile.socials} />
+            </Detail>
+          </DetailList>
+        </div>
+      </SectionCard>
 
       <SectionCard id="titulo-origem" title="Origem do cadastro">
         <div className="px-5 py-4">

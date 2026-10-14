@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, AtSign, EyeOff, ImageOff, UserCheck, UserX } from "lucide-react";
+import { ArrowLeft, AtSign, Eraser, EyeOff, ImageOff, UserCheck, UserX } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
 import { QueueCard, shortWhen } from "@/components/moderacao/queue-card";
 import { FanAvatar } from "@/components/painel/fan-avatar";
+import { FanBio, FanSocialLinks } from "@/components/painel/fan-socials";
 import { PageHeader } from "@/components/painel/page-header";
 import { SectionGate } from "@/components/painel/section-gate";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
@@ -22,22 +23,28 @@ import { useLoad } from "@/components/ui/use-load";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { usePagedList } from "@/components/ui/use-paged-list";
 import { artistNameOf, getArtistNames } from "@/lib/artist-names-data";
-import { actionErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
+import { actionErrorMessage, callableErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
 import { getFanCommentsPage, type CommentRow } from "@/lib/fan-data";
 import { SUSPENSION_REASONS, SUSPENSION_REASON_LABELS, fanDisplayName, suspensionReasonLabel, type FanProfile, type SuspensionReason } from "@/lib/fan-profile";
 import { getFanProfile } from "@/lib/fan-profile-data";
 import type { PageCursor } from "@/lib/firestore-page";
-import { clearFanPhoto, hideFanComments, moderateComment, resetFanUsername, setFanSuspended } from "@/lib/moderation-api";
+import { clearFanPhoto, clearFanProfileText, hideFanComments, moderateComment, resetFanUsername, setFanSuspended } from "@/lib/moderation-api";
 import {
+  CLEAR_BIO_SOCIALS_TEXT,
   CLEAR_PHOTO_TEXT,
   FAN_NOT_FOUND_TEXT,
   HIDE_CONFIRM_TEXT,
+  PROFILE_TEXT_FIELDS,
+  PROFILE_TEXT_FIELD_LABELS,
   SUSPENSION_NOTE_MAX,
   SUSPEND_TEXT,
+  clearableProfileFields,
+  clearedProfileText,
   hiddenSummary,
   hideAlsoLabel,
   resetUsernameText,
   validateSuspensionNote,
+  type ProfileTextField,
   type QueueItem,
 } from "@/lib/moderation";
 import { countVisibleComments, createContentReader, getFanQueuePage, type ContentReader } from "@/lib/moderation-data";
@@ -59,6 +66,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [suspending, setSuspending] = useState(false);
   const [hiding, setHiding] = useState(false);
+  const [clearingText, setClearingText] = useState(false);
 
   const profile = useLoad(
     useCallback(() => {
@@ -122,6 +130,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
 
   const name = fanDisplayName(fan);
   const suspended = Boolean(fan.suspendedAt);
+  const clearable = clearableProfileFields(fan);
 
   function askUnsuspend(target: FanProfile) {
     setConfirm({
@@ -209,6 +218,12 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
             <Detail term="Identificador">
               <span className="font-mono text-[13px]">{fan.uid}</span>
             </Detail>
+            <Detail term="Bio" wide>
+              <FanBio bio={fan.bio} />
+            </Detail>
+            <Detail term="Redes" wide>
+              <FanSocialLinks socials={fan.socials} />
+            </Detail>
           </DetailList>
           <div className="flex flex-wrap gap-2">
             {canSeeSection(member, "fans") ? (
@@ -245,6 +260,12 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
                     Tirar a foto
                   </Button>
                 ) : null}
+                {clearable.length > 0 ? (
+                  <Button size="sm" variant="secondary" onClick={() => setClearingText(true)} aria-haspopup="dialog">
+                    <Eraser aria-hidden="true" className="size-4" />
+                    Apagar bio e redes
+                  </Button>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -262,6 +283,22 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
           changed(message);
         }}
       />
+      {canEdit && clearingText ? (
+        <ClearProfileTextDialog
+          fan={fan}
+          onClose={() => setClearingText(false)}
+          onUncertain={refresh}
+          onDone={(cleared) => {
+            setClearingText(false);
+            if (cleared.length === 0) {
+              show("info", clearedProfileText(name, cleared));
+              refresh();
+            } else {
+              changed(clearedProfileText(name, cleared));
+            }
+          }}
+        />
+      ) : null}
       <HideCommentsDialog
         open={canEdit && (suspending || hiding)}
         mode={suspending ? "suspend" : "hide"}
@@ -274,6 +311,95 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
         }}
       />
     </>
+  );
+}
+
+/**
+ * "Apagar bio e redes" (28.6): a escolha dos campos que têm o que apagar,
+ * todos marcados de início. O texto apagado não fica guardado; a auditoria
+ * leva só os campos. Resposta incerta lê o fã de novo.
+ */
+function ClearProfileTextDialog({
+  fan,
+  onClose,
+  onDone,
+  onUncertain,
+}: {
+  fan: FanProfile;
+  onClose: () => void;
+  onDone: (cleared: ProfileTextField[]) => void;
+  onUncertain: () => void;
+}) {
+  const mounted = useMountedRef();
+  const name = fanDisplayName(fan);
+  const [options] = useState(() => clearableProfileFields(fan));
+  const [fields, setFields] = useState<ProfileTextField[]>(options);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bio = options.includes("bio");
+  const socials = options.includes("socials");
+
+  async function run(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || fields.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await clearFanProfileText({ uid: fan.uid, fields: PROFILE_TEXT_FIELDS.filter((field) => fields.includes(field)) });
+      if (!mounted.current) return;
+      onDone(result.cleared);
+    } catch (failure) {
+      if (!mounted.current) return;
+      if (mayHaveRunOnServer(failure)) {
+        setError(actionErrorMessage(failure));
+        onUncertain();
+      } else {
+        setError(callableErrorMessage(failure));
+      }
+      setBusy(false);
+    }
+  }
+
+  function toggle(field: ProfileTextField, checked: boolean) {
+    setFields((current) => (checked ? [...current, field] : current.filter((item) => item !== field)));
+  }
+
+  return (
+    <Dialog
+      open
+      size="sm"
+      tone="danger"
+      busy={busy}
+      onClose={() => !busy && onClose()}
+      title={bio && socials ? `Apagar a bio e as redes de ${name}?` : bio ? `Apagar a bio de ${name}?` : `Apagar as redes de ${name}?`}
+      description={CLEAR_BIO_SOCIALS_TEXT}
+    >
+      <form onSubmit={run} noValidate className="flex flex-col gap-4">
+        {options.length > 1 ? (
+          <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0">
+            <legend className="mb-2 p-0 text-[13px] font-semibold text-fg/75">O que apagar</legend>
+            {options.map((field) => (
+              <Checkbox
+                key={field}
+                label={PROFILE_TEXT_FIELD_LABELS[field]}
+                checked={fields.includes(field)}
+                disabled={busy}
+                onChange={(event) => toggle(field, event.target.checked)}
+              />
+            ))}
+          </fieldset>
+        ) : null}
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" onClick={onClose} disabled={busy} data-autofocus>
+            Voltar
+          </Button>
+          <Button type="submit" variant="danger" busy={busy} disabled={fields.length === 0}>
+            {busy ? "Apagando..." : "Apagar"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
