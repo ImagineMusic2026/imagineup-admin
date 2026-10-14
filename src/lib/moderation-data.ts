@@ -3,7 +3,16 @@ import { collection, collectionGroup, doc, getDoc, orderBy, query, where } from 
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
 import { parseFanProfile, type FanProfile } from "@/lib/fan-profile";
-import { QUEUE_PAGE_SIZE, parseComment, parseQueueItem, postSnippet, type CommentInfo, type QueueItem } from "@/lib/moderation";
+import {
+  QUEUE_PAGE_SIZE,
+  parseComment,
+  parseProfileQueueItem,
+  parseQueueItem,
+  postSnippet,
+  type CommentInfo,
+  type ProfileQueueItem,
+  type QueueItem,
+} from "@/lib/moderation";
 
 /**
  * Leituras da Moderação, todas únicas (decisão 19): a fila e os resolvidos,
@@ -36,6 +45,32 @@ export async function getFanQueuePage(uid: string, after: PageCursor | null): Pr
     after,
   });
   return { items: page.docs.map((item) => parseQueueItem(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
+}
+
+/**
+ * As denúncias de perfil (29.7): os abertos, da denúncia mais nova, ou os
+ * resolvidos, do mais novo. São as duas formas dos índices de 29.8; outra
+ * consulta pediria índice novo (o emulador não cobra). A tela nunca lê
+ * `profileReports` (quem denunciou) nem `blockLists`.
+ */
+export async function getProfileQueuePage(status: "open" | "resolved", after: PageCursor | null): Promise<Page<ProfileQueueItem>> {
+  const page = await getPage(
+    query(collection(db(), "profileReportQueue"), where("status", "==", status), orderBy(status === "open" ? "lastReportedAt" : "resolvedAt", "desc")),
+    { size: QUEUE_PAGE_SIZE, after },
+  );
+  return { items: page.docs.map((item) => parseProfileQueueItem(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
+}
+
+/** Quantos perfis denunciados esperando agora. */
+export function countOpenProfileQueue(): Promise<number> {
+  return countOf(query(collection(db(), "profileReportQueue"), where("status", "==", "open")));
+}
+
+/** O item de perfil de um fã, pelo id (o uid), ou `null` sem denúncia. */
+export async function getProfileQueueItem(uid: string): Promise<ProfileQueueItem | null> {
+  const snapshot = await getDoc(doc(db(), "profileReportQueue", uid));
+  const data = snapshot.data();
+  return data ? parseProfileQueueItem(snapshot.id, data) : null;
 }
 
 /** Os comentários ocultos de todos os posts, do mais recente. */

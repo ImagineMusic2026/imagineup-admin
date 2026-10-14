@@ -21,6 +21,8 @@ export interface ConfirmRequest {
    * vez da frase do código, e a tela lê de novo. Sem ele, a mensagem de antes.
    */
   onUncertain?: () => void;
+  /** Recusa do servidor (com a frase dele no diálogo): a tela pode ler de novo o que mudou por fora. */
+  onError?: (failure: unknown) => void;
 }
 
 /**
@@ -63,6 +65,7 @@ export function ConfirmDialog({
         request.onUncertain();
       } else {
         setError(callableErrorMessage(failure));
+        request.onError?.(failure);
       }
       setBusy(false);
       return;

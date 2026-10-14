@@ -4,6 +4,7 @@ import { Eye, EyeOff, ShieldCheck, UserCheck } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { ProfileReportCard, profileDecisionRequest, type ProfileDecision } from "@/components/moderacao/profile-report-card";
 import { AuthorLine, QueueCard, shortWhen } from "@/components/moderacao/queue-card";
 import { PageHeader } from "@/components/painel/page-header";
 import { SectionGate } from "@/components/painel/section-gate";
@@ -23,18 +24,41 @@ import { getAuditPeople } from "@/lib/audit-data";
 import { fanDisplayName, suspensionReasonLabel, type FanProfile } from "@/lib/fan-profile";
 import type { PageCursor } from "@/lib/firestore-page";
 import { moderateComment, setFanSuspended } from "@/lib/moderation-api";
-import { HIDE_CONFIRM_TEXT, KEEP_CONFIRM_TEXT, QUEUE_EMPTY_TEXT, oldestText, queueCountText, type CommentInfo, type QueueItem } from "@/lib/moderation";
-import { countOpenQueue, createContentReader, getHiddenCommentsPage, getQueuePage, getSuspendedPage, type ContentReader } from "@/lib/moderation-data";
+import {
+  HIDE_CONFIRM_TEXT,
+  KEEP_CONFIRM_TEXT,
+  PROFILE_QUEUE_EMPTY_TEXT,
+  PROFILE_RESOLVED_EMPTY_TEXT,
+  QUEUE_EMPTY_TEXT,
+  oldestText,
+  profileOldestText,
+  profileQueueCountText,
+  queueCountText,
+  type CommentInfo,
+  type ProfileQueueItem,
+  type QueueItem,
+} from "@/lib/moderation";
+import {
+  countOpenProfileQueue,
+  countOpenQueue,
+  createContentReader,
+  getHiddenCommentsPage,
+  getProfileQueuePage,
+  getQueuePage,
+  getSuspendedPage,
+  type ContentReader,
+} from "@/lib/moderation-data";
 import { canEditSection, canSeeSection, isAdmin, sectionInfo, type StaffMember } from "@/lib/staff";
 
 const INFO = sectionInfo("moderation");
 
-type ModerationTab = "queue" | "resolved" | "hidden" | "suspended";
+type ModerationTab = "queue" | "profiles" | "resolved" | "hidden" | "suspended";
 type Notify = (tone: "success" | "error" | "info", text: string, focusId?: string) => void;
 
 /**
- * Moderação (`/moderacao`): a fila de comentários denunciados, os resolvidos,
- * os comentários ocultos e os fãs suspensos, em leitura única (25 por vez,
+ * Moderação (`/moderacao`): a fila de comentários denunciados, os perfis
+ * denunciados (29.7), os resolvidos, os comentários ocultos e os fãs
+ * suspensos, em leitura única (25 por vez,
  * "Carregar mais" e o "Atualizar" que lê de novo do topo). Quem denunciou
  * nunca aparece.
  */
@@ -48,6 +72,7 @@ function ModerationContent({ member }: { member: StaffMember }) {
   const [tab, setTab] = useState<ModerationTab>("queue");
   const [round, setRound] = useState(0);
   const [countRound, setCountRound] = useState(0);
+  const [profileRound, setProfileRound] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [removed, setRemoved] = useState<string[]>([]);
   const [notice, setNotice] = useState<{ key: number; tone: "success" | "error" | "info"; text: string } | null>(null);
@@ -62,6 +87,13 @@ function ModerationContent({ member }: { member: StaffMember }) {
       void countRound;
       return countOpenQueue();
     }, [round, countRound]),
+  );
+  const profileCount = useLoad(
+    useCallback(() => {
+      void round;
+      void profileRound;
+      return countOpenProfileQueue();
+    }, [round, profileRound]),
   );
   const loadQueue = useCallback(
     (after: PageCursor | null) => {
@@ -135,7 +167,8 @@ function ModerationContent({ member }: { member: StaffMember }) {
       </>
     ) : null;
 
-  const subtitle = count.state.status === "ready" ? `${queueCountText(count.state.data)}${oldest ? `, ${oldest}` : ""}.` : INFO.description;
+  const profilesWaiting = profileCount.state.status === "ready" && profileCount.state.data > 0 ? ` ${profileQueueCountText(profileCount.state.data)}.` : "";
+  const subtitle = count.state.status === "ready" ? `${queueCountText(count.state.data)}${oldest ? `, ${oldest}` : ""}.${profilesWaiting}` : INFO.description;
 
   return (
     <>
@@ -172,6 +205,11 @@ function ModerationContent({ member }: { member: StaffMember }) {
               />
             ),
           },
+          {
+            id: "profiles",
+            label: "Perfis denunciados",
+            render: () => <ProfilesTab canEdit={canEdit} now={date} round={round} version={profileRound} ask={ask} onChanged={() => setProfileRound((value) => value + 1)} />,
+          },
           { id: "resolved", label: "Resolvidos", render: () => <ResolvedTab canEdit={canEdit} reader={reader} names={artistNames} now={date} round={round} onNotice={show} ask={ask} /> },
           { id: "hidden", label: "Comentários ocultos", render: () => <HiddenTab member={member} canEdit={canEdit} names={artistNames} now={date} round={round} onNotice={show} ask={ask} /> },
           { id: "suspended", label: "Fãs suspensos", render: () => <SuspendedTab member={member} canEdit={canEdit} now={date} round={round} ask={ask} /> },
@@ -185,7 +223,7 @@ function ModerationContent({ member }: { member: StaffMember }) {
           setConfirm(null);
           afterConfirm?.();
           setAfterConfirm(null);
-          show("success", message, { queue: "titulo-fila", resolved: "titulo-resolvidos", hidden: "titulo-ocultos", suspended: "titulo-suspensos" }[tab]);
+          show("success", message, { queue: "titulo-fila", profiles: "titulo-perfis", resolved: "titulo-resolvidos", hidden: "titulo-ocultos", suspended: "titulo-suspensos" }[tab]);
         }}
       />
     </>
@@ -245,6 +283,119 @@ function QueueList({
 }
 
 type Ask = (request: ConfirmRequest, after: () => void) => void;
+
+/**
+ * Os perfis denunciados (29.7): os abertos, da denúncia mais nova, com a
+ * contagem e o mais antigo pela rodada, e embaixo os resolvidos, cada lista
+ * com o "Carregar mais" dela. Uma decisão (ou a recusa de um item que mudou
+ * por fora) lê as duas de novo.
+ */
+function ProfilesTab({
+  canEdit,
+  now,
+  round,
+  version,
+  ask,
+  onChanged,
+}: {
+  canEdit: boolean;
+  now: Date;
+  round: number;
+  version: number;
+  ask: Ask;
+  onChanged: () => void;
+}) {
+  const loadOpen = useCallback(
+    (after: PageCursor | null) => {
+      void round;
+      void version;
+      return getProfileQueuePage("open", after);
+    },
+    [round, version],
+  );
+  const loadResolved = useCallback(
+    (after: PageCursor | null) => {
+      void round;
+      void version;
+      return getProfileQueuePage("resolved", after);
+    },
+    [round, version],
+  );
+  const open = usePagedList(loadOpen, (item: ProfileQueueItem) => item.uid, { one: "perfil carregado", many: "perfis carregados" });
+  const resolved = usePagedList(loadResolved, (item: ProfileQueueItem) => item.uid, { one: "perfil carregado", many: "perfis carregados" });
+  const count = useLoad(
+    useCallback(() => {
+      void round;
+      void version;
+      return countOpenProfileQueue();
+    }, [round, version]),
+  );
+  const openItems = open.state.status === "ready" ? open.state.data : [];
+  const oldest = open.state.status === "ready" && !open.hasMore ? profileOldestText(openItems, now) : null;
+  const meta = count.state.status === "ready" ? `${profileQueueCountText(count.state.data)}${oldest ? `, ${oldest}` : ""}` : undefined;
+
+  function decide(item: ProfileQueueItem, decision: ProfileDecision, name: string) {
+    ask(profileDecisionRequest(item, decision, name, onChanged), onChanged);
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <ProfileList id="titulo-perfis" title="Perfis denunciados" meta={meta} list={open} canEdit={canEdit} now={now} version={version} empty={PROFILE_QUEUE_EMPTY_TEXT} onDecide={decide} />
+      <ProfileList id="titulo-perfis-resolvidos" title="Perfis resolvidos" list={resolved} canEdit={canEdit} now={now} version={version} empty={PROFILE_RESOLVED_EMPTY_TEXT} onDecide={decide} />
+    </div>
+  );
+}
+
+function ProfileList({
+  id,
+  title,
+  meta,
+  list,
+  canEdit,
+  now,
+  version,
+  empty,
+  onDecide,
+}: {
+  id: string;
+  title: string;
+  meta?: string;
+  list: PagedList<ProfileQueueItem>;
+  canEdit: boolean;
+  now: Date;
+  version: number;
+  empty: string;
+  onDecide: (item: ProfileQueueItem, decision: ProfileDecision, name: string) => void;
+}) {
+  const items = list.state.status === "ready" ? list.state.data : [];
+  return (
+    <SectionCard id={id} title={title} meta={meta}>
+      {list.state.status === "error" ? (
+        <LoadError message={list.state.message} headingId={id} onRetry={list.reload} />
+      ) : list.state.status === "loading" ? (
+        <LoadingRow label="Carregando..." />
+      ) : items.length === 0 ? (
+        <EmptyState>{empty}</EmptyState>
+      ) : (
+        <>
+          <ul className="m-0 list-none divide-y divide-line p-0">
+            {items.map((item) => (
+              <li key={item.uid}>
+                <ProfileReportCard item={item} now={now} canEdit={canEdit} refreshKey={version} onDecide={onDecide} />
+              </li>
+            ))}
+          </ul>
+          <LoadMore onClick={list.loadMore} busy={list.loadingMore} hasMore={list.hasMore} announcement={list.announcement} error={list.loadMoreError} />
+        </>
+      )}
+      {list.refreshError ? (
+        <div className="px-5 pb-4">
+          <Notice tone="error">Não deu para atualizar: {list.refreshError}</Notice>
+        </div>
+      ) : null}
+    </SectionCard>
+  );
+}
 
 function ResolvedTab({
   canEdit,

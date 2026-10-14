@@ -84,3 +84,36 @@ test("o leitor guarda o comentário e o post enquanto a tela está aberta", asyn
   assert.equal(await reader.post("sumiu"), null);
   assert.equal(await reader.comment("p1", "sumiu"), null);
 });
+
+test("as denúncias de perfil nas duas formas dos índices de 29.8, a contagem e o item pelo id", async () => {
+  firestore.reset();
+  firestore.set("profileReportQueue/u1", { uid: "u1", status: "open", round: 1, reportCount: 1, reasons: { spam: 1 }, lastReportedAt: ts("2026-10-14T08:00:00"), openedAt: ts("2026-10-14T08:00:00") });
+  firestore.set("profileReportQueue/u2", { uid: "u2", status: "open", round: 2, reportCount: 1, reasons: { other: 1 }, lastReportedAt: ts("2026-10-14T09:00:00"), openedAt: ts("2026-10-14T09:00:00") });
+  firestore.set("profileReportQueue/u3", { uid: "u3", status: "resolved", resolution: "kept", round: 1, resolvedAt: ts("2026-10-13T10:00:00"), resolvedBy: { uid: "s1", name: "Ana" } });
+
+  const open = await data.getProfileQueuePage("open", null);
+  assert.deepEqual(
+    open.items.map((entry) => [entry.uid, entry.round]),
+    [
+      ["u2", 2],
+      ["u1", 1],
+    ],
+  );
+  assert.equal(firestore.queries.at(-1).source.collection, "profileReportQueue");
+  assert.deepEqual(firestore.queries.at(-1).where, [{ field: "status", op: "==", value: "open" }]);
+  assert.deepEqual(firestore.queries.at(-1).orderBy, [{ field: "lastReportedAt", direction: "desc" }]);
+  assert.equal(firestore.queries.at(-1).limit, 26);
+
+  const resolved = await data.getProfileQueuePage("resolved", null);
+  assert.deepEqual(
+    resolved.items.map((entry) => [entry.uid, entry.resolution]),
+    [["u3", "kept"]],
+  );
+  assert.deepEqual(firestore.queries.at(-1).orderBy, [{ field: "resolvedAt", direction: "desc" }]);
+
+  assert.equal(await data.countOpenProfileQueue(), 2);
+  assert.equal((await data.getProfileQueueItem("u2")).round, 2);
+  assert.equal(await data.getProfileQueueItem("ninguem"), null);
+  // A fila de comentários não é tocada.
+  assert.equal(firestore.queries.some((entry) => entry.source.collection === "moderationQueue"), false);
+});
