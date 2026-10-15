@@ -71,6 +71,17 @@ export function useLoad<T>(load: () => Promise<T>): LoadResult<T> {
     setAttempt((value) => value + 1);
   }, [load]);
 
+  // A leitura falhou (sem rede, por exemplo): quando a conexão volta, ela tenta
+  // de novo sozinha, como o "Tentar de novo". Antes, a volta da rede trocava o
+  // `member` da equipe e relia toda tela que dependia dele; agora o `member` só
+  // muda quando um campo muda.
+  const failed = entry !== null && entry.load === load && (entry.value.status === "error" || entry.refreshError !== null);
+  useEffect(() => {
+    if (!failed) return;
+    window.addEventListener("online", reload);
+    return () => window.removeEventListener("online", reload);
+  }, [failed, reload]);
+
   const current = entry && entry.load === load ? entry : null;
   const reloading = reloadingFor === load;
   const state: Loadable<T> = !current || (reloading && current.value.status === "error") ? { status: "loading" } : current.value;

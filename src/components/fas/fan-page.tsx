@@ -47,17 +47,20 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
   const [notice, setNotice] = useState<{ key: number; text: string } | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
 
+  // Do membro, a ficha só usa se ele vê a seção Artistas: outra mudança no acesso
+  // (um editor que ganha uma seção) não volta a ficha para "Carregando".
+  const seesArtists = canSeeSection(member, "artists");
   const load = useCallback(async () => {
     const reader = createFanProfileReader();
     const [card, levels, season, artists, centrals] = await Promise.all([
       getFanCard(uid, reader),
       getLevels(),
       getCurrentSeason(),
-      getArtistNames(member),
+      getArtistNames(seesArtists),
       getFanCentrals(uid),
     ]);
     return { card, levels, season, artists, centrals };
-  }, [uid, member]);
+  }, [uid, seesArtists]);
   const { state, reload, reloading, loadedAt, refreshError } = useLoad(load);
 
   // A permissão de editar caiu com o diálogo aberto: ele fecha (o acesso chega em tempo real).

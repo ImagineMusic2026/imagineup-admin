@@ -26,7 +26,7 @@ import { classifyFanSearch } from "@/lib/fans";
 import type { PageCursor } from "@/lib/firestore-page";
 import { countLabel, formatDay, formatNumber } from "@/lib/format";
 import { NO_LEVELS_TEXT, levelOf, type Level } from "@/lib/levels";
-import { canEditSection, sectionInfo, type StaffMember } from "@/lib/staff";
+import { canEditSection, canSeeSection, sectionInfo, type StaffMember } from "@/lib/staff";
 
 const INFO = sectionInfo("fans");
 const GRID = "xl:grid xl:grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_110px_minmax(0,1fr)_120px_110px] xl:items-center xl:gap-4";
@@ -54,11 +54,12 @@ function FansContent({ member }: { member: StaffMember }) {
   const [reader] = useState(() => createFanProfileReader());
   const [search, setSearch] = useState<SearchState>({ status: "idle", rows: [], result: "", limited: false });
 
+  const seesArtists = canSeeSection(member, "artists");
   const context = useLoad(
     useCallback(async () => {
-      const [count, season, levels, artists] = await Promise.all([getFansCount(), getCurrentSeason(), getLevels(), getArtistNames(member)]);
+      const [count, season, levels, artists] = await Promise.all([getFansCount(), getCurrentSeason(), getLevels(), getArtistNames(seesArtists)]);
       return { count, season, levels, artists };
-    }, [member]),
+    }, [seesArtists]),
   );
   const season = context.state.status === "ready" ? context.state.data.season : null;
   const levels = context.state.status === "ready" ? context.state.data.levels : null;

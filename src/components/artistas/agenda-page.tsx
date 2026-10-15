@@ -109,7 +109,8 @@ function AgendaContent({ member }: { member: StaffMember }) {
   const [notice, setNotice] = useState<{ key: number; text: string } | null>(null);
   const [rowNotice, setRowNotice] = useState<{ id: string; node: React.ReactNode; key: number } | null>(null);
 
-  const names = useLoad(useCallback(() => getArtistNames(member), [member]));
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const artists = names.state.status === "ready" ? names.state.data : null;
   const count = useLoad(
     useCallback(() => {

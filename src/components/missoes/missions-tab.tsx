@@ -62,7 +62,7 @@ import {
   type MissionState,
   type SeasonWindow,
 } from "@/lib/missions";
-import type { StaffMember } from "@/lib/staff";
+import { canSeeSection, type StaffMember } from "@/lib/staff";
 
 const STATE_STYLES: Record<MissionState, StatusStyle> = {
   draft: { label: MISSION_STATE_LABELS.draft, tone: "muted", dot: true },
@@ -175,7 +175,8 @@ export function MissionsTab({ member, canEdit, configs, now, onChanged, onNotice
   const windows = useMemo(() => seasonWindows(configs.season), [configs.season]);
   const date = new Date(now);
 
-  const names = useLoad(useCallback(() => getArtistNames(member), [member]));
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const artistNames = names.state.status === "ready" ? names.state.data : null;
   const keyList = targetKeysOf(catalog.missions).join("|");
   const targets = useLoad(useCallback(() => getTargetDocs(keyList ? keyList.split("|") : []), [keyList]));

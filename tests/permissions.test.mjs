@@ -14,6 +14,7 @@ const {
   canSeeSection,
   firstAllowedRoute,
   initialsOf,
+  keepSameStaffResult,
   navGroupsFor,
   pageForPathname,
   parseStaffMember,
@@ -166,6 +167,12 @@ test("o mesmo retrato da equipe, campo a campo", () => {
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, displayName: "Ana Paula" })), false);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, sections: ["fans"] })), false);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, sections: ["fans", "rewards"] })), false);
+  // A seção acrescentada no fim: as de antes continuam iguais, só o tamanho muda.
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, sections: ["fans", "missions", "rewards"] })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, email: "outra@b.com" })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, accountCreatedByInvite: true })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, inviteId: "convite-1" })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, invitedBy: "admin-1" })), false);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, createdAt: null })), false);
   assert.equal(
     sameStaffMember(base, parseStaffMember("u1", { ...raw, createdAt: { toDate: () => new Date("2026-09-30T12:00:00Z") } })),
@@ -175,4 +182,34 @@ test("o mesmo retrato da equipe, campo a campo", () => {
     sameStaffMember(base, parseStaffMember("u1", { ...raw, updatedAt: { toDate: () => new Date("2026-09-30T12:00:00Z") } })),
     false,
   );
+});
+
+test("a escuta da equipe: servidor, cache e servidor de novo mantêm o mesmo resultado", () => {
+  const raw = { email: "a@b.com", displayName: "Ana", role: "editor", status: "active", sections: ["fans"] };
+  const event = (data, attempt = 0) => ({ uid: "u1", attempt, kind: "member", member: parseStaffMember("u1", data) });
+
+  const fromServer = keepSameStaffResult(null, event(raw));
+  // O retrato do cache (uma queda de rede) e o do servidor de novo: os mesmos campos, objetos novos.
+  const fromCache = keepSameStaffResult(fromServer, event(raw));
+  const backOnline = keepSameStaffResult(fromCache, event(raw));
+  assert.equal(fromCache, fromServer);
+  assert.equal(backOnline, fromServer);
+  assert.equal(backOnline.member, fromServer.member);
+
+  // Uma mudança de verdade troca o resultado, e o seguinte igual a ela fica.
+  const withSection = keepSameStaffResult(backOnline, event({ ...raw, sections: ["fans", "rewards"] }));
+  assert.notEqual(withSection, fromServer);
+  assert.deepEqual(withSection.member.sections, ["fans", "rewards"]);
+  assert.equal(keepSameStaffResult(withSection, event({ ...raw, sections: ["fans", "rewards"] })), withSection);
+
+  // Outra tentativa, outra pessoa ou um erro nunca reaproveitam o anterior.
+  assert.notEqual(keepSameStaffResult(fromServer, event(raw, 1)), fromServer);
+  assert.notEqual(keepSameStaffResult(fromServer, { ...event(raw), uid: "u2" }), fromServer);
+  const failed = { uid: "u1", attempt: 0, kind: "error", error: new Error("x") };
+  assert.equal(keepSameStaffResult(fromServer, failed), failed);
+  assert.notEqual(keepSameStaffResult(failed, { ...failed }), failed);
+
+  // Sem documento duas vezes seguidas: o mesmo resultado.
+  const missing = { uid: "u1", attempt: 0, kind: "missing" };
+  assert.equal(keepSameStaffResult(missing, { ...missing }), missing);
 });

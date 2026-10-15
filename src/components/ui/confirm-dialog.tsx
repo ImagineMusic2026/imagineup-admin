@@ -28,7 +28,7 @@ export interface ConfirmRequest {
   onError?: (failure: unknown) => void;
   /** Recusa que outra tentativa repetiria (o item mudou por fora): o botão de confirmar desliga. */
   blocksRetry?: (failure: unknown) => boolean;
-  /** A resposta chegou com o diálogo já fora da tela (a permissão caiu no meio do pedido): a tela lê de novo. */
+  /** A resposta chegou com o diálogo já fora da tela (a permissão caiu no meio do pedido): a tela marca a releitura. */
   onOrphan?: () => void;
 }
 

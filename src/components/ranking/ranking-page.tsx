@@ -370,7 +370,8 @@ function FanName({ uid, name, photoURL, linked }: { uid: string; name: string; p
 function LiveRanking({ member }: { member: StaffMember }) {
   const seesFans = canSeeSection(member, "fans");
   const [artistId, setArtistId] = useState("");
-  const names = useLoad(useCallback(() => getArtistNames(member), [member]));
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const [seasonLabel, setSeasonLabel] = useState<string | null>(null);
   const loadPage = useCallback(
     async (cursor: string | null) => {
@@ -431,7 +432,8 @@ const PAST_GRID = "xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_120px_1
 /** As temporadas fechadas, com o pódio de cada uma no geral ou numa central. */
 function PastSeasons({ member, now }: { member: StaffMember; now: number }) {
   const past = useLoad(getPastSeasons);
-  const names = useLoad(useCallback(() => getArtistNames(member), [member]));
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const [open, setOpen] = useState<string | null>(null);
   const artists = names.state.status === "ready" ? names.state.data : null;
   const columns: Column<PastSeason>[] = [
