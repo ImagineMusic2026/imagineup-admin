@@ -113,6 +113,25 @@ test("o H.264 com faststart passa, com a duração e a medida", async () => {
   assert.equal(vc.videoMetaText({ durationMs: 125_400, width: 720, height: 1280 }), "2:05 · 720x1280");
 });
 
+test("até 1 minuto: 59 s e 60 s passam, 61 s fica de fora com a duração na frase", async () => {
+  assert.equal(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 59_000] }))), null);
+  assert.equal(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 60_000] }))), null);
+  assert.equal(
+    vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 61_000] }))),
+    "O vídeo tem 1 min 1 s. O limite é de 1 minuto: corte e exporte de novo.",
+  );
+  assert.equal(
+    vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 100_000] }))),
+    "O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo.",
+  );
+  // 60,4 s passa do limite e aparece como 1 min 1 s, nunca como "1 min".
+  assert.match(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 60_400] }))), /^O vídeo tem 1 min 1 s\./);
+  assert.equal(vc.durationText(45_000), "45 s");
+  assert.equal(vc.durationText(120_000), "2 min");
+  assert.equal(vc.VIDEO_MAX_DURATION_MS, 60_000);
+  assert.match(vc.VIDEO_RULES_TEXT, /de até 1 minuto/);
+});
+
 test("lê só os cabeçalhos e o índice, sem os dados do vídeo", async () => {
   const bytes = mp4({ mdatSize: 200_000 });
   const { read, counter } = reader(bytes);
@@ -234,6 +253,7 @@ test("textos sem travessão nem meia-risca, também as frases de cada recusa", a
     mp4({ faststart: false }),
     mp4({ movie: [1000, 0], tracks: [{ duration: 0 }] }),
     mp4({ tracks: [{ handler: "soun", codec: "mp4a" }] }),
+    mp4({ movie: [1000, 100_000] }),
   ];
   for (const bytes of cases) {
     const problem = vc.videoInfoProblem(await infoOf(bytes));
@@ -242,4 +262,7 @@ test("textos sem travessão nem meia-risca, também as frases de cada recusa", a
   }
   const unreadable = await infoOf(mp4({ first: "wide" })).catch((error) => error.message);
   assert.doesNotMatch(unreadable, DASHES);
+  // A frase da duração e a regra da tela também não levam hífen.
+  assert.doesNotMatch(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 100_000] }))), /-/);
+  assert.doesNotMatch(vc.VIDEO_RULES_TEXT, /-/);
 });
