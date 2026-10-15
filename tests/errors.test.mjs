@@ -150,6 +150,11 @@ test("motivos do bloco 11: frase própria quando o servidor não manda a dele", 
     "username-changed",
     "username-of-central",
     "fan-not-found",
+    "admin-only",
+    "recent-login-required",
+    "fan-is-staff",
+    "export-daily-limit",
+    "deletion-daily-limit",
   ]) {
     assert.ok(REASON_MESSAGES[reason], reason);
     assert.equal(

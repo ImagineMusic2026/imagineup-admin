@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AdjustDialog, type AdjustAttempt } from "@/components/fas/adjust-dialog";
+import { FanDataRequestCard } from "@/components/fas/fan-data-request";
 import { CentralsTab, CommentsTab, EngagementTab, InvitesTab, LedgerTab, MissionsTab, RedemptionsTab } from "@/components/fas/fan-tabs";
 import { FanAvatar } from "@/components/painel/fan-avatar";
 import { FanBio, FanSocialLinks } from "@/components/painel/fan-socials";
@@ -26,7 +27,7 @@ import { getCurrentSeason, getFanCard, getFanCentrals, getLevels } from "@/lib/f
 import { earnedLast7Days, rankPositionNow, referralAwardText, referralPath, seasonPointsNow, utmText } from "@/lib/fans";
 import { formatDateTime, formatDay, formatNumber } from "@/lib/format";
 import { NO_LEVELS_TEXT, levelOf } from "@/lib/levels";
-import { canEditSection, canSeeSection, type StaffMember } from "@/lib/staff";
+import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/staff";
 
 type FanTab = "ledger" | "centrals" | "engagement" | "comments" | "invites" | "missions" | "redemptions";
 
@@ -256,6 +257,9 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
           ...(seesRewards ? [{ id: "redemptions" as const, label: "Resgates", render: () => <RedemptionsTab uid={uid} /> }] : []),
         ]}
       />
+
+      {/* Só admin, longe das ações do dia a dia (32.6, item 4). */}
+      {isAdmin(member) ? <FanDataRequestCard uid={uid} name={name} self={member.uid === uid} /> : null}
 
       {canEdit ? (
         <AdjustDialog

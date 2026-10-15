@@ -90,6 +90,8 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "redemption.contacts.viewed": { label: "Contatos de resgate vistos", section: "rewards" },
   "wallet.adjusted": { label: "Pontos ajustados", section: "fans" },
   "fan.email.lookup": { label: "Fã buscado por e-mail", section: "fans" },
+  "fan.data.exported": { label: "Dados do fã exportados (LGPD)", section: "fans" },
+  "fan.account.deleted": { label: "Conta do fã excluída (LGPD)", section: "fans" },
 };
 
 /** As seções do filtro, na ordem: Equipe e as do painel, mais "Outros". */
@@ -397,6 +399,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 const SUSPENSION_LABELS: Record<string, string> = { spam: "Spam", offensive: "Ofensivo", harassment: "Assédio", other: "Outro" };
 
+/** O motivo da troca do @ (32.2); as entradas de antes do servidor novo não têm. */
+const USERNAME_RESET_LABELS: Record<string, string> = { moderation: "ofensivo ou impróprio", central: "@ de artista" };
+
 const COUNTERS: Record<string, string> = {
   balance: "Saldo",
   xp: "XP",
@@ -512,7 +517,8 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
   }
 
   const reason = take("reason");
-  if (typeof reason === "string") lines.push(`Motivo: ${SUSPENSION_LABELS[reason] ?? reason}`);
+  const reasonLabels = entry.action === "fan.username.reset" ? USERNAME_RESET_LABELS : SUSPENSION_LABELS;
+  if (typeof reason === "string") lines.push(`Motivo: ${reasonLabels[reason] ?? reason}`);
   const note = take("note");
   if (typeof note === "string" && note) lines.push(`Nota: ${note}`);
 

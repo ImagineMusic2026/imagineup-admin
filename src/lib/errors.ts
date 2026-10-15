@@ -168,6 +168,13 @@ export const REASON_MESSAGES: Record<string, string> = {
   "lookup-daily-limit": "Você chegou ao limite de 50 buscas por e-mail hoje.",
   "username-changed": "O @ deste fã mudou. Confira o @ de agora antes de trocar.",
   "username-of-central": "Este @ é de uma central, não de um fã.",
+  // Pedidos de dados (LGPD, 32.2). O `email-mismatch` deles usa o mesmo motivo
+  // do convite, com a frase do servidor (`dataRequestErrorMessage`).
+  "admin-only": "Só um admin do painel pode fazer isso.",
+  "recent-login-required": "Entre de novo com a sua senha para continuar.",
+  "fan-is-staff": "Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta.",
+  "export-daily-limit": "Você chegou ao limite de 20 exportações de dados hoje.",
+  "deletion-daily-limit": "Você chegou ao limite de 5 exclusões de conta hoje.",
 };
 
 /** O `details.reason` de um erro, ou `null`. */

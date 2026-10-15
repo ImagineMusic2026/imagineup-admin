@@ -108,6 +108,10 @@ export interface FanProfile {
   socials: FanSocial[];
   /** Alguma das quatro chaves tem texto, mesmo fora do padrão: a `clearFanProfileText` apaga. */
   socialsStored: boolean;
+  /** Até quando o fã não troca o próprio @ (24.1 e 32.3); `null` sem prazo gravado. */
+  usernameChangeableAt: Date | null;
+  /** `moderation` quando o prazo veio da troca pela equipe; ausente vale `null`. */
+  usernameLockReason: "moderation" | null;
 }
 
 function textOf(value: unknown): string {
@@ -157,6 +161,8 @@ export function parseFanProfile(uid: string, data: Record<string, unknown>): Fan
     privateAccount: data.privateAccount === true,
     socials,
     socialsStored: stored,
+    usernameChangeableAt: toDate(data.usernameChangeableAt),
+    usernameLockReason: data.usernameLockReason === "moderation" ? "moderation" : null,
   };
 }
 

@@ -158,6 +158,34 @@ export function Checkbox({
   );
 }
 
+/**
+ * Opção de um grupo de rádio (dentro de um `fieldset` com `legend`). A dica
+ * fica fora do rótulo, ligada por `aria-describedby`, para o nome da opção
+ * continuar curto no leitor de tela.
+ */
+export function Radio({
+  label,
+  hint,
+  className,
+  ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { label: React.ReactNode; hint?: React.ReactNode; ref?: React.Ref<HTMLInputElement> }) {
+  const id = useId();
+  const hintId = `${id}-dica`;
+  return (
+    <div className={cx("flex flex-col gap-1", className)}>
+      <label className={cx("inline-flex cursor-pointer items-center gap-2.5 text-sm text-fg/85", props.disabled && "cursor-not-allowed opacity-60")}>
+        <input type="radio" {...props} aria-describedby={hint ? hintId : undefined} className="size-[18px] shrink-0 cursor-[inherit] accent-pink-strong" />
+        <span>{label}</span>
+      </label>
+      {hint ? (
+        <p id={hintId} className="m-0 pl-[28px] text-[12.5px] leading-snug text-fg/60">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 interface TextAreaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   invalid?: boolean;
   describedBy?: string;

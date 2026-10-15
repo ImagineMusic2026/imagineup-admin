@@ -1,6 +1,6 @@
 import { LONG_CALL_TIMEOUT_MS, call } from "@/lib/callable";
 import type { SuspensionReason } from "@/lib/fan-profile";
-import type { ProfileTextField } from "@/lib/moderation";
+import type { ProfileTextField, UsernameResetReason } from "@/lib/moderation";
 
 /**
  * Callables da seção `moderation` (21.9 e 26.4), todas com edição da seção.
@@ -38,8 +38,12 @@ export function hideFanComments(uid: string): Promise<{ hidden: number; more: bo
   return call("hideFanComments", { uid }, { timeout: LONG_CALL_TIMEOUT_MS });
 }
 
-/** Troca o @ do fã por um automático; `username` é o @ que a tela mostrou (o servidor confere). */
-export function resetFanUsername(input: { uid: string; username: string }): Promise<{ ok: true; username: string }> {
+/**
+ * Troca o @ do fã por um automático; `username` é o @ que a tela mostrou (o
+ * servidor confere). O `reason` vai sempre escrito (32.2): com `moderation`, o
+ * `changeableAt` volta em ISO, daqui a 30 dias; com `central`, `null`.
+ */
+export function resetFanUsername(input: { uid: string; username: string; reason: UsernameResetReason }): Promise<{ ok: true; username: string; changeableAt: string | null }> {
   return call("resetFanUsername", input);
 }
 

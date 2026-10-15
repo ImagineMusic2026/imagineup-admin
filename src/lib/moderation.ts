@@ -1,4 +1,4 @@
-import { formatNumber, formatRelative, joinPt } from "@/lib/format";
+import { formatDay, formatNumber, formatRelative, joinPt } from "@/lib/format";
 import { toDate } from "@/lib/staff";
 import { isVisibleLine } from "@/lib/visible-line";
 
@@ -63,8 +63,41 @@ export function clearedProfileText(name: string, cleared: readonly ProfileTextFi
   return NOTHING_TO_CLEAR_TEXT;
 }
 
-export function resetUsernameText(username: string): string {
-  return `O fã fica com um @ automático novo e pode escolher outro na hora. O @${username} fica livre para qualquer pessoa.`;
+/**
+ * O motivo da troca do @ (32.1, decisão 1): `moderation`, o @ ofensivo ou
+ * impróprio, trava a troca pelo fã por 30 dias; `central`, o @ de um artista,
+ * sai sem prazo (e destrava quem foi trocado por engano).
+ */
+export const USERNAME_RESET_REASONS = ["moderation", "central"] as const;
+export type UsernameResetReason = (typeof USERNAME_RESET_REASONS)[number];
+
+export const USERNAME_RESET_REASON_LABELS: Record<UsernameResetReason, string> = {
+  moderation: "O @ é ofensivo ou impróprio",
+  central: "O @ é de um artista",
+};
+
+export const USERNAME_RESET_REASON_HINTS: Record<UsernameResetReason, string> = {
+  moderation: "Se o @ em si é ofensivo, peça também o termo na lista do filtro. Sem isso, outra conta pode pegar o @ na hora.",
+  central: "Também tira o prazo de quem foi trocado por engano: o fã ganha outro @ automático e escolhe na hora.",
+};
+
+export function resetUsernameText(username: string, reason: UsernameResetReason): string {
+  const when = reason === "moderation" ? "só escolhe outro daqui a 30 dias" : "pode escolher outro na hora";
+  return `O fã fica com um @ automático novo e ${when}. O @${username} fica livre para qualquer pessoa.`;
+}
+
+/** O aviso depois da troca, pelo `changeableAt` da resposta: com data, o fã espera até ela. */
+export function resetUsernameDoneText(previous: string, name: string, changeableAt: string | null, now: Date = new Date()): string {
+  const until = changeableAt ? new Date(changeableAt) : null;
+  const wait = until && !Number.isNaN(until.getTime()) ? `escolhe outro a partir de ${formatDay(until, now)}` : "pode escolher outro na hora";
+  return `O @${previous} foi trocado por um automático. ${name} ${wait}.`;
+}
+
+/** "Liberada a partir de 14 nov, @ trocado pela equipe" (o item "Troca do @"): o prazo que ainda vale, ou `null`. */
+export function usernameLockText(profile: { usernameChangeableAt: Date | null; usernameLockReason: "moderation" | null }, now: Date): string | null {
+  const until = profile.usernameChangeableAt;
+  if (!until || until.getTime() <= now.getTime()) return null;
+  return `Liberada a partir de ${formatDay(until, now)}${profile.usernameLockReason === "moderation" ? ", @ trocado pela equipe" : ""}`;
 }
 
 export interface QueueItem {
