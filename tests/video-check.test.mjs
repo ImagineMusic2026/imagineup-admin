@@ -80,9 +80,17 @@ function trak({ handler = "vide", codec = "avc1", width = 640, height = 360, rot
   );
 }
 
-function mp4({ faststart = true, movie = [1000, 6000], tracks = [{}], mdatSize = 4000, large = false, first = "ftyp" } = {}) {
+/** O `mvex` de um MP4 fragmentado, com o `mehd` (versão 0 ou 1) quando vem a duração inteira. */
+function mvex(fragmentDuration = null, version = 0) {
+  const trex = box("trex", zeros(4), u32(1), zeros(16));
+  if (fragmentDuration === null) return box("mvex", trex);
+  const duration = version === 1 ? concat([u32(Math.floor(fragmentDuration / 2 ** 32)), u32(fragmentDuration)]) : u32(fragmentDuration);
+  return box("mvex", box("mehd", new Uint8Array([version, 0, 0, 0]), duration), trex);
+}
+
+function mp4({ faststart = true, movie = [1000, 6000], tracks = [{}], mdatSize = 4000, large = false, first = "ftyp", moovExtra = [] } = {}) {
   const ftyp = box(first, ascii("isom"), u32(512), ascii("isomiso2avc1mp41"));
-  const moov = box("moov", mvhd(...movie), ...tracks.map(trak));
+  const moov = box("moov", mvhd(...movie), ...tracks.map(trak), ...moovExtra);
   const mdat = large ? largeBox("mdat", zeros(mdatSize)) : box("mdat", zeros(mdatSize));
   return faststart ? concat([ftyp, box("free", zeros(8)), moov, mdat]) : concat([ftyp, mdat, moov]);
 }
@@ -139,12 +147,37 @@ test("até 1 minuto, com meio segundo de folga: 60,499 s passa, 60,5 s fica de f
   assert.equal(await problemOf([1000, 0], { timescale: 600, duration: 36_000 }), null);
   assert.equal(await problemOf([1000, 0], { timescale: 600, duration: 36_300 }), refused);
 
+  // O arredondamento duplo (ao milissegundo na leitura, ao segundo no limite): 60,4995 s fica de fora.
+  assert.equal(await problemOf([2000, 120_998]), null);
+  assert.equal(await problemOf([2000, 120_999]), refused);
+
   assert.equal(vc.durationText(45_000), "45 s");
   assert.equal(vc.durationText(60_400), "1 min");
   assert.equal(vc.durationText(60_500), "1 min 1 s");
   assert.equal(vc.durationText(120_000), "2 min");
   assert.equal(vc.VIDEO_MAX_SECONDS, 60);
   assert.match(vc.VIDEO_RULES_TEXT, /de até 1 minuto/);
+});
+
+test("o MP4 fragmentado: a duração inteira vem do mehd, e sem ele o vídeo é recusado", async () => {
+  // O mvhd e o mdhd cobrem só o primeiro fragmento (2 s); a duração inteira está no mehd.
+  const fragmented = (fragmentDuration, version, movie = [1000, 2000]) =>
+    mp4({ movie, tracks: [{ timescale: 1000, duration: 2000 }], moovExtra: [mvex(fragmentDuration, version)] });
+  const long = "O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo.";
+  const unreadable = "Não deu para ler a duração do vídeo. Exporte de novo em MP4 (H.264).";
+
+  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(100_000, 0))), long);
+  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(100_000, 1))), long);
+  const short = await infoOf(fragmented(59_000, 0));
+  assert.equal(vc.videoInfoProblem(short), null);
+  assert.equal(short.durationMs, 59_000);
+  // O mehd vem na escala do mvhd.
+  assert.equal((await infoOf(fragmented(36_000, 0, [600, 1200]))).durationMs, 60_000);
+  // Sem o mehd (o -movflags frag_keyframe do ffmpeg), ou com ele zerado, não dá para saber a duração.
+  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(null))), unreadable);
+  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(0, 0))), unreadable);
+  // Sem o mvex, o mesmo arquivo continua lido pelo mvhd.
+  assert.equal((await infoOf(mp4({ movie: [1000, 2000] }))).durationMs, 2000);
 });
 
 test("a duração vem logo depois da imagem, antes do codec, da resolução e do faststart", async () => {

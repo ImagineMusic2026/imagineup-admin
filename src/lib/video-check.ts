@@ -24,6 +24,10 @@ export const VIDEO_MAX_LONG_SIDE = 1280;
  * O limite de duração, em segundos arredondados: até 60,499 s passa. Muito
  * export de "1:00" sai com uns centésimos a mais (o enchimento do AAC, o corte
  * sem recodificar, 1800 quadros a 29,97 fps), e o limite exato recusava todos.
+ *
+ * A duração lida já vem arredondada ao milissegundo, então de 60,4995 s a
+ * 60,5 s arredonda duas vezes e fica de fora. Só acontece com timescale de
+ * 2000 ou mais, e a diferença é de meio milésimo.
  */
 export const VIDEO_MAX_SECONDS = 60;
 /** Teto da leitura do índice: um `moov` de vídeo curto tem poucos KB. */
@@ -56,7 +60,7 @@ export interface Mp4Info {
   faststart: boolean;
   /** A primeira faixa de vídeo, ou `null` sem nenhuma. */
   video: VideoTrackInfo | null;
-  /** A duração do filme (`mvhd`), ou a da faixa quando o filme não traz. */
+  /** A duração do filme (`mvhd`), ou a da faixa quando o filme não traz; no fragmentado, a do `mehd`. */
   durationMs: number | null;
 }
 
@@ -129,12 +133,32 @@ function path(bytes: Uint8Array, box: Box, types: string[]): Box | null {
   return current;
 }
 
-/** `{ timescale, duration }` de um `mvhd` ou `mdhd` (versão 0 ou 1). */
+/** O timescale de um `mvhd` ou `mdhd` (versão 0 ou 1). */
+function timescaleOf(bytes: Uint8Array, box: Box): number {
+  return bytes[box.start] === 1 ? u32(bytes, box.start + 20) : u32(bytes, box.start + 12);
+}
+
+/** A duração em milissegundos de um `mvhd` ou `mdhd` (versão 0 ou 1). */
 function timing(bytes: Uint8Array, box: Box): number | null {
   const version = bytes[box.start];
   const base = box.start + 4;
-  const timescale = version === 1 ? u32(bytes, base + 16) : u32(bytes, base + 8);
   const duration = version === 1 ? u64(bytes, base + 20) : u32(bytes, base + 12);
+  return durationMsOf(timescaleOf(bytes, box), duration);
+}
+
+/**
+ * A duração inteira de um MP4 fragmentado: o `fragment_duration` do `mehd`
+ * (versão 0 ou 1), na escala do `mvhd`. Sem o `mehd`, não dá para saber sem
+ * ler os fragmentos.
+ */
+function fragmentedDuration(bytes: Uint8Array, mvex: Box, mvhd: Box | null): number | null {
+  const mehd = child(bytes, mvex, "mehd");
+  if (!mehd || !mvhd) return null;
+  const duration = bytes[mehd.start] === 1 ? u64(bytes, mehd.start + 4) : u32(bytes, mehd.start + 4);
+  return durationMsOf(timescaleOf(bytes, mvhd), duration);
+}
+
+function durationMsOf(timescale: number, duration: number): number | null {
   // Duração "desconhecida" (todos os bits ligados) ou zero: sem duração.
   if (!timescale || !duration || duration === 0xffffffff || duration >= 2 ** 53 - 1) return null;
   return Math.round((duration / timescale) * 1000);
@@ -211,6 +235,11 @@ export function parseMoov(bytes: Uint8Array): { video: VideoTrackInfo | null; du
     video = trackInfo(bytes, trak);
     if (video) break;
   }
+  // Fragmentado (com `mvex`): o `mvhd` e as faixas cobrem só o que está no
+  // próprio `moov`, que pode ser o primeiro fragmento. Um vídeo de 100 s
+  // exportado assim entrava como 0:02.
+  const mvex = child(bytes, root, "mvex");
+  if (mvex) return { video, durationMs: fragmentedDuration(bytes, mvex, mvhd) };
   const movie = mvhd ? timing(bytes, mvhd) : null;
   return { video, durationMs: movie ?? video?.durationMs ?? null };
 }
