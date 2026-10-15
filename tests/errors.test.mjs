@@ -102,6 +102,19 @@ test("Firestore e o mapa geral", () => {
   assert.equal(errorMessage(new Error("boom")), "Não foi possível concluir. Tente de novo.");
 });
 
+test("o envio do vídeo tem as frases dele; a foto continua com as de sempre", async () => {
+  const { storageErrorMessage } = await import("@/lib/errors");
+  assert.equal(
+    storageErrorMessage({ code: "storage/unauthorized" }, "video"),
+    "O envio do vídeo foi recusado. Confira se você pode editar artistas e se o vídeo é MP4 de até 20 MB.",
+  );
+  assert.equal(storageErrorMessage({ code: "storage/server-file-wrong-size" }, "video"), "O vídeo chegou incompleto. Tente de novo.");
+  assert.equal(storageErrorMessage({ code: "storage/unauthenticated" }, "video"), "Sua sessão terminou. Entre de novo.");
+  assert.equal(storageErrorMessage({ code: "storage/unknown" }, "video"), "Não foi possível enviar o vídeo. Tente de novo.");
+  assert.match(storageErrorMessage({ code: "storage/unauthorized" }), /^O envio da foto foi recusado\./);
+  assert.equal(storageErrorMessage({ code: "storage/unknown" }), "Não foi possível enviar a foto. Tente de novo.");
+});
+
 test("motivo de volta ao login vai no endereço", async () => {
   const { EXIT_REASON_MESSAGES, loginUrl, parseExitReason } = await import("@/lib/login-reasons");
   assert.equal(loginUrl(null), "/entrar");

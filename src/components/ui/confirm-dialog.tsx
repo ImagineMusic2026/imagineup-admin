@@ -32,7 +32,10 @@ export interface ConfirmRequest {
 /**
  * Confirmação com o pedido dentro: o erro aparece no próprio diálogo e o
  * foco começa no botão de voltar, que é a escolha segura. Depois de uma falha
- * incerta, o botão de confirmar vira "Tentar de novo".
+ * incerta, o botão de confirmar vira "Tentar de novo" quando a tela manda a
+ * frase de repetir (`uncertainText`); com a de sempre, que pede conferir a
+ * lista antes, o rótulo fica. A recusa que bloqueia a nova tentativa tira o
+ * botão de confirmar.
  */
 export function ConfirmDialog({
   request,
@@ -52,7 +55,7 @@ export function ConfirmDialog({
   // anterior não fecha nem muda a confirmação que estiver aberta agora.
   const round = useRef(0);
 
-  // O botão de confirmar desligou com o foco nele: o foco vai para o de voltar.
+  // O botão de confirmar saiu com o foco nele: o foco vai para o de voltar.
   useEffect(() => {
     if (blocked) footer.current?.querySelector<HTMLElement>("button")?.focus();
   }, [blocked]);
@@ -77,7 +80,7 @@ export function ConfirmDialog({
       if (round.current !== mine) return;
       if (request.onUncertain && mayHaveRunOnServer(failure)) {
         setError(request.uncertainText ?? actionErrorMessage(failure));
-        setRetry(true);
+        setRetry(Boolean(request.uncertainText));
         request.onUncertain();
       } else {
         setError(callableErrorMessage(failure));
@@ -110,9 +113,11 @@ export function ConfirmDialog({
           <Button variant="ghost" onClick={close} disabled={busy} data-autofocus>
             {request?.cancelLabel ?? "Voltar"}
           </Button>
-          <Button variant={request?.tone === "danger" ? "danger" : "primary"} onClick={confirm} busy={busy} disabled={blocked}>
-            {busy ? request?.busyLabel : retry ? "Tentar de novo" : request?.confirmLabel}
-          </Button>
+          {blocked ? null : (
+            <Button variant={request?.tone === "danger" ? "danger" : "primary"} onClick={confirm} busy={busy}>
+              {busy ? request?.busyLabel : retry ? "Tentar de novo" : request?.confirmLabel}
+            </Button>
+          )}
         </div>
       </div>
     </Dialog>

@@ -237,6 +237,8 @@ function PostDialogBody({
         setStep("upload");
         let photoPath = base.media?.photo?.path ?? null;
         let thumbPath = base.media?.thumb?.path ?? null;
+        // Qual envio falhou decide a frase do Storage: a capa (foto) ou o vídeo.
+        let sending: "photo" | "video" = "photo";
         try {
           if (image.kind === "new") {
             const uploaded = server.current.uploadedImage?.source === image.processed ? server.current.uploadedImage : null;
@@ -250,6 +252,7 @@ function PostDialogBody({
             if (server.current.uploadedVideo?.file === video.file) videoPath = server.current.uploadedVideo.path;
             else {
               setProgress(0);
+              sending = "video";
               videoPath = await uploadPostVideo(postId, video.file, video.meta, (fraction) => mounted.current && setProgress(fraction));
               server.current.uploadedVideo = { file: video.file, path: videoPath };
             }
@@ -262,7 +265,8 @@ function PostDialogBody({
           }
           media = { photoPath, thumbPath, ...(videoPath !== undefined ? { videoPath } : {}) };
         } catch (failure) {
-          fail(createdHere ? `O post ficou como rascunho. Falta enviar a mídia. ${storageErrorMessage(failure)}` : `A mídia não subiu e nada foi salvo. ${storageErrorMessage(failure)}`);
+          const why = storageErrorMessage(failure, sending);
+          fail(createdHere ? `O post ficou como rascunho. Falta enviar a mídia. ${why}` : `A mídia não subiu e nada foi salvo. ${why}`);
           return;
         }
       } else if (image.kind === "none" && base.media) {

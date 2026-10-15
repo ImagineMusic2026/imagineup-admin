@@ -5,6 +5,8 @@
  *
  * - Só H.264 (`avc1`); HEVC (`hvc1` ou `hev1`) não toca em alguns Android, e
  *   as variantes `avc2`, `avc3` e `avc4` também não tocam em todo aparelho.
+ *   Do H.264, só os perfis Baseline, Main e High (o `profile_idc` 66, 77 e
+ *   100 do `avcC`): o High 10 e o 4:2:2 não tocam em muitos aparelhos.
  * - O índice (`moov`) antes dos dados (`mdat`), o "faststart": sem ele, o
  *   vídeo só começa depois de baixar quase tudo.
  * - Até 720p (o lado menor até 720 e o maior até 1280) e 20 MB.
@@ -35,8 +37,10 @@ export interface VideoTrackInfo {
   height: number;
   /** O vídeo gira 90 ou 270 graus na tela (a matriz do `tkhd`). */
   rotated: boolean;
-  /** A largura do pixel sobre a altura (a caixa `pasp`); 1 sem ela, ou com ela torta. */
+  /** A largura do pixel sobre a altura (a caixa `pasp`), entre 1/4 e 4; 1 sem ela, ou fora disso. */
   pixelRatio: number;
+  /** O `profile_idc` do H.264 (a caixa `avcC`), ou `null` sem ela. */
+  profile: number | null;
   durationMs: number | null;
 }
 
@@ -132,13 +136,24 @@ function timing(bytes: Uint8Array, box: Box): number | null {
 /** O tamanho da entrada visual até as caixas filhas: o cabeçalho e os campos fixos (ISO 14496-12, VisualSampleEntry). */
 const VISUAL_ENTRY_FIXED = 86;
 
+/** A proporção do pixel que o leitor aceita; fora disso, o `pasp` é tratado como quadrado. */
+const PIXEL_RATIO_MIN = 1 / 4;
+const PIXEL_RATIO_MAX = 4;
+
 /** `hSpacing / vSpacing` da caixa `pasp`, ou 1 sem ela (ou com valores que não valem). */
-function pixelRatioOf(bytes: Uint8Array, entry: number, end: number): number {
-  const pasp = children(bytes, entry + VISUAL_ENTRY_FIXED, end).find((box) => box.type === "pasp");
+function pixelRatioOf(boxes: Box[], bytes: Uint8Array): number {
+  const pasp = boxes.find((box) => box.type === "pasp");
   if (!pasp || pasp.end - pasp.start < 8) return 1;
   const h = u32(bytes, pasp.start);
   const v = u32(bytes, pasp.start + 4);
-  return h && v ? h / v : 1;
+  const ratio = h && v ? h / v : 1;
+  return ratio >= PIXEL_RATIO_MIN && ratio <= PIXEL_RATIO_MAX ? ratio : 1;
+}
+
+/** O `profile_idc` da caixa `avcC` (o segundo byte), ou `null` sem ela. */
+function profileOf(boxes: Box[], bytes: Uint8Array): number | null {
+  const avcC = boxes.find((box) => box.type === "avcC");
+  return avcC && avcC.end - avcC.start >= 2 ? bytes[avcC.start + 1] : null;
 }
 
 function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
@@ -159,11 +174,14 @@ function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
   const stsd = path(bytes, trak, ["mdia", "minf", "stbl", "stsd"]);
   let codec: string | null = null;
   let pixelRatio = 1;
+  let profile: number | null = null;
   if (stsd && stsd.end - stsd.start >= 16) {
     const entry = stsd.start + 8;
     codec = typeAt(bytes, entry + 4);
     const entryEnd = Math.min(entry + u32(bytes, entry), stsd.end);
-    pixelRatio = pixelRatioOf(bytes, entry, entryEnd);
+    const inner = children(bytes, entry + VISUAL_ENTRY_FIXED, entryEnd);
+    pixelRatio = pixelRatioOf(inner, bytes);
+    profile = profileOf(inner, bytes);
     // A entrada visual traz a medida codificada (ISO 14496-12, VisualSampleEntry).
     if (entry + 36 <= stsd.end) {
       const codedWidth = u16(bytes, entry + 32);
@@ -174,7 +192,7 @@ function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
       }
     }
   }
-  return { codec, width, height, rotated, pixelRatio, durationMs: mdhd ? timing(bytes, mdhd) : null };
+  return { codec, width, height, rotated, pixelRatio, profile, durationMs: mdhd ? timing(bytes, mdhd) : null };
 }
 
 /** O conteúdo de um `moov` (sem o cabeçalho dele): a duração e a primeira faixa de vídeo. */
@@ -230,9 +248,19 @@ export async function readMp4Info(read: ReadRange, size: number): Promise<Mp4Inf
  * medida codificada.
  */
 export function displaySize(video: Pick<VideoTrackInfo, "width" | "height" | "rotated" | "pixelRatio">): { width: number; height: number } {
-  const width = Math.round(video.width * (video.pixelRatio || 1));
-  return video.rotated ? { width: video.height, height: width } : { width, height: video.height };
+  // Lados inteiros, de 1 em diante: é o que vai no metadado.
+  const width = Math.max(1, Math.round(video.width * (video.pixelRatio || 1)));
+  const height = Math.max(1, Math.round(video.height));
+  return video.rotated ? { width: height, height: width } : { width, height };
 }
+
+/** A medida em que o limite de 720p é aplicado: a codificada, só girada no vídeo de pé (sem o `pasp`). */
+function limitSize(video: Pick<VideoTrackInfo, "width" | "height" | "rotated">): { width: number; height: number } {
+  return video.rotated ? { width: video.height, height: video.width } : { width: video.width, height: video.height };
+}
+
+/** Os perfis do H.264 que tocam em todo aparelho: Baseline (66), Main (77) e High (100). */
+const H264_PROFILES = new Set([66, 77, 100]);
 
 /** As variantes do H.264 que não tocam em todo aparelho (os parâmetros dentro do fluxo, ou perfis raros). */
 const H264_VARIANTS = new Set(["avc2", "avc3", "avc4"]);
@@ -248,12 +276,15 @@ export function videoInfoProblem(info: Mp4Info): string | null {
     return "Este H.264 é de uma variante que nem todo aparelho toca. Exporte de novo em MP4 H.264 padrão.";
   }
   if (video.codec !== "avc1") return "O vídeo precisa estar em H.264. Exporte de novo nesse formato.";
+  if (video.profile === null || !H264_PROFILES.has(video.profile)) {
+    return "O vídeo usa um perfil do H.264 que muitos aparelhos não tocam (como o High 10 ou o 4:2:2). Exporte em H.264 de 8 bits, 4:2:0, perfil High, Main ou Baseline.";
+  }
   const short = Math.min(video.width, video.height);
   const long = Math.max(video.width, video.height);
   if (!short || !long) return "Não deu para ler a resolução do vídeo. Exporte de novo em MP4 (H.264).";
   if (short > VIDEO_MAX_SHORT_SIDE || long > VIDEO_MAX_LONG_SIDE) {
-    // A frase diz a medida como a pessoa vê o vídeo (de pé, quando foi gravado assim).
-    const shown = displaySize(video);
+    // A frase diz a medida em que o limite vale: a codificada, de pé quando o vídeo foi gravado assim.
+    const shown = limitSize(video);
     return `O vídeo tem ${shown.width}x${shown.height}. O limite é 720p (até 1280x720, ou 720x1280 de pé). Exporte numa resolução menor.`;
   }
   if (!info.faststart) {

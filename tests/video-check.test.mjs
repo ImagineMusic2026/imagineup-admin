@@ -65,9 +65,12 @@ function tkhd(width, height, rotated) {
   return box("tkhd", zeros(4), zeros(20), zeros(16), ...matrix.map(i32), u32(width * one), u32(height * one));
 }
 
-function trak({ handler = "vide", codec = "avc1", width = 640, height = 360, rotated = false, timescale = 30000, duration = 180000, pasp = null }) {
-  // A entrada visual: os campos fixos e, depois deles, as caixas filhas (o avcC de mentira e o pasp, quando vem).
-  const extra = [box("avcC", zeros(8)), ...(pasp ? [box("pasp", u32(pasp[0]), u32(pasp[1]))] : [])];
+function trak({ handler = "vide", codec = "avc1", width = 640, height = 360, rotated = false, timescale = 30000, duration = 180000, pasp = null, profile = 100 }) {
+  // A entrada visual: os campos fixos e, depois deles, as caixas filhas (o avcC com o perfil, quando vem, e o pasp).
+  const extra = [
+    ...(profile === null ? [] : [box("avcC", new Uint8Array([1, profile, 0, 31, 0xff, 0xe1, 0, 0]))]),
+    ...(pasp ? [box("pasp", u32(pasp[0]), u32(pasp[1]))] : []),
+  ];
   const entry = box(codec, zeros(6), u16(1), zeros(16), u16(width), u16(height), zeros(50), ...extra);
   const stsd = box("stsd", zeros(4), u32(1), entry);
   return box(
@@ -101,7 +104,7 @@ async function infoOf(bytes) {
 test("o H.264 com faststart passa, com a duração e a medida", async () => {
   const info = await infoOf(mp4());
   assert.equal(info.faststart, true);
-  assert.deepEqual(info.video, { codec: "avc1", width: 640, height: 360, rotated: false, pixelRatio: 1, durationMs: 6000 });
+  assert.deepEqual(info.video, { codec: "avc1", width: 640, height: 360, rotated: false, pixelRatio: 1, profile: 100, durationMs: 6000 });
   assert.equal(vc.videoInfoProblem(info), null);
   const meta = vc.videoMetaOf(info);
   assert.deepEqual(meta, { durationMs: 6000, width: 640, height: 360 });
@@ -177,9 +180,27 @@ test("o pixel não quadrado (pasp): a largura de tela no metadado, e o limite pe
   const anamorphic = await infoOf(mp4({ tracks: [{ width: 1280, height: 720, pasp: [2, 1] }] }));
   assert.equal(vc.videoInfoProblem(anamorphic), null);
   assert.deepEqual(vc.videoMetaOf(anamorphic), { durationMs: 6000, width: 2560, height: 720 });
-  // O pasp quadrado, ou torto (zero), vale 1.
+  // O pasp quadrado, torto (zero) ou fora de 1/4 a 4 vale 1.
   assert.equal((await infoOf(mp4({ tracks: [{ pasp: [1, 1] }] }))).video?.pixelRatio, 1);
   assert.equal((await infoOf(mp4({ tracks: [{ pasp: [0, 1] }] }))).video?.pixelRatio, 1);
+  assert.equal((await infoOf(mp4({ tracks: [{ pasp: [5, 1] }] }))).video?.pixelRatio, 1);
+  assert.equal((await infoOf(mp4({ tracks: [{ pasp: [1, 5] }] }))).video?.pixelRatio, 1);
+  assert.equal((await infoOf(mp4({ tracks: [{ pasp: [4, 1] }] }))).video?.pixelRatio, 4);
+  assert.equal((await infoOf(mp4({ tracks: [{ pasp: [1, 4] }] }))).video?.pixelRatio, 1 / 4);
+  // Os lados do metadado são inteiros, de 1 em diante.
+  assert.deepEqual(vc.displaySize({ width: 1, height: 1, rotated: false, pixelRatio: 1 / 4 }), { width: 1, height: 1 });
+  // A recusa diz a medida em que o limite vale: a codificada, sem o pasp.
+  const wideHd = await infoOf(mp4({ tracks: [{ width: 1440, height: 1080, pasp: [4, 3] }] }));
+  assert.match(vc.videoInfoProblem(wideHd), /^O vídeo tem 1440x1080\./);
+});
+
+test("o perfil do H.264: só Baseline, Main e High", async () => {
+  for (const profile of [66, 77, 100]) assert.equal(vc.videoInfoProblem(await infoOf(mp4({ tracks: [{ profile }] }))), null, String(profile));
+  const refused =
+    "O vídeo usa um perfil do H.264 que muitos aparelhos não tocam (como o High 10 ou o 4:2:2). Exporte em H.264 de 8 bits, 4:2:0, perfil High, Main ou Baseline.";
+  for (const profile of [110, 122, 244, 88]) assert.equal(vc.videoInfoProblem(await infoOf(mp4({ tracks: [{ profile }] }))), refused, String(profile));
+  // Sem o avcC, o perfil não dá para ler: também fica de fora.
+  assert.equal(vc.videoInfoProblem(await infoOf(mp4({ tracks: [{ profile: null }] }))), refused);
 });
 
 test("a duração da faixa quando o filme não traz, e o arquivo sem vídeo", async () => {
@@ -200,7 +221,25 @@ test("o que não é MP4 não passa da leitura", async () => {
   await assert.rejects(infoOf(cut), vc.VideoCheckError);
 });
 
-test("textos sem travessão nem meia-risca", () => {
-  assert.doesNotMatch(vc.VIDEO_RULES_TEXT, /[–—]/);
+test("textos sem travessão nem meia-risca, também as frases de cada recusa", async () => {
+  const DASHES = /[–—]/;
+  assert.doesNotMatch(vc.VIDEO_RULES_TEXT, DASHES);
   assert.equal(vc.VIDEO_MAX_BYTES, 20 * 1024 * 1024);
+  const cases = [
+    mp4({ tracks: [{ codec: "hvc1" }] }),
+    mp4({ tracks: [{ codec: "avc3" }] }),
+    mp4({ tracks: [{ codec: "av01" }] }),
+    mp4({ tracks: [{ profile: 110 }] }),
+    mp4({ tracks: [{ width: 1920, height: 1080 }] }),
+    mp4({ faststart: false }),
+    mp4({ movie: [1000, 0], tracks: [{ duration: 0 }] }),
+    mp4({ tracks: [{ handler: "soun", codec: "mp4a" }] }),
+  ];
+  for (const bytes of cases) {
+    const problem = vc.videoInfoProblem(await infoOf(bytes));
+    assert.ok(problem);
+    assert.doesNotMatch(problem, DASHES, problem);
+  }
+  const unreadable = await infoOf(mp4({ first: "wide" })).catch((error) => error.message);
+  assert.doesNotMatch(unreadable, DASHES);
 });
