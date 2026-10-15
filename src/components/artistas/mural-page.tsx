@@ -78,7 +78,8 @@ function MuralContent({ member }: { member: StaffMember }) {
   const [notice, setNotice] = useState<{ key: number; tone: "success" | "error" | "info"; text: string } | null>(null);
   const [rowNotice, setRowNotice] = useState<{ id: string; text: string; key: number } | null>(null);
 
-  const names = useLoad(useCallback(() => getArtistNames(member), [member]));
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const artists = names.state.status === "ready" ? names.state.data : null;
   const count = useLoad(
     useCallback(() => {

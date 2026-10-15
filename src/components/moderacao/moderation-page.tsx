@@ -79,7 +79,8 @@ function ModerationContent({ member }: { member: StaffMember }) {
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [afterConfirm, setAfterConfirm] = useState<(() => void) | null>(null);
 
-  const names = useLoad(useCallback(() => getArtistNames(member), [member]));
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const artistNames = names.state.status === "ready" ? names.state.data : null;
   const count = useLoad(
     useCallback(() => {

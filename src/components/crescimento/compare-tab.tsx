@@ -41,6 +41,7 @@ import { daysBetween, previousRange, rangeEndingYesterday, rangeStartingAt, shif
 import { formatDay, formatDayRange, formatDecimal, formatDelta, formatNumber, formatSigned } from "@/lib/format";
 import { originKindLabel, utmLabel, type StatsDay } from "@/lib/stats";
 import { getStatsDays } from "@/lib/stats-data";
+import { canSeeSection } from "@/lib/staff";
 import { useStaffMember } from "@/lib/staff-context";
 
 type Mode = "artists" | "campaigns" | "periods";
@@ -180,11 +181,13 @@ function metricValue(value: number | null, points: boolean): string {
 
 function ArtistsCompare({ period, now }: { period: PeriodDays; now: number }) {
   const member = useStaffMember();
+  // Do membro, a leitura só usa se ele vê a seção Artistas: outra mudança no acesso não lê de novo.
+  const seesArtists = canSeeSection(member, "artists");
   const load = useCallback(async () => {
     const range = rangeEndingYesterday(period, now);
-    const [read, names] = await Promise.all([getStatsDays(range, now), getArtistNames(member)]);
+    const [read, names] = await Promise.all([getStatsDays(range, now), getArtistNames(seesArtists)]);
     return { range, read, names };
-  }, [period, now, member]);
+  }, [period, now, seesArtists]);
   const { state, reload, reloading, loadedAt, refreshError } = useLoad(load);
   const [chosen, setChosen] = useState<string[] | null>(null);
   const [metric, setMetric] = useState<ArtistMetric>("joined");

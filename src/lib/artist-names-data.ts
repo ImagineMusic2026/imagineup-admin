@@ -1,7 +1,6 @@
 import { collection, getDocs, query, where } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
-import { canSeeSection, type StaffMember } from "@/lib/staff";
 
 /**
  * Nomes das centrais, em leitura única, para as telas que mostram ids de
@@ -23,9 +22,9 @@ function statusOf(value: unknown): ArtistName["status"] {
 }
 
 /** As centrais na ordem de destaque (`order`), com o nome e a situação, num mapa pelo id (o @). */
-export async function getArtistNames(member: Pick<StaffMember, "role" | "sections" | "status"> | null): Promise<Map<string, ArtistName>> {
+export async function getArtistNames(seesArtists: boolean): Promise<Map<string, ArtistName>> {
   const base = collection(db(), "artists");
-  const snapshot = await getDocs(canSeeSection(member, "artists") ? base : query(base, where("status", "==", "published")));
+  const snapshot = await getDocs(seesArtists ? base : query(base, where("status", "==", "published")));
   const rows = snapshot.docs.map((item) => {
     const data = item.data();
     const name = typeof data.name === "string" && data.name.trim() ? data.name.trim() : `@${item.id}`;

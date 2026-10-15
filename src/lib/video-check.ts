@@ -20,7 +20,12 @@
 export const VIDEO_MAX_BYTES = 20 * 1024 * 1024;
 export const VIDEO_MAX_SHORT_SIDE = 720;
 export const VIDEO_MAX_LONG_SIDE = 1280;
-export const VIDEO_MAX_DURATION_MS = 60_000;
+/**
+ * O limite de duração, em segundos arredondados: até 60,499 s passa. Muito
+ * export de "1:00" sai com uns centésimos a mais (o enchimento do AAC, o corte
+ * sem recodificar, 1800 quadros a 29,97 fps), e o limite exato recusava todos.
+ */
+export const VIDEO_MAX_SECONDS = 60;
 /** Teto da leitura do índice: um `moov` de vídeo curto tem poucos KB. */
 const MOOV_READ_MAX = 16 * 1024 * 1024;
 
@@ -267,22 +272,34 @@ const H264_PROFILES = new Set([66, 77, 100]);
 /** As variantes do H.264 que não tocam em todo aparelho (os parâmetros dentro do fluxo, ou perfis raros). */
 const H264_VARIANTS = new Set(["avc2", "avc3", "avc4"]);
 
+/** Os segundos arredondados, os mesmos do limite e da linha "0:59". */
+function roundedSeconds(durationMs: number): number {
+  return Math.round(durationMs / 1000);
+}
+
 /**
- * "1 min 40 s": a duração na frase da recusa. O segundo começado conta inteiro,
- * para um vídeo de 60,4 s não aparecer como "1 min" ao passar do limite.
+ * "1 min 40 s": a duração na frase da recusa, com o mesmo arredondamento do
+ * limite. Um vídeo recusado nunca aparece como "1 min".
  */
 export function durationText(durationMs: number): string {
-  const total = Math.ceil(durationMs / 1000);
+  const total = roundedSeconds(durationMs);
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   if (minutes === 0) return `${seconds} s`;
   return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
 }
 
-/** O primeiro problema do vídeo, na ordem em que a pessoa resolve ao exportar de novo; `null` quando passa. */
+/**
+ * O primeiro problema do vídeo, na ordem em que a pessoa resolve ao exportar de
+ * novo; `null` quando passa. A duração vem logo depois da imagem: cortar é o
+ * primeiro passo, e um 1080p de 100 s não passa por três recusas seguidas.
+ */
 export function videoInfoProblem(info: Mp4Info): string | null {
   const video = info.video;
   if (!video) return "O arquivo não tem imagem de vídeo. Escolha outro MP4.";
+  if (info.durationMs && roundedSeconds(info.durationMs) > VIDEO_MAX_SECONDS) {
+    return `O vídeo tem ${durationText(info.durationMs)}. O limite é de 1 minuto: corte e exporte de novo.`;
+  }
   if (video.codec === "hvc1" || video.codec === "hev1") {
     return "Vídeo em HEVC (H.265) não vale: alguns Android não tocam. Exporte em H.264 e tente de novo.";
   }
@@ -305,9 +322,6 @@ export function videoInfoProblem(info: Mp4Info): string | null {
     return 'O vídeo precisa do início rápido: exporte de novo com a opção "Web Optimized" ou "Fast Start" ligada.';
   }
   if (!info.durationMs) return "Não deu para ler a duração do vídeo. Exporte de novo em MP4 (H.264).";
-  if (info.durationMs > VIDEO_MAX_DURATION_MS) {
-    return `O vídeo tem ${durationText(info.durationMs)}. O limite é de 1 minuto: corte e exporte de novo.`;
-  }
   return null;
 }
 
@@ -324,6 +338,6 @@ export function videoCustomMetadata(meta: VideoMeta): Record<string, string> {
 
 /** "0:06 · 640x360": a duração e a medida na tela, para a linha do vídeo escolhido. */
 export function videoMetaText(meta: VideoMeta): string {
-  const seconds = Math.round(meta.durationMs / 1000);
+  const seconds = roundedSeconds(meta.durationMs);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} · ${meta.width}x${meta.height}`;
 }

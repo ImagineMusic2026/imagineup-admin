@@ -113,23 +113,56 @@ test("o H.264 com faststart passa, com a duração e a medida", async () => {
   assert.equal(vc.videoMetaText({ durationMs: 125_400, width: 720, height: 1280 }), "2:05 · 720x1280");
 });
 
-test("até 1 minuto: 59 s e 60 s passam, 61 s fica de fora com a duração na frase", async () => {
-  assert.equal(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 59_000] }))), null);
-  assert.equal(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 60_000] }))), null);
-  assert.equal(
-    vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 61_000] }))),
-    "O vídeo tem 1 min 1 s. O limite é de 1 minuto: corte e exporte de novo.",
-  );
-  assert.equal(
-    vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 100_000] }))),
-    "O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo.",
-  );
-  // 60,4 s passa do limite e aparece como 1 min 1 s, nunca como "1 min".
-  assert.match(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 60_400] }))), /^O vídeo tem 1 min 1 s\./);
+test("até 1 minuto, com meio segundo de folga: 60,499 s passa, 60,5 s fica de fora com a duração na frase", async () => {
+  const problemOf = async (movie, track = {}) => vc.videoInfoProblem(await infoOf(mp4({ movie, tracks: [track] })));
+  for (const movie of [
+    [1000, 59_000],
+    [1000, 60_000],
+    // Os "1:00" de verdade: o enchimento do AAC, o corte sem recodificar, 1800 quadros a 29,97 fps e os B-frames.
+    [1000, 60_024],
+    [1000, 60_020],
+    [600, 36_036],
+    [1000, 60_067],
+    [600, 36_000],
+    [600, 36_299],
+    [1000, 60_499],
+  ]) {
+    assert.equal(await problemOf(movie), null, String(movie));
+  }
+  const refused = "O vídeo tem 1 min 1 s. O limite é de 1 minuto: corte e exporte de novo.";
+  assert.equal(await problemOf([1000, 60_500]), refused);
+  assert.equal(await problemOf([600, 36_300]), refused);
+  assert.equal(await problemOf([1000, 60_600]), refused);
+  assert.equal(await problemOf([1000, 61_000]), refused);
+  assert.equal(await problemOf([1000, 100_000]), "O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo.");
+  // Sem a duração no mvhd, vale a da faixa (mdhd).
+  assert.equal(await problemOf([1000, 0], { timescale: 600, duration: 36_000 }), null);
+  assert.equal(await problemOf([1000, 0], { timescale: 600, duration: 36_300 }), refused);
+
   assert.equal(vc.durationText(45_000), "45 s");
+  assert.equal(vc.durationText(60_400), "1 min");
+  assert.equal(vc.durationText(60_500), "1 min 1 s");
   assert.equal(vc.durationText(120_000), "2 min");
-  assert.equal(vc.VIDEO_MAX_DURATION_MS, 60_000);
+  assert.equal(vc.VIDEO_MAX_SECONDS, 60);
   assert.match(vc.VIDEO_RULES_TEXT, /de até 1 minuto/);
+});
+
+test("a duração vem logo depois da imagem, antes do codec, da resolução e do faststart", async () => {
+  const long = [1000, 100_000];
+  for (const options of [
+    { movie: long, tracks: [{ width: 1920, height: 1080 }] },
+    { movie: long, tracks: [{ codec: "hvc1" }] },
+    { movie: long, tracks: [{ profile: 110 }] },
+    { movie: long, faststart: false },
+  ]) {
+    assert.equal(
+      vc.videoInfoProblem(await infoOf(mp4(options))),
+      "O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo.",
+      JSON.stringify(options),
+    );
+  }
+  // Sem imagem de vídeo, essa frase vem antes.
+  assert.match(vc.videoInfoProblem(await infoOf(mp4({ movie: long, tracks: [{ handler: "soun", codec: "mp4a" }] }))), /imagem de vídeo/);
 });
 
 test("lê só os cabeçalhos e o índice, sem os dados do vídeo", async () => {
@@ -244,22 +277,23 @@ test("textos sem travessão nem meia-risca, também as frases de cada recusa", a
   const DASHES = /[–—]/;
   assert.doesNotMatch(vc.VIDEO_RULES_TEXT, DASHES);
   assert.equal(vc.VIDEO_MAX_BYTES, 20 * 1024 * 1024);
+  // Cada recusa com a frase dela.
   const cases = [
-    mp4({ tracks: [{ codec: "hvc1" }] }),
-    mp4({ tracks: [{ codec: "avc3" }] }),
-    mp4({ tracks: [{ codec: "av01" }] }),
-    mp4({ tracks: [{ profile: 110 }] }),
-    mp4({ tracks: [{ width: 1920, height: 1080 }] }),
-    mp4({ faststart: false }),
-    mp4({ movie: [1000, 0], tracks: [{ duration: 0 }] }),
-    mp4({ tracks: [{ handler: "soun", codec: "mp4a" }] }),
-    mp4({ movie: [1000, 100_000] }),
+    [mp4({ tracks: [{ codec: "hvc1" }] }), /HEVC/],
+    [mp4({ tracks: [{ codec: "avc3" }] }), /variante/],
+    [mp4({ tracks: [{ codec: "av01" }] }), /precisa estar em H\.264/],
+    [mp4({ tracks: [{ profile: 110 }] }), /perfil/],
+    [mp4({ tracks: [{ width: 1920, height: 1080 }] }), /720p/],
+    [mp4({ faststart: false }), /início rápido/],
+    [mp4({ movie: [1000, 0], tracks: [{ duration: 0 }] }), /ler a duração/],
+    [mp4({ tracks: [{ handler: "soun", codec: "mp4a" }] }), /imagem de vídeo/],
+    [mp4({ movie: [1000, 100_000] }), /limite é de 1 minuto/],
     // A resolução que não dá para ler (sem medida no tkhd nem na entrada).
-    mp4({ tracks: [{ width: 0, height: 0 }] }),
+    [mp4({ tracks: [{ width: 0, height: 0 }] }), /ler a resolução/],
   ];
-  for (const bytes of cases) {
+  for (const [bytes, phrase] of cases) {
     const problem = vc.videoInfoProblem(await infoOf(bytes));
-    assert.ok(problem);
+    assert.match(problem, phrase);
     assert.doesNotMatch(problem, DASHES, problem);
   }
   const unreadable = await infoOf(mp4({ first: "wide" })).catch((error) => error.message);

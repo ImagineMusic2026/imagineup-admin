@@ -217,8 +217,37 @@ export function isActiveStaff(member: Permissions | null): boolean {
   return member?.status === "active";
 }
 
+function same<T>(a: T, b: T): boolean {
+  return a === b;
+}
+
 function sameTime(a: Date | null, b: Date | null): boolean {
   return a === null || b === null ? a === b : a.getTime() === b.getTime();
+}
+
+type FieldComparers = { [K in keyof StaffMember]: (a: StaffMember[K], b: StaffMember[K]) => boolean };
+
+/**
+ * Como cada campo do `StaffMember` se compara. A tabela é tipada pelas chaves
+ * dele: um campo novo sem comparação não compila.
+ */
+const STAFF_MEMBER_FIELDS: FieldComparers = {
+  uid: same,
+  email: same,
+  displayName: same,
+  role: same,
+  sections: (a, b) => a.length === b.length && a.every((section, index) => section === b[index]),
+  status: same,
+  accountCreatedByInvite: same,
+  inviteId: same,
+  invitedBy: same,
+  createdAt: sameTime,
+  updatedAt: sameTime,
+};
+
+function sameField<K extends keyof StaffMember>(key: K, a: StaffMember, b: StaffMember): boolean {
+  const compare: FieldComparers[K] = STAFF_MEMBER_FIELDS[key];
+  return compare(a[key], b[key]);
 }
 
 /**
@@ -229,20 +258,27 @@ function sameTime(a: Date | null, b: Date | null): boolean {
  * `member` não leem de novo à toa.
  */
 export function sameStaffMember(a: StaffMember, b: StaffMember): boolean {
-  return (
-    a.uid === b.uid &&
-    a.email === b.email &&
-    a.displayName === b.displayName &&
-    a.role === b.role &&
-    a.status === b.status &&
-    a.accountCreatedByInvite === b.accountCreatedByInvite &&
-    a.inviteId === b.inviteId &&
-    a.invitedBy === b.invitedBy &&
-    sameTime(a.createdAt, b.createdAt) &&
-    sameTime(a.updatedAt, b.updatedAt) &&
-    a.sections.length === b.sections.length &&
-    a.sections.every((section, index) => section === b.sections[index])
-  );
+  return (Object.keys(STAFF_MEMBER_FIELDS) as (keyof StaffMember)[]).every((key) => sameField(key, a, b));
+}
+
+/** O que a escuta do próprio documento da equipe entregou, por pessoa e por tentativa. */
+export type OwnStaffResult = { uid: string; attempt: number } & (
+  | { kind: "member"; member: StaffMember }
+  | { kind: "missing" }
+  | { kind: "error"; error: unknown }
+);
+
+/**
+ * Um evento que não muda nada (só de metadados, ou de um campo que o painel não
+ * lê) mantém o resultado anterior: o `member` não muda de identidade, e as telas
+ * que dependem dele não voltam a "Carregando" nem fecham os diálogos abertos.
+ * Outra pessoa, outra tentativa ou um erro sempre trocam o resultado.
+ */
+export function keepSameStaffResult(previous: OwnStaffResult | null, next: OwnStaffResult): OwnStaffResult {
+  if (!previous || previous.uid !== next.uid || previous.attempt !== next.attempt) return next;
+  if (previous.kind === "member" && next.kind === "member" && sameStaffMember(previous.member, next.member)) return previous;
+  if (previous.kind === "missing" && next.kind === "missing") return previous;
+  return next;
 }
 
 export function isAdmin(member: Permissions | null): boolean {
