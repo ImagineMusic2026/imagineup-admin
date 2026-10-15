@@ -99,6 +99,18 @@ test("a troca do @ pelo motivo: o texto, o aviso depois e o prazo que ainda vale
   assert.equal(moderation.usernameLockText({ usernameChangeableAt: null, usernameLockReason: null }, now), null);
 });
 
+test("depois de uma resposta incerta: a nova tentativa que achou a primeira gravada", async () => {
+  assert.equal(
+    moderation.usernameChangedAfterUncertainText("promoseg"),
+    "O @ já não é @promoseg: a tentativa anterior deve ter sido gravada. Feche para ver o @ de agora.",
+  );
+  assert.equal(moderation.clearedBeforeText(["bio", "socials"]), "A bio e as redes já tinham saído: a tentativa anterior deve ter sido gravada.");
+  assert.equal(moderation.clearedBeforeText(["bio"]), "A bio já tinha saído: a tentativa anterior deve ter sido gravada.");
+  assert.equal(moderation.clearedBeforeText(["socials"]), "As redes já tinham saído: a tentativa anterior deve ter sido gravada.");
+  const { UNCERTAIN_RETRY_TEXT } = await import("@/lib/errors");
+  assert.equal(UNCERTAIN_RETRY_TEXT, "Não deu para confirmar se a mudança foi gravada. Tente de novo: repetir não grava duas vezes.");
+});
+
 test("apagar bio e redes: os campos com o que apagar e o aviso pelo que saiu", () => {
   assert.deepEqual(moderation.clearableProfileFields({ bio: "Seguidores reais!", socialsStored: true }), ["bio", "socials"]);
   assert.deepEqual(moderation.clearableProfileFields({ bio: null, socialsStored: true }), ["socials"]);

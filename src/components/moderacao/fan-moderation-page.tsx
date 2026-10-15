@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, AtSign, Eraser, EyeOff, ImageOff, UserCheck, UserX } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ProfileReportCard, profileDecisionRequest, type ProfileDecision } from "@/components/moderacao/profile-report-card";
 import { QueueCard, shortWhen } from "@/components/moderacao/queue-card";
@@ -24,7 +24,7 @@ import { useLoad } from "@/components/ui/use-load";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { usePagedList } from "@/components/ui/use-paged-list";
 import { artistNameOf, getArtistNames } from "@/lib/artist-names-data";
-import { actionErrorMessage, callableErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
+import { UNCERTAIN_RETRY_TEXT, actionErrorMessage, callableErrorMessage, mayHaveRunOnServer, reasonOf } from "@/lib/errors";
 import { getFanCommentsPage, type CommentRow } from "@/lib/fan-data";
 import { SUSPENSION_REASONS, SUSPENSION_REASON_LABELS, fanDisplayName, suspensionReasonLabel, type FanProfile, type SuspensionReason } from "@/lib/fan-profile";
 import { getFanProfile } from "@/lib/fan-profile-data";
@@ -43,11 +43,13 @@ import {
   USERNAME_RESET_REASON_HINTS,
   USERNAME_RESET_REASON_LABELS,
   clearableProfileFields,
+  clearedBeforeText,
   clearedProfileText,
   hiddenSummary,
   hideAlsoLabel,
   resetUsernameDoneText,
   resetUsernameText,
+  usernameChangedAfterUncertainText,
   usernameLockText,
   validateSuspensionNote,
   type ProfileQueueItem,
@@ -76,6 +78,11 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const [hiding, setHiding] = useState(false);
   const [clearingText, setClearingText] = useState(false);
   const [resettingUsername, setResettingUsername] = useState(false);
+  // Uma resposta incerta num diálogo aberto pede a releitura do fã, que só sai
+  // quando o diálogo fecha: ler antes poria a página em "Carregando" e o
+  // diálogo sairia da tela, perdendo o que a pessoa escolheu. Lido e gravado
+  // só nos handlers.
+  const pendingRefresh = useRef(false);
 
   const profile = useLoad(
     useCallback(() => {
@@ -103,9 +110,20 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const show: Notify = (tone, text) => setNotice((current) => ({ key: (current?.key ?? 0) + 1, tone, text }));
 
   function refresh() {
+    pendingRefresh.current = false;
     setNow(Date.now());
     setReader(createContentReader());
     setRound((value) => value + 1);
+  }
+
+  /** A resposta incerta (ou o item que mudou por fora) com um diálogo aberto: a releitura fica para o fechamento. */
+  function markStale() {
+    pendingRefresh.current = true;
+  }
+
+  /** Todo fechamento sem sucesso (Voltar, Esc, X) lê o fã de novo, se algo ficou pendente. */
+  function closedWithoutChange() {
+    if (pendingRefresh.current) refresh();
   }
 
   function changed(message: string) {
@@ -159,12 +177,13 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
       tone: "default",
       action: () => setFanSuspended({ uid: target.uid, suspended: false }),
       successMessage: `Suspensão de ${name} tirada.`,
-      onUncertain: refresh,
+      onUncertain: markStale,
+      uncertainText: UNCERTAIN_RETRY_TEXT,
     });
   }
 
   function decideProfile(item: ProfileQueueItem, decision: ProfileDecision, label: string) {
-    setConfirm({ ...profileDecisionRequest(item, decision, label, refresh), onUncertain: refresh });
+    setConfirm({ ...profileDecisionRequest(item, decision, label, markStale), onUncertain: markStale, uncertainText: UNCERTAIN_RETRY_TEXT });
   }
 
   function askClearPhoto(target: FanProfile) {
@@ -177,7 +196,8 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
       tone: "danger",
       action: () => clearFanPhoto(target.uid),
       successMessage: `A foto de ${name} foi tirada.`,
-      onUncertain: refresh,
+      onUncertain: markStale,
+      uncertainText: UNCERTAIN_RETRY_TEXT,
     });
   }
 
@@ -295,7 +315,10 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
 
       <ConfirmDialog
         request={canEdit ? confirm : null}
-        onClose={() => setConfirm(null)}
+        onClose={() => {
+          setConfirm(null);
+          closedWithoutChange();
+        }}
         onDone={(message) => {
           setConfirm(null);
           changed(message);
@@ -304,8 +327,11 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
       {canEdit && resettingUsername ? (
         <ResetUsernameDialog
           fan={fan}
-          onClose={() => setResettingUsername(false)}
-          onUncertain={refresh}
+          onClose={() => {
+            setResettingUsername(false);
+            closedWithoutChange();
+          }}
+          onUncertain={markStale}
           onDone={(message) => {
             setResettingUsername(false);
             changed(message);
@@ -315,15 +341,18 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
       {canEdit && clearingText ? (
         <ClearProfileTextDialog
           fan={fan}
-          onClose={() => setClearingText(false)}
-          onUncertain={refresh}
-          onDone={(cleared) => {
+          onClose={() => {
+            setClearingText(false);
+            closedWithoutChange();
+          }}
+          onUncertain={markStale}
+          onDone={(cleared, message) => {
             setClearingText(false);
             if (cleared.length === 0) {
-              show("info", clearedProfileText(name, cleared));
+              show("info", message);
               refresh();
             } else {
-              changed(clearedProfileText(name, cleared));
+              changed(message);
             }
           }}
         />
@@ -333,10 +362,11 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
         mode={suspending ? "suspend" : "hide"}
         fan={fan}
         visible={visibleCount ?? 0}
-        onClose={(message) => {
+        onClose={(message, reread) => {
           setSuspending(false);
           setHiding(false);
           if (message) changed(message);
+          else if (reread) refresh();
         }}
       />
     </>
@@ -347,7 +377,12 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
  * "Trocar o @" (32.1, decisões 1 a 5): o motivo decide o prazo. Com
  * `moderation` (a marcada), o fã só escolhe outro @ daqui a 30 dias; com
  * `central`, na hora. O texto acompanha a escolha, e o aviso de depois vem do
- * `changeableAt` da resposta. Resposta incerta lê o fã de novo.
+ * `changeableAt` da resposta.
+ *
+ * Resposta incerta: o motivo trava e "Tentar de novo" repete a mesma troca,
+ * com o @ que o diálogo abriu. Se a primeira já tinha passado, o servidor
+ * recusa o @ velho (`username-changed`), e o diálogo diz isso. A página lê o
+ * fã de novo quando ele fecha.
  */
 function ResetUsernameDialog({
   fan,
@@ -366,10 +401,18 @@ function ResetUsernameDialog({
   const [reason, setReason] = useState<UsernameResetReason>("moderation");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uncertain, setUncertain] = useState(false);
+  const [done, setDone] = useState(false);
+  const footer = useRef<HTMLDivElement>(null);
+
+  // O botão de trocar desligou com o foco nele: o foco vai para o de voltar.
+  useEffect(() => {
+    if (done) footer.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [done]);
 
   async function run(event: React.FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || done) return;
     setBusy(true);
     setError(null);
     try {
@@ -379,8 +422,12 @@ function ResetUsernameDialog({
     } catch (failure) {
       if (!mounted.current) return;
       if (mayHaveRunOnServer(failure)) {
-        setError(actionErrorMessage(failure));
+        setUncertain(true);
+        setError(UNCERTAIN_RETRY_TEXT);
         onUncertain();
+      } else if (uncertain && reasonOf(failure) === "username-changed") {
+        setError(usernameChangedAfterUncertainText(username));
+        setDone(true);
       } else {
         setError(callableErrorMessage(failure));
       }
@@ -401,18 +448,18 @@ function ResetUsernameDialog({
               label={USERNAME_RESET_REASON_LABELS[item]}
               hint={USERNAME_RESET_REASON_HINTS[item]}
               checked={reason === item}
-              disabled={busy}
+              disabled={busy || uncertain}
               onChange={() => setReason(item)}
             />
           ))}
         </fieldset>
         {error ? <Notice tone="error">{error}</Notice> : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div ref={footer} className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={onClose} disabled={busy} data-autofocus>
             Voltar
           </Button>
-          <Button type="submit" variant="danger" busy={busy}>
-            {busy ? "Trocando..." : "Trocar o @"}
+          <Button type="submit" variant="danger" busy={busy} disabled={done}>
+            {busy ? "Trocando..." : uncertain ? "Tentar de novo" : "Trocar o @"}
           </Button>
         </div>
       </form>
@@ -423,7 +470,11 @@ function ResetUsernameDialog({
 /**
  * "Apagar bio e redes" (28.6): a escolha dos campos que têm o que apagar,
  * todos marcados de início. O texto apagado não fica guardado; a auditoria
- * leva só os campos. Resposta incerta lê o fã de novo.
+ * leva só os campos.
+ *
+ * Resposta incerta: a escolha trava e "Tentar de novo" repete o mesmo pedido.
+ * Se a primeira já tinha passado, nada sai de novo (`cleared` vazio), e o
+ * aviso diz isso. A página lê o fã de novo quando o diálogo fecha.
  */
 function ClearProfileTextDialog({
   fan,
@@ -433,7 +484,7 @@ function ClearProfileTextDialog({
 }: {
   fan: FanProfile;
   onClose: () => void;
-  onDone: (cleared: ProfileTextField[]) => void;
+  onDone: (cleared: ProfileTextField[], message: string) => void;
   onUncertain: () => void;
 }) {
   const mounted = useMountedRef();
@@ -442,6 +493,7 @@ function ClearProfileTextDialog({
   const [fields, setFields] = useState<ProfileTextField[]>(options);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uncertain, setUncertain] = useState(false);
   const bio = options.includes("bio");
   const socials = options.includes("socials");
 
@@ -450,14 +502,17 @@ function ClearProfileTextDialog({
     if (busy || fields.length === 0) return;
     setBusy(true);
     setError(null);
+    const requested = PROFILE_TEXT_FIELDS.filter((field) => fields.includes(field));
     try {
-      const result = await clearFanProfileText({ uid: fan.uid, fields: PROFILE_TEXT_FIELDS.filter((field) => fields.includes(field)) });
+      const result = await clearFanProfileText({ uid: fan.uid, fields: requested });
       if (!mounted.current) return;
-      onDone(result.cleared);
+      const before = uncertain && result.cleared.length === 0;
+      onDone(result.cleared, before ? clearedBeforeText(requested) : clearedProfileText(name, result.cleared));
     } catch (failure) {
       if (!mounted.current) return;
       if (mayHaveRunOnServer(failure)) {
-        setError(actionErrorMessage(failure));
+        setUncertain(true);
+        setError(UNCERTAIN_RETRY_TEXT);
         onUncertain();
       } else {
         setError(callableErrorMessage(failure));
@@ -489,7 +544,7 @@ function ClearProfileTextDialog({
                 key={field}
                 label={PROFILE_TEXT_FIELD_LABELS[field]}
                 checked={fields.includes(field)}
-                disabled={busy}
+                disabled={busy || uncertain}
                 onChange={(event) => toggle(field, event.target.checked)}
               />
             ))}
@@ -501,7 +556,7 @@ function ClearProfileTextDialog({
             Voltar
           </Button>
           <Button type="submit" variant="danger" busy={busy} disabled={fields.length === 0}>
-            {busy ? "Apagando..." : "Apagar"}
+            {busy ? "Apagando..." : uncertain ? "Tentar de novo" : "Apagar"}
           </Button>
         </div>
       </form>
@@ -525,12 +580,27 @@ function HideCommentsDialog({
   mode: "suspend" | "hide";
   fan: FanProfile;
   visible: number;
-  onClose: (message: string | null) => void;
+  onClose: (message: string | null, reread: boolean) => void;
 }) {
   return open ? <HideCommentsBody key={mode} mode={mode} fan={fan} visible={visible} onClose={onClose} /> : null;
 }
 
-function HideCommentsBody({ mode, fan, visible, onClose }: { mode: "suspend" | "hide"; fan: FanProfile; visible: number; onClose: (message: string | null) => void }) {
+/**
+ * Fechar depois de rodar lê o fã de novo; a frase de sucesso só sai com algo
+ * confirmado (a suspensão ou os comentários contados). A falha incerta sem
+ * nada confirmado fecha só com a releitura.
+ */
+function HideCommentsBody({
+  mode,
+  fan,
+  visible,
+  onClose,
+}: {
+  mode: "suspend" | "hide";
+  fan: FanProfile;
+  visible: number;
+  onClose: (message: string | null, reread: boolean) => void;
+}) {
   const mounted = useMountedRef();
   const name = fanDisplayName(fan);
   const [reason, setReason] = useState<SuspensionReason>("spam");
@@ -587,7 +657,7 @@ function HideCommentsBody({ mode, fan, visible, onClose }: { mode: "suspend" | "
 
   function close() {
     if (running) return;
-    onClose(phase === "done" ? (result ?? "Feito.") : null);
+    onClose(phase === "done" ? result : null, phase === "done");
   }
 
   return (

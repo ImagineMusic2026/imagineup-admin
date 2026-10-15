@@ -86,6 +86,23 @@ export function resetUsernameText(username: string, reason: UsernameResetReason)
   return `O fã fica com um @ automático novo e ${when}. O @${username} fica livre para qualquer pessoa.`;
 }
 
+/**
+ * Depois de uma resposta incerta, a nova tentativa da troca voltou
+ * `username-changed`: o @ que o diálogo guardou já saiu, então a primeira
+ * tentativa foi gravada.
+ */
+export function usernameChangedAfterUncertainText(username: string): string {
+  return `O @ já não é @${username}: a tentativa anterior deve ter sido gravada. Feche para ver o @ de agora.`;
+}
+
+/** Depois de uma resposta incerta, a nova tentativa de apagar não achou nada: a primeira foi gravada. */
+export function clearedBeforeText(fields: readonly ProfileTextField[]): string {
+  const bio = fields.includes("bio");
+  const socials = fields.includes("socials");
+  const gone = bio && socials ? "A bio e as redes já tinham saído" : bio ? "A bio já tinha saído" : "As redes já tinham saído";
+  return `${gone}: a tentativa anterior deve ter sido gravada.`;
+}
+
 /** O aviso depois da troca, pelo `changeableAt` da resposta: com data, o fã espera até ela. */
 export function resetUsernameDoneText(previous: string, name: string, changeableAt: string | null, now: Date = new Date()): string {
   const until = changeableAt ? new Date(changeableAt) : null;
