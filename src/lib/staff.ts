@@ -217,6 +217,34 @@ export function isActiveStaff(member: Permissions | null): boolean {
   return member?.status === "active";
 }
 
+function sameTime(a: Date | null, b: Date | null): boolean {
+  return a === null || b === null ? a === b : a.getTime() === b.getTime();
+}
+
+/**
+ * Os dois retratos da mesma pessoa da equipe têm os mesmos campos. A escuta do
+ * próprio documento (com `includeMetadataChanges`) entrega um retrato novo a
+ * cada evento, inclusive os só de metadados, como numa queda de rede: com
+ * isto, o contexto mantém o objeto anterior, e as telas que dependem do
+ * `member` não leem de novo à toa.
+ */
+export function sameStaffMember(a: StaffMember, b: StaffMember): boolean {
+  return (
+    a.uid === b.uid &&
+    a.email === b.email &&
+    a.displayName === b.displayName &&
+    a.role === b.role &&
+    a.status === b.status &&
+    a.accountCreatedByInvite === b.accountCreatedByInvite &&
+    a.inviteId === b.inviteId &&
+    a.invitedBy === b.invitedBy &&
+    sameTime(a.createdAt, b.createdAt) &&
+    sameTime(a.updatedAt, b.updatedAt) &&
+    a.sections.length === b.sections.length &&
+    a.sections.every((section, index) => section === b.sections[index])
+  );
+}
+
 export function isAdmin(member: Permissions | null): boolean {
   return isActiveStaff(member) && member?.role === "admin";
 }
