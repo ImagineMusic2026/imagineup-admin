@@ -10,6 +10,7 @@
  * - O índice (`moov`) antes dos dados (`mdat`), o "faststart": sem ele, o
  *   vídeo só começa depois de baixar quase tudo.
  * - Até 720p (o lado menor até 720 e o maior até 1280) e 20 MB.
+ * - Até 1 minuto (decisão do dono de 15/10/2026).
  *
  * A duração e a medida na tela (já virada, quando o vídeo foi gravado de pé)
  * vão no metadado do arquivo, ao lado do `width` e do `height` das imagens: o
@@ -19,10 +20,11 @@
 export const VIDEO_MAX_BYTES = 20 * 1024 * 1024;
 export const VIDEO_MAX_SHORT_SIDE = 720;
 export const VIDEO_MAX_LONG_SIDE = 1280;
+export const VIDEO_MAX_DURATION_MS = 60_000;
 /** Teto da leitura do índice: um `moov` de vídeo curto tem poucos KB. */
 const MOOV_READ_MAX = 16 * 1024 * 1024;
 
-export const VIDEO_RULES_TEXT = "MP4 em H.264, até 720p e 20 MB, com o início rápido (faststart). MOV não vale: exporte em MP4.";
+export const VIDEO_RULES_TEXT = "MP4 em H.264, de até 1 minuto, 720p e 20 MB, com o início rápido (faststart). MOV não vale: exporte em MP4.";
 
 export class VideoCheckError extends Error {}
 
@@ -265,6 +267,18 @@ const H264_PROFILES = new Set([66, 77, 100]);
 /** As variantes do H.264 que não tocam em todo aparelho (os parâmetros dentro do fluxo, ou perfis raros). */
 const H264_VARIANTS = new Set(["avc2", "avc3", "avc4"]);
 
+/**
+ * "1 min 40 s": a duração na frase da recusa. O segundo começado conta inteiro,
+ * para um vídeo de 60,4 s não aparecer como "1 min" ao passar do limite.
+ */
+export function durationText(durationMs: number): string {
+  const total = Math.ceil(durationMs / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes === 0) return `${seconds} s`;
+  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
+}
+
 /** O primeiro problema do vídeo, na ordem em que a pessoa resolve ao exportar de novo; `null` quando passa. */
 export function videoInfoProblem(info: Mp4Info): string | null {
   const video = info.video;
@@ -291,6 +305,9 @@ export function videoInfoProblem(info: Mp4Info): string | null {
     return 'O vídeo precisa do início rápido: exporte de novo com a opção "Web Optimized" ou "Fast Start" ligada.';
   }
   if (!info.durationMs) return "Não deu para ler a duração do vídeo. Exporte de novo em MP4 (H.264).";
+  if (info.durationMs > VIDEO_MAX_DURATION_MS) {
+    return `O vídeo tem ${durationText(info.durationMs)}. O limite é de 1 minuto: corte e exporte de novo.`;
+  }
   return null;
 }
 
