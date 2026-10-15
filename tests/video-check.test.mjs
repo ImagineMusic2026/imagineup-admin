@@ -234,6 +234,8 @@ test("textos sem travessão nem meia-risca, também as frases de cada recusa", a
     mp4({ faststart: false }),
     mp4({ movie: [1000, 0], tracks: [{ duration: 0 }] }),
     mp4({ tracks: [{ handler: "soun", codec: "mp4a" }] }),
+    // A resolução que não dá para ler (sem medida no tkhd nem na entrada).
+    mp4({ tracks: [{ width: 0, height: 0 }] }),
   ];
   for (const bytes of cases) {
     const problem = vc.videoInfoProblem(await infoOf(bytes));

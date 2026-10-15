@@ -102,6 +102,25 @@ test("Firestore e o mapa geral", () => {
   assert.equal(errorMessage(new Error("boom")), "Não foi possível concluir. Tente de novo.");
 });
 
+test("as frases do Storage, da foto e do vídeo, sem travessão nem meia-risca", async () => {
+  const { storageErrorMessage } = await import("@/lib/errors");
+  const codes = [
+    "storage/unauthenticated",
+    "storage/unauthorized",
+    "storage/retry-limit-exceeded",
+    "storage/canceled",
+    "storage/quota-exceeded",
+    "storage/no-default-bucket",
+    "storage/bucket-not-found",
+    "storage/project-not-found",
+    "storage/server-file-wrong-size",
+    "storage/unknown",
+  ];
+  for (const code of codes) {
+    for (const file of ["photo", "video"]) assert.doesNotMatch(storageErrorMessage({ code }, file), /[–—]/, `${code} ${file}`);
+  }
+});
+
 test("o envio do vídeo tem as frases dele; a foto continua com as de sempre", async () => {
   const { storageErrorMessage } = await import("@/lib/errors");
   assert.equal(

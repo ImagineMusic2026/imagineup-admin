@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
+import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { actionErrorMessage, callableErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
 
 export interface ConfirmRequest {
@@ -27,6 +28,8 @@ export interface ConfirmRequest {
   onError?: (failure: unknown) => void;
   /** Recusa que outra tentativa repetiria (o item mudou por fora): o botão de confirmar desliga. */
   blocksRetry?: (failure: unknown) => boolean;
+  /** A resposta chegou com o diálogo já fora da tela (a permissão caiu no meio do pedido): a tela lê de novo. */
+  onOrphan?: () => void;
 }
 
 /**
@@ -36,6 +39,10 @@ export interface ConfirmRequest {
  * frase de repetir (`uncertainText`); com a de sempre, que pede conferir a
  * lista antes, o rótulo fica. A recusa que bloqueia a nova tentativa tira o
  * botão de confirmar.
+ *
+ * A tela que fecha a confirmação sem passar pelo "Voltar" (a perda da
+ * permissão, por exemplo) dá uma `key` por pedido: a instância nova começa
+ * limpa, e a resposta que chega para a instância que saiu da tela é ignorada.
  */
 export function ConfirmDialog({
   request,
@@ -51,6 +58,7 @@ export function ConfirmDialog({
   const [retry, setRetry] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const footer = useRef<HTMLDivElement>(null);
+  const mounted = useMountedRef();
   // Cada fechamento abre uma rodada nova: a resposta de um pedido de uma rodada
   // anterior não fecha nem muda a confirmação que estiver aberta agora.
   const round = useRef(0);
@@ -77,6 +85,10 @@ export function ConfirmDialog({
     try {
       await request.action();
     } catch (failure) {
+      if (!mounted.current) {
+        request.onOrphan?.();
+        return;
+      }
       if (round.current !== mine) return;
       if (request.onUncertain && mayHaveRunOnServer(failure)) {
         setError(request.uncertainText ?? actionErrorMessage(failure));
@@ -88,6 +100,10 @@ export function ConfirmDialog({
         if (request.blocksRetry?.(failure)) setBlocked(true);
       }
       setBusy(false);
+      return;
+    }
+    if (!mounted.current) {
+      request.onOrphan?.();
       return;
     }
     if (round.current !== mine) return;
