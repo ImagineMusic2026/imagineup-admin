@@ -1,10 +1,10 @@
-import { Timestamp, collection, collectionGroup, doc, getDoc, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
+import { Timestamp, collection, collectionGroup, doc, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
 
 import { dayKey, dayStartMs } from "@/lib/day";
 import { EVENTS_PAGE_SIZE, parseEvent, type AgendaEvent, type EventStatus } from "@/lib/events";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
-import { readQuery } from "@/lib/firestore-read";
+import { readDoc, readQuery } from "@/lib/firestore-read";
 
 /**
  * Leituras da Agenda, todas únicas (21.9 e decisão 19): os próximos (de hoje
@@ -52,7 +52,7 @@ export function countUpcomingEvents(now: number, artistId: string | null): Promi
 }
 
 export async function getEvent(eventId: string): Promise<AgendaEvent | null> {
-  const snapshot = await getDoc(doc(db(), "events", eventId));
+  const snapshot = await readDoc(doc(db(), "events", eventId));
   const data = snapshot.data();
   return data ? parseEvent(snapshot.id, data) : null;
 }

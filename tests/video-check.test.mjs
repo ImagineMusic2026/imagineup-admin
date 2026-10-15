@@ -150,6 +150,15 @@ test("até 1 minuto, com meio segundo de folga: 60,499 s passa, 60,5 s fica de f
   // O arredondamento duplo (ao milissegundo na leitura, ao segundo no limite): 60,4995 s fica de fora.
   assert.equal(await problemOf([2000, 120_998]), null);
   assert.equal(await problemOf([2000, 120_999]), refused);
+  // Não é só de 2000 para cima: 60560/1001 é 60,4995 s e também fica de fora.
+  assert.equal(await problemOf([1001, 60_559]), null);
+  assert.equal(await problemOf([1001, 60_560]), refused);
+
+  // A duração "desconhecida" (todos os bits ligados) não vira número, no filme e na faixa.
+  assert.equal(
+    await problemOf([1000, 0xffffffff], { timescale: 1000, duration: 0xffffffff }),
+    "Não deu para ler a duração do vídeo. Exporte de novo em MP4 (H.264).",
+  );
 
   assert.equal(vc.durationText(45_000), "45 s");
   assert.equal(vc.durationText(60_400), "1 min");
@@ -159,25 +168,37 @@ test("até 1 minuto, com meio segundo de folga: 60,499 s passa, 60,5 s fica de f
   assert.match(vc.VIDEO_RULES_TEXT, /de até 1 minuto/);
 });
 
-test("o MP4 fragmentado: a duração inteira vem do mehd, e sem ele o vídeo é recusado", async () => {
-  // O mvhd e o mdhd cobrem só o primeiro fragmento (2 s); a duração inteira está no mehd.
-  const fragmented = (fragmentDuration, version, movie = [1000, 2000]) =>
+test("todo MP4 fragmentado é recusado, com o mehd ou sem ele", async () => {
+  const fragmented = (fragmentDuration = null, version = 0, movie = [1000, 2000]) =>
     mp4({ movie, tracks: [{ timescale: 1000, duration: 2000 }], moovExtra: [mvex(fragmentDuration, version)] });
-  const long = "O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo.";
-  const unreadable = "Não deu para ler a duração do vídeo. Exporte de novo em MP4 (H.264).";
+  const refused = "Este MP4 está fragmentado. Exporte de novo em MP4 comum, sem fragmentar.";
 
-  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(100_000, 0))), long);
-  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(100_000, 1))), long);
-  const short = await infoOf(fragmented(59_000, 0));
-  assert.equal(vc.videoInfoProblem(short), null);
-  assert.equal(short.durationMs, 59_000);
-  // O mehd vem na escala do mvhd.
-  assert.equal((await infoOf(fragmented(36_000, 0, [600, 1200]))).durationMs, 60_000);
-  // Sem o mehd (o -movflags frag_keyframe do ffmpeg), ou com ele zerado, não dá para saber a duração.
-  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(null))), unreadable);
-  assert.equal(vc.videoInfoProblem(await infoOf(fragmented(0, 0))), unreadable);
+  // Com o mehd (MP4Box, Bento4) e sem ele (o -movflags frag_keyframe do ffmpeg,
+  // que no clipe mais curto que um GOP deixa o filme inteiro no moov, sem moof);
+  // zerado, com todos os bits ligados e acima de 2^53 também.
+  for (const [fragmentDuration, version] of [
+    [100_000, 0],
+    [100_000, 1],
+    [59_000, 0],
+    [null, 0],
+    [0, 0],
+    [0xffffffff, 0],
+    [2 ** 53, 1],
+  ]) {
+    const info = await infoOf(fragmented(fragmentDuration, version));
+    assert.equal(info.fragmented, true, String(fragmentDuration));
+    // A duração do fragmentado não é lida: o mvhd cobriria só o primeiro fragmento (2 s).
+    assert.equal(info.durationMs, null, String(fragmentDuration));
+    assert.equal(vc.videoInfoProblem(info), refused, String(fragmentDuration));
+    assert.equal(vc.videoMetaOf(info), null, String(fragmentDuration));
+  }
+  // A frase do fragmentado vem antes da duração e do codec: a pessoa exporta de novo uma vez.
+  const long = mp4({ movie: [1000, 100_000], tracks: [{ codec: "hvc1" }], moovExtra: [mvex(100_000)] });
+  assert.equal(vc.videoInfoProblem(await infoOf(long)), refused);
   // Sem o mvex, o mesmo arquivo continua lido pelo mvhd.
-  assert.equal((await infoOf(mp4({ movie: [1000, 2000] }))).durationMs, 2000);
+  const plain = await infoOf(mp4({ movie: [1000, 2000] }));
+  assert.equal(plain.fragmented, false);
+  assert.equal(plain.durationMs, 2000);
 });
 
 test("a duração vem logo depois da imagem, antes do codec, da resolução e do faststart", async () => {
@@ -323,6 +344,7 @@ test("textos sem travessão nem meia-risca, também as frases de cada recusa", a
     [mp4({ movie: [1000, 100_000] }), /limite é de 1 minuto/],
     // A resolução que não dá para ler (sem medida no tkhd nem na entrada).
     [mp4({ tracks: [{ width: 0, height: 0 }] }), /ler a resolução/],
+    [mp4({ moovExtra: [mvex()] }), /fragmentado/],
   ];
   for (const [bytes, phrase] of cases) {
     const problem = vc.videoInfoProblem(await infoOf(bytes));
@@ -331,7 +353,8 @@ test("textos sem travessão nem meia-risca, também as frases de cada recusa", a
   }
   const unreadable = await infoOf(mp4({ first: "wide" })).catch((error) => error.message);
   assert.doesNotMatch(unreadable, DASHES);
-  // A frase da duração e a regra da tela também não levam hífen.
+  // A frase da duração, a do fragmentado e a regra da tela também não levam hífen.
   assert.doesNotMatch(vc.videoInfoProblem(await infoOf(mp4({ movie: [1000, 100_000] }))), /-/);
+  assert.doesNotMatch(vc.videoInfoProblem(await infoOf(mp4({ moovExtra: [mvex()] }))), /-/);
   assert.doesNotMatch(vc.VIDEO_RULES_TEXT, /-/);
 });

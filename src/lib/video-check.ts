@@ -9,6 +9,8 @@
  *   100 do `avcC`): o High 10 e o 4:2:2 não tocam em muitos aparelhos.
  * - O índice (`moov`) antes dos dados (`mdat`), o "faststart": sem ele, o
  *   vídeo só começa depois de baixar quase tudo.
+ * - Nada fragmentado (o `mvex` no `moov`): o app ainda não toca vídeo, e o
+ *   fragmentado não dá para conferir nele hoje (decisão do dono de 15/10/2026).
  * - Até 720p (o lado menor até 720 e o maior até 1280) e 20 MB.
  * - Até 1 minuto (decisão do dono de 15/10/2026).
  *
@@ -26,8 +28,9 @@ export const VIDEO_MAX_LONG_SIDE = 1280;
  * sem recodificar, 1800 quadros a 29,97 fps), e o limite exato recusava todos.
  *
  * A duração lida já vem arredondada ao milissegundo, então de 60,4995 s a
- * 60,5 s arredonda duas vezes e fica de fora. Só acontece com timescale de
- * 2000 ou mais, e a diferença é de meio milésimo.
+ * 60,5 s arredonda duas vezes e fica de fora. Acontece com timescale de 2000
+ * ou mais, e também com ímpar de 1001 a 1999 (60560/1001 é recusado); a
+ * diferença é de meio milésimo.
  */
 export const VIDEO_MAX_SECONDS = 60;
 /** Teto da leitura do índice: um `moov` de vídeo curto tem poucos KB. */
@@ -60,7 +63,9 @@ export interface Mp4Info {
   faststart: boolean;
   /** A primeira faixa de vídeo, ou `null` sem nenhuma. */
   video: VideoTrackInfo | null;
-  /** A duração do filme (`mvhd`), ou a da faixa quando o filme não traz; no fragmentado, a do `mehd`. */
+  /** O arquivo é fragmentado (tem `mvex` no `moov`): recusado, qualquer que seja o resto. */
+  fragmented: boolean;
+  /** A duração do filme (`mvhd`), ou a da faixa quando o filme não traz; `null` no fragmentado. */
   durationMs: number | null;
 }
 
@@ -146,18 +151,6 @@ function timing(bytes: Uint8Array, box: Box): number | null {
   return durationMsOf(timescaleOf(bytes, box), duration);
 }
 
-/**
- * A duração inteira de um MP4 fragmentado: o `fragment_duration` do `mehd`
- * (versão 0 ou 1), na escala do `mvhd`. Sem o `mehd`, não dá para saber sem
- * ler os fragmentos.
- */
-function fragmentedDuration(bytes: Uint8Array, mvex: Box, mvhd: Box | null): number | null {
-  const mehd = child(bytes, mvex, "mehd");
-  if (!mehd || !mvhd) return null;
-  const duration = bytes[mehd.start] === 1 ? u64(bytes, mehd.start + 4) : u32(bytes, mehd.start + 4);
-  return durationMsOf(timescaleOf(bytes, mvhd), duration);
-}
-
 function durationMsOf(timescale: number, duration: number): number | null {
   // Duração "desconhecida" (todos os bits ligados) ou zero: sem duração.
   if (!timescale || !duration || duration === 0xffffffff || duration >= 2 ** 53 - 1) return null;
@@ -227,7 +220,7 @@ function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
 }
 
 /** O conteúdo de um `moov` (sem o cabeçalho dele): a duração e a primeira faixa de vídeo. */
-export function parseMoov(bytes: Uint8Array): { video: VideoTrackInfo | null; durationMs: number | null } {
+export function parseMoov(bytes: Uint8Array): { video: VideoTrackInfo | null; fragmented: boolean; durationMs: number | null } {
   const root: Box = { type: "moov", start: 0, end: bytes.length };
   const mvhd = child(bytes, root, "mvhd");
   let video: VideoTrackInfo | null = null;
@@ -236,12 +229,12 @@ export function parseMoov(bytes: Uint8Array): { video: VideoTrackInfo | null; du
     if (video) break;
   }
   // Fragmentado (com `mvex`): o `mvhd` e as faixas cobrem só o que está no
-  // próprio `moov`, que pode ser o primeiro fragmento. Um vídeo de 100 s
-  // exportado assim entrava como 0:02.
-  const mvex = child(bytes, root, "mvex");
-  if (mvex) return { video, durationMs: fragmentedDuration(bytes, mvex, mvhd) };
+  // próprio `moov`, que pode ser o primeiro fragmento (um vídeo de 100 s
+  // exportado assim entrava como 0:02), e a duração inteira só vem no `mehd`,
+  // que muito export não traz. Ele é recusado, então a duração não é lida.
+  if (child(bytes, root, "mvex")) return { video, fragmented: true, durationMs: null };
   const movie = mvhd ? timing(bytes, mvhd) : null;
-  return { video, durationMs: movie ?? video?.durationMs ?? null };
+  return { video, fragmented: false, durationMs: movie ?? video?.durationMs ?? null };
 }
 
 /**
@@ -326,6 +319,9 @@ export function durationText(durationMs: number): string {
 export function videoInfoProblem(info: Mp4Info): string | null {
   const video = info.video;
   if (!video) return "O arquivo não tem imagem de vídeo. Escolha outro MP4.";
+  // Antes da duração: no fragmentado ela não é lida, e a frase de não ter dado
+  // para ler mandaria exportar de novo em MP4 sem dizer o que mudar.
+  if (info.fragmented) return "Este MP4 está fragmentado. Exporte de novo em MP4 comum, sem fragmentar.";
   if (info.durationMs && roundedSeconds(info.durationMs) > VIDEO_MAX_SECONDS) {
     return `O vídeo tem ${durationText(info.durationMs)}. O limite é de 1 minuto: corte e exporte de novo.`;
   }
