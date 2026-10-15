@@ -156,6 +156,8 @@ test("o mesmo retrato da equipe, campo a campo", () => {
     status: "active",
     sections: ["fans", "missions"],
     createdAt: { toDate: () => new Date("2026-09-29T12:00:00Z") },
+    // Com as duas datas preenchidas, os retratos têm objetos Date diferentes com o mesmo instante.
+    updatedAt: { toDate: () => new Date("2026-10-01T12:00:00Z") },
   };
   const base = parseStaffMember("u1", raw);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", raw)), true);

@@ -13,7 +13,7 @@ import { DeltaBadge } from "@/components/ui/metric-card";
 import { Notice } from "@/components/ui/notice";
 import { DEFAULT_PERIOD, PeriodPicker, type PeriodDays } from "@/components/ui/period-picker";
 import { useLoad } from "@/components/ui/use-load";
-import { artistNameOf, getArtistNames } from "@/lib/artist-names-data";
+import { artistNameOf, getArtistNames, type ArtistName } from "@/lib/artist-names-data";
 import {
   ARTIST_METRICS,
   COMPARE_MAX,
@@ -179,16 +179,21 @@ function metricValue(value: number | null, points: boolean): string {
 // Artistas
 // ---------------------------------------------------------------------------
 
+/** Os nomes antes de chegarem (ou se a leitura deles falhar): cada central aparece pelo @. */
+const NO_NAMES: ReadonlyMap<string, ArtistName> = new Map();
+
 function ArtistsCompare({ period, now }: { period: PeriodDays; now: number }) {
   const member = useStaffMember();
-  // Do membro, a leitura só usa se ele vê a seção Artistas: outra mudança no acesso não lê de novo.
-  const seesArtists = canSeeSection(member, "artists");
   const load = useCallback(async () => {
     const range = rangeEndingYesterday(period, now);
-    const [read, names] = await Promise.all([getStatsDays(range, now), getArtistNames(seesArtists)]);
-    return { range, read, names };
-  }, [period, now, seesArtists]);
+    return { range, read: await getStatsDays(range, now) };
+  }, [period, now]);
   const { state, reload, reloading, loadedAt, refreshError } = useLoad(load);
+  // Os nomes das centrais numa leitura à parte, como nas outras telas: ganhar
+  // ou perder a seção Artistas relê só os nomes. Sem eles, aparece o @.
+  const seesArtists = canSeeSection(member, "artists");
+  const namesLoad = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
+  const names = namesLoad.state.status === "ready" ? namesLoad.state.data : NO_NAMES;
   const [chosen, setChosen] = useState<string[] | null>(null);
   const [metric, setMetric] = useState<ArtistMetric>("joined");
   const nowDate = new Date(now);
@@ -205,7 +210,10 @@ function ArtistsCompare({ period, now }: { period: PeriodDays; now: number }) {
     <StatsToolbar
       now={now}
       read={data?.read ?? null}
-      reload={reload}
+      reload={() => {
+        reload();
+        namesLoad.reload();
+      }}
       reloading={reloading}
       loadedAt={loadedAt}
       refreshError={refreshError}
@@ -222,7 +230,7 @@ function ArtistsCompare({ period, now }: { period: PeriodDays; now: number }) {
     );
   }
 
-  const { range, read, names } = data;
+  const { range, read } = data;
   const candidates = [...names.keys(), ...artistsInDays(read.days).filter((id) => !names.has(id))];
   const selected = (chosen ?? topArtistsByJoined(read.days, range, candidates)).filter((id) => candidates.includes(id));
   const summaries = selected.map((id) => artistSummary(read.days, range, id));

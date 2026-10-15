@@ -47,21 +47,18 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
   const [notice, setNotice] = useState<{ key: number; text: string } | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
 
-  // Do membro, a ficha só usa se ele vê a seção Artistas: outra mudança no acesso
-  // (um editor que ganha uma seção) não volta a ficha para "Carregando".
-  const seesArtists = canSeeSection(member, "artists");
   const load = useCallback(async () => {
     const reader = createFanProfileReader();
-    const [card, levels, season, artists, centrals] = await Promise.all([
-      getFanCard(uid, reader),
-      getLevels(),
-      getCurrentSeason(),
-      getArtistNames(seesArtists),
-      getFanCentrals(uid),
-    ]);
-    return { card, levels, season, artists, centrals };
-  }, [uid, seesArtists]);
+    const [card, levels, season, centrals] = await Promise.all([getFanCard(uid, reader), getLevels(), getCurrentSeason(), getFanCentrals(uid)]);
+    return { card, levels, season, centrals };
+  }, [uid]);
   const { state, reload, reloading, loadedAt, refreshError } = useLoad(load);
+  // Os nomes das centrais numa leitura à parte, como nas outras telas: ganhar
+  // ou perder a seção Artistas relê só os nomes, sem voltar a ficha para
+  // "Carregando" nem esvaziar o "Ajustar pontos" aberto. Sem eles, aparece o @.
+  const seesArtists = canSeeSection(member, "artists");
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
+  const artists = names.state.status === "ready" ? names.state.data : null;
 
   // A permissão de editar caiu com o diálogo aberto: ele fecha (o acesso chega em tempo real).
   const dialogShown = dialogOpen && canEdit;
@@ -91,7 +88,7 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
     );
   }
 
-  const { card, levels, season, artists, centrals } = state.data;
+  const { card, levels, season, centrals } = state.data;
   const profile = card.profile;
   if (!profile) {
     return (
@@ -112,6 +109,12 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
   const level = levels ? levelOf(wallet.xp, levels) : null;
   const seesModeration = canSeeSection(member, "moderation");
   const seesRewards = canSeeSection(member, "rewards");
+
+  /** O "Atualizar" lê a ficha e os nomes das centrais. */
+  function refreshAll() {
+    reload();
+    names.reload();
+  }
 
   function adjusted(message: string) {
     setDialogOpen(false);
@@ -144,7 +147,7 @@ function FanContent({ uid, member }: { uid: string; member: StaffMember }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton onClick={reload} busy={reloading} loadedAt={loadedAt} />
+          <RefreshButton onClick={refreshAll} busy={reloading} loadedAt={loadedAt} />
           {seesModeration ? (
             <ButtonLink href={`/moderacao/fas/${uid}`} size="sm" variant="secondary">
               Moderação deste fã

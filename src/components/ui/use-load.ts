@@ -20,11 +20,23 @@ export interface LoadResult<T> {
   refreshError: string | null;
 }
 
-interface Entry<T> {
+/** A última leitura guardada, da função que a fez. */
+export interface LoadEntry<T> {
   load: () => Promise<T>;
   value: Loadable<T>;
   loadedAt: Date | null;
   refreshError: string | null;
+}
+
+/**
+ * Se a leitura tenta de novo quando a conexão volta: só quando a última
+ * leitura desta função falhou (o erro, ou o "Atualizar" que falhou) e nenhuma
+ * releitura está a caminho. O evento `online` é um só: se a rede ainda não
+ * estiver de pé quando ele dispara, a tela fica no erro até o "Tentar de novo".
+ */
+export function retriesWhenOnline<T>(entry: LoadEntry<T> | null, load: () => Promise<T>, reloadingFor: (() => Promise<T>) | null): boolean {
+  if (!entry || entry.load !== load || reloadingFor === load) return false;
+  return entry.value.status === "error" || entry.refreshError !== null;
 }
 
 /**
@@ -36,11 +48,20 @@ interface Entry<T> {
  * função nova é uma leitura nova, e o dado da função anterior sai da tela
  * (carregando). A resposta de uma leitura que ficou para trás (a função
  * mudou, ou a tela fechou) é ignorada.
+ *
+ * `refreshKey`: quando muda, lê de novo como o "Atualizar", com o dado na
+ * tela (para a tela que relê depois de uma ação sem passar por "Carregando").
  */
-export function useLoad<T>(load: () => Promise<T>): LoadResult<T> {
-  const [entry, setEntry] = useState<Entry<T> | null>(null);
+export function useLoad<T>(load: () => Promise<T>, refreshKey?: unknown): LoadResult<T> {
+  const [entry, setEntry] = useState<LoadEntry<T> | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [reloadingFor, setReloadingFor] = useState<(() => Promise<T>) | null>(null);
+  const [seenKey, setSeenKey] = useState(refreshKey);
+  if (!Object.is(seenKey, refreshKey)) {
+    setSeenKey(refreshKey);
+    setReloadingFor(() => load);
+    setAttempt((value) => value + 1);
+  }
 
   useEffect(() => {
     let active = true;
@@ -75,7 +96,7 @@ export function useLoad<T>(load: () => Promise<T>): LoadResult<T> {
   // de novo sozinha, como o "Tentar de novo". Antes, a volta da rede trocava o
   // `member` da equipe e relia toda tela que dependia dele; agora o `member` só
   // muda quando um campo muda.
-  const failed = entry !== null && entry.load === load && (entry.value.status === "error" || entry.refreshError !== null);
+  const failed = retriesWhenOnline(entry, load, reloadingFor);
   useEffect(() => {
     if (!failed) return;
     window.addEventListener("online", reload);

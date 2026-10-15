@@ -70,7 +70,7 @@ export function FanModerationPage({ uid }: { uid: string }) {
 function FanModerationContent({ member, uid }: { member: StaffMember; uid: string }) {
   const canEdit = canEditSection(member, "moderation");
   const [round, setRound] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
+  const [now] = useState(() => Date.now());
   const [reader, setReader] = useState<ContentReader>(createContentReader);
   const [notice, setNotice] = useState<{ key: number; tone: "success" | "error" | "info"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
@@ -81,11 +81,13 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const [clearingText, setClearingText] = useState(false);
   const [resettingUsername, setResettingUsername] = useState(false);
   // Um pedido que foi ao servidor pede a releitura do fã, que só sai com nenhum
-  // diálogo aberto: ler antes poria a página em "Carregando", e o diálogo
-  // sairia da tela perdendo o que a pessoa escolheu (ao voltar limpo, o pedido
-  // dele poderia sair duas vezes). Ela é marcada antes da resposta, para a
-  // perda da permissão no meio do pedido também ler de novo. É estado, e não
-  // ref, porque a releitura (abaixo) olha para ela na renderização.
+  // diálogo aberto: ler com um diálogo aberto mudaria o fã por baixo dele (as
+  // opções do "Apagar bio e redes", o @ da troca). A releitura lê de novo como
+  // o "Atualizar", com o fã na tela: o foco, a região viva e o aviso de
+  // sucesso ficam, e as listas voltam à primeira página, como no "Atualizar".
+  // Ela é marcada antes da resposta, para a perda da permissão no meio do
+  // pedido também ler de novo. É estado, e não ref, porque a releitura (abaixo)
+  // olha para ela na renderização.
   const [pendingRefresh, setPendingRefresh] = useState(false);
   // A permissão de editar caiu com um diálogo aberto (o acesso chega em tempo
   // real): os diálogos fecham. A confirmação ganha uma instância nova, para a
@@ -115,34 +117,33 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
     setRound((value) => value + 1);
   }
 
+  // Cada releitura troca o `round`, que as leituras recebem como chave de
+  // releitura: elas leem de novo com o dado na tela, sem passar por "Carregando".
   const profile = useLoad(
-    useCallback(() => {
-      void round;
-      return getFanProfile(uid);
-    }, [uid, round]),
+    useCallback(() => getFanProfile(uid), [uid]),
+    round,
   );
   const visible = useLoad(
-    useCallback(() => {
-      void round;
-      return countVisibleComments(uid);
-    }, [uid, round]),
+    useCallback(() => countVisibleComments(uid), [uid]),
+    round,
   );
   // A denúncia de perfil do fã, pelo id (29.7); sem item, nada sobre perfil.
   const profileReport = useLoad(
-    useCallback(() => {
-      void round;
-      return getProfileQueueItem(uid);
-    }, [uid, round]),
+    useCallback(() => getProfileQueueItem(uid), [uid]),
+    round,
   );
   const fan = profile.state.status === "ready" ? profile.state.data : null;
   const visibleCount = visible.state.status === "ready" ? visible.state.data : null;
-  const date = new Date(now);
+  // As datas contam da última leitura do fã (a do "Atualizado às"), também
+  // depois da releitura feita na renderização, do "Tentar de novo" e da volta
+  // da conexão.
+  const date = profile.loadedAt ?? new Date(now);
+  const refreshError = profile.refreshError ?? visible.refreshError ?? profileReport.refreshError;
 
   const show: Notify = (tone, text) => setNotice((current) => ({ key: (current?.key ?? 0) + 1, tone, text }));
 
   function refresh() {
     setPendingRefresh(false);
-    setNow(Date.now());
     setReader(createContentReader());
     setRound((value) => value + 1);
   }
@@ -270,6 +271,8 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
           {notice.text}
         </Notice>
       ) : null}
+      {/* A releitura que falhou deixa o fã de antes na tela, com o aviso; a volta da conexão lê de novo. */}
+      {refreshError ? <Notice tone="error">Não deu para atualizar: {refreshError}</Notice> : null}
 
       <SectionCard id="titulo-perfil-fa" title="Perfil">
         <div className="flex flex-col gap-5 px-5 py-4">
@@ -837,14 +840,8 @@ function HideCommentsBody({
 function FanQueue({ member, uid, reader, now, round }: { member: StaffMember; uid: string; reader: ContentReader; now: Date; round: number }) {
   const seesArtists = canSeeSection(member, "artists");
   const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
-  const load = useCallback(
-    (after: PageCursor | null) => {
-      void round;
-      return getFanQueuePage(uid, after);
-    },
-    [uid, round],
-  );
-  const list = usePagedList(load, (item: QueueItem) => item.commentId, { one: "item carregado", many: "itens carregados" });
+  const load = useCallback((after: PageCursor | null) => getFanQueuePage(uid, after), [uid]);
+  const list = usePagedList(load, (item: QueueItem) => item.commentId, { one: "item carregado", many: "itens carregados" }, round);
   return (
     <SectionCard id="titulo-fila-fa" title="Na fila">
       {list.state.status === "error" ? (
@@ -894,14 +891,8 @@ function FanComments({
 }) {
   const seesArtists = canSeeSection(member, "artists");
   const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
-  const load = useCallback(
-    (after: PageCursor | null) => {
-      void round;
-      return getFanCommentsPage(uid, after);
-    },
-    [uid, round],
-  );
-  const list = usePagedList(load, (item: CommentRow) => `${item.postId}/${item.commentId}`, { one: "comentário carregado", many: "comentários carregados" });
+  const load = useCallback((after: PageCursor | null) => getFanCommentsPage(uid, after), [uid]);
+  const list = usePagedList(load, (item: CommentRow) => `${item.postId}/${item.commentId}`, { one: "comentário carregado", many: "comentários carregados" }, round);
   function moderate(item: CommentRow, action: "hide" | "restore") {
     const hide = action === "hide";
     onAsk({

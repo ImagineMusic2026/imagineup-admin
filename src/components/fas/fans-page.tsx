@@ -45,6 +45,12 @@ interface SearchState {
   limited: boolean;
 }
 
+/** O total de fãs, a temporada e a régua, lidos ao abrir e no "Atualizar". */
+async function readFansContext() {
+  const [count, season, levels] = await Promise.all([getFansCount(), getCurrentSeason(), getLevels()]);
+  return { count, season, levels };
+}
+
 function FansContent({ member }: { member: StaffMember }) {
   const router = useRouter();
   const canEdit = canEditSection(member, "fans");
@@ -54,13 +60,11 @@ function FansContent({ member }: { member: StaffMember }) {
   const [reader] = useState(() => createFanProfileReader());
   const [search, setSearch] = useState<SearchState>({ status: "idle", rows: [], result: "", limited: false });
 
+  const context = useLoad(readFansContext);
+  // Os nomes das centrais (o filtro por central) numa leitura à parte, como nas
+  // outras telas: ganhar ou perder a seção Artistas relê só os nomes.
   const seesArtists = canSeeSection(member, "artists");
-  const context = useLoad(
-    useCallback(async () => {
-      const [count, season, levels, artists] = await Promise.all([getFansCount(), getCurrentSeason(), getLevels(), getArtistNames(seesArtists)]);
-      return { count, season, levels, artists };
-    }, [seesArtists]),
-  );
+  const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const season = context.state.status === "ready" ? context.state.data.season : null;
   const levels = context.state.status === "ready" ? context.state.data.levels : null;
 
@@ -110,13 +114,13 @@ function FansContent({ member }: { member: StaffMember }) {
   function refresh() {
     reader.clear();
     context.reload();
+    names.reload();
     list.reload();
   }
 
   const columns = fanColumns(levels, now, Boolean(artistId));
   const searching = search.status !== "idle";
-  const artistOptions =
-    context.state.status === "ready" ? [...context.state.data.artists.values()].map((artist) => ({ value: artist.id, label: artist.name })) : [];
+  const artistOptions = names.state.status === "ready" ? [...names.state.data.values()].map((artist) => ({ value: artist.id, label: artist.name })) : [];
 
   return (
     <>

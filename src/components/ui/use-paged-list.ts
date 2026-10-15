@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 
 import type { RowFocusRequest } from "@/components/ui/data-table";
 import { useLoad, type Loadable } from "@/components/ui/use-load";
@@ -43,16 +43,18 @@ interface Extra<T, C> {
  * Lista com "Carregar mais" por cursor, em leitura única: a primeira página
  * ao abrir e no "Atualizar" (que lê de novo do topo), as seguintes pelo botão.
  * `loadPage` precisa ser estável (`useCallback`): uma função nova (outro
- * filtro) começa uma lista nova.
+ * filtro) começa uma lista nova. `refreshKey` lê de novo do topo como o
+ * "Atualizar", com a lista na tela (as páginas extras saem).
  */
 export function usePagedList<T, C>(
   loadPage: (after: C | null) => Promise<PageOf<T, C>>,
   rowKey: (item: T) => string,
   /** O que entrou, para o anúncio: `{ one: "fã carregado", many: "fãs carregados" }`. */
   loaded: { one: string; many: string } = { one: "item carregado", many: "itens carregados" },
+  refreshKey?: unknown,
 ): PagedList<T> {
   const first = useCallback(() => loadPage(null), [loadPage]);
-  const load = useLoad(first);
+  const load = useLoad(first, refreshKey);
   const [extra, setExtra] = useState<Extra<T, C> | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
@@ -82,6 +84,16 @@ export function usePagedList<T, C>(
       setLoadingMore(false);
     }
   }
+
+  // O "Carregar mais" que falhou (sem rede, por exemplo) tenta de novo quando a
+  // conexão volta, como a primeira página no useLoad.
+  const retryMore = useEffectEvent(() => void loadMore());
+  useEffect(() => {
+    if (!loadMoreError || loadingMore) return;
+    const retry = () => retryMore();
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [loadMoreError, loadingMore]);
 
   const state: Loadable<T[]> =
     load.state.status === "ready" ? { status: "ready", data: items } : load.state;
