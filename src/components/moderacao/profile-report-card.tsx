@@ -28,11 +28,18 @@ import { resolveProfileReport } from "@/lib/moderation-api";
 
 export type ProfileDecision = "kept" | "actioned";
 
+/** A recusa de um item que mudou por fora: outra tentativa com o mesmo `round` daria a mesma. */
+function changedOutside(failure: unknown): boolean {
+  const reason = reasonOf(failure);
+  return reason === "stale-report" || reason === "profile-not-reported";
+}
+
 /**
  * A confirmação de "Manter" ou "Resolver", com o `round` que o card leu. Se o
  * item mudou por fora (`stale-report`: reabriu depois que o card abriu; ou
- * `profile-not-reported`: saiu da fila), o diálogo mostra a frase do servidor
- * e `reread` lê o item de novo, porque o painel não escuta em tempo real.
+ * `profile-not-reported`: saiu da fila), o diálogo mostra a frase do servidor,
+ * desliga o botão de confirmar e `reread` pede a leitura do item, porque o
+ * painel não escuta em tempo real (a página do fã lê quando o diálogo fecha).
  */
 export function profileDecisionRequest(item: ProfileQueueItem, decision: ProfileDecision, name: string, reread: () => void): ConfirmRequest {
   const keep = decision === "kept";
@@ -46,9 +53,9 @@ export function profileDecisionRequest(item: ProfileQueueItem, decision: Profile
     action: () => resolveProfileReport({ uid: item.uid, resolution: decision, round: item.round }),
     successMessage: keep ? `Perfil de ${name} mantido.` : `Denúncia do perfil de ${name} resolvida.`,
     onError: (failure) => {
-      const reason = reasonOf(failure);
-      if (reason === "stale-report" || reason === "profile-not-reported") reread();
+      if (changedOutside(failure)) reread();
     },
+    blocksRetry: changedOutside,
   };
 }
 

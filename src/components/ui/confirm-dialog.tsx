@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -21,13 +21,18 @@ export interface ConfirmRequest {
    * vez da frase do código, e a tela lê de novo. Sem ele, a mensagem de antes.
    */
   onUncertain?: () => void;
+  /** A frase da falha incerta, quando a tela só lê de novo ao fechar (sem ela, a de sempre). */
+  uncertainText?: string;
   /** Recusa do servidor (com a frase dele no diálogo): a tela pode ler de novo o que mudou por fora. */
   onError?: (failure: unknown) => void;
+  /** Recusa que outra tentativa repetiria (o item mudou por fora): o botão de confirmar desliga. */
+  blocksRetry?: (failure: unknown) => boolean;
 }
 
 /**
  * Confirmação com o pedido dentro: o erro aparece no próprio diálogo e o
- * foco começa no botão de voltar, que é a escolha segura.
+ * foco começa no botão de voltar, que é a escolha segura. Depois de uma falha
+ * incerta, o botão de confirmar vira "Tentar de novo".
  */
 export function ConfirmDialog({
   request,
@@ -40,19 +45,29 @@ export function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const footer = useRef<HTMLDivElement>(null);
   // Cada fechamento abre uma rodada nova: a resposta de um pedido de uma rodada
   // anterior não fecha nem muda a confirmação que estiver aberta agora.
   const round = useRef(0);
+
+  // O botão de confirmar desligou com o foco nele: o foco vai para o de voltar.
+  useEffect(() => {
+    if (blocked) footer.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [blocked]);
 
   function close() {
     round.current += 1;
     setError(null);
     setBusy(false);
+    setRetry(false);
+    setBlocked(false);
     onClose();
   }
 
   async function confirm() {
-    if (!request || busy) return;
+    if (!request || busy || blocked) return;
     const mine = round.current;
     setError(null);
     setBusy(true);
@@ -61,11 +76,13 @@ export function ConfirmDialog({
     } catch (failure) {
       if (round.current !== mine) return;
       if (request.onUncertain && mayHaveRunOnServer(failure)) {
-        setError(actionErrorMessage(failure));
+        setError(request.uncertainText ?? actionErrorMessage(failure));
+        setRetry(true);
         request.onUncertain();
       } else {
         setError(callableErrorMessage(failure));
         request.onError?.(failure);
+        if (request.blocksRetry?.(failure)) setBlocked(true);
       }
       setBusy(false);
       return;
@@ -73,6 +90,7 @@ export function ConfirmDialog({
     if (round.current !== mine) return;
     round.current += 1;
     setBusy(false);
+    setRetry(false);
     onDone(request.successMessage);
   }
 
@@ -88,12 +106,12 @@ export function ConfirmDialog({
     >
       <div className="flex flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div ref={footer} className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={close} disabled={busy} data-autofocus>
             {request?.cancelLabel ?? "Voltar"}
           </Button>
-          <Button variant={request?.tone === "danger" ? "danger" : "primary"} onClick={confirm} busy={busy}>
-            {busy ? request?.busyLabel : request?.confirmLabel}
+          <Button variant={request?.tone === "danger" ? "danger" : "primary"} onClick={confirm} busy={busy} disabled={blocked}>
+            {busy ? request?.busyLabel : retry ? "Tentar de novo" : request?.confirmLabel}
           </Button>
         </div>
       </div>

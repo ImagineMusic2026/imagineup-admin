@@ -278,6 +278,12 @@ export function mayHaveRunOnServer(error: unknown): boolean {
 export const UNCERTAIN_CHANGE_TEXT = "Não deu para confirmar se a mudança foi gravada. Confira a lista antes de repetir.";
 
 /**
+ * Falha incerta num diálogo que fica aberto e repete a mesma chamada: a tela
+ * só lê de novo quando ele fecha, e a repetição não grava duas vezes.
+ */
+export const UNCERTAIN_RETRY_TEXT = "Não deu para confirmar se a mudança foi gravada. Tente de novo: repetir não grava duas vezes.";
+
+/**
  * Erro de uma ação de mudança: a falha sem motivo do servidor (a rede caiu, o
  * servidor demorou, a callable ainda não existe) pode ter gravado, e diz isso;
  * o resto, a frase do servidor.
