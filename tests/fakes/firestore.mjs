@@ -3,7 +3,10 @@
 // Tem tudo que a fundação e as telas importam do Firestore (o `mock.module`
 // com `namedExports` quebra o import do lib testado quando falta um nome):
 // collection, collectionGroup, doc, query, where, orderBy, limit, startAfter,
-// startAt, endAt, documentId, getDocs, getDoc, getCountFromServer e Timestamp.
+// startAt, endAt, documentId, getDocs, getDocsFromServer, getDoc,
+// getCountFromServer e Timestamp. Com `setOffline(true)`, as leituras do
+// servidor falham com `unavailable`, e o `getDocs` resolve vazio do cache,
+// como o SDK de verdade sem rede.
 // Nunca `onSnapshot`: nenhuma tela nova escuta em tempo real.
 //
 // Os documentos moram num mapa por caminho, e as consultas são respondidas de
@@ -182,6 +185,11 @@ export function createFirestoreFake() {
     }
   }
 
+  let offline = false;
+  function failOffline() {
+    if (offline) throw Object.assign(new Error("Failed to get document because the client is offline."), { code: "unavailable" });
+  }
+
   const api = {
     Timestamp,
     collection: (parent, ...segments) => base({ type: "collection", path: joinPath(parent?.path, segments) }),
@@ -212,17 +220,27 @@ export function createFirestoreFake() {
     getDoc: async (ref) => {
       reads.push(ref.path);
       maybeFail();
+      failOffline();
       return snapshotOf(ref.path, documents.get(ref.path));
     },
     getDocs: async (target) => {
       queries.push(describe(target));
       maybeFail();
+      // Sem rede, o SDK resolve com o cache, que no painel quase sempre está vazio.
+      const docs = offline ? [] : run(target);
+      return { docs, size: docs.length, empty: docs.length === 0, metadata: { fromCache: offline } };
+    },
+    getDocsFromServer: async (target) => {
+      queries.push(describe(target));
+      maybeFail();
+      failOffline();
       const docs = run(target);
-      return { docs, size: docs.length, empty: docs.length === 0 };
+      return { docs, size: docs.length, empty: docs.length === 0, metadata: { fromCache: false } };
     },
     getCountFromServer: async (target) => {
       counts.push(describe(target));
       maybeFail();
+      failOffline();
       const count = run({ ...target, limit: null, startAfter: null }).length;
       return { data: () => ({ count }) };
     },
@@ -245,6 +263,11 @@ export function createFirestoreFake() {
       reads.length = 0;
       counts.length = 0;
       failNext = null;
+      offline = false;
+    },
+    /** Liga ou desliga a rede: sem ela, as leituras do servidor falham com `unavailable`. */
+    setOffline(value) {
+      offline = value;
     },
     /** A próxima leitura falha com este erro. */
     failNext(error) {

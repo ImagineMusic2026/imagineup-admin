@@ -34,7 +34,7 @@ mock.module("firebase/firestore", {
     where: (field, op, value) => ({ field, op, value }),
     limit: (count) => ({ limit: count }),
     query: (ref, ...constraints) => ({ path: ref.path, constraints }),
-    getDocs: async (target) => {
+    getDocsFromServer: async (target) => {
       contentQueries.push(target);
       return { empty: !contentFound.has(target.path) };
     },

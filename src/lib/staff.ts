@@ -225,11 +225,12 @@ function sameTime(a: Date | null, b: Date | null): boolean {
   return a === null || b === null ? a === b : a.getTime() === b.getTime();
 }
 
-type FieldComparers = { [K in keyof StaffMember]: (a: StaffMember[K], b: StaffMember[K]) => boolean };
+type FieldComparers = { [K in keyof StaffMember]-?: (a: StaffMember[K], b: StaffMember[K]) => boolean };
 
 /**
  * Como cada campo do `StaffMember` se compara. A tabela é tipada pelas chaves
- * dele: um campo novo sem comparação não compila.
+ * dele (com `-?`, também as opcionais): um campo novo sem comparação não
+ * compila, e o erro aparece na própria tabela.
  */
 const STAFF_MEMBER_FIELDS: FieldComparers = {
   uid: same,
@@ -246,7 +247,8 @@ const STAFF_MEMBER_FIELDS: FieldComparers = {
 };
 
 function sameField<K extends keyof StaffMember>(key: K, a: StaffMember, b: StaffMember): boolean {
-  const compare: FieldComparers[K] = STAFF_MEMBER_FIELDS[key];
+  // O TypeScript não liga sozinho a chave ao tipo do campo no tipo mapeado: o cast faz isso.
+  const compare = STAFF_MEMBER_FIELDS[key] as (x: StaffMember[K], y: StaffMember[K]) => boolean;
   return compare(a[key], b[key]);
 }
 

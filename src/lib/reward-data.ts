@@ -1,8 +1,9 @@
-import { Timestamp, collection, doc, getDoc, getDocs, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
+import { Timestamp, collection, doc, getDoc, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
 
 import { dayKey, dayStartMs, type DayRange } from "@/lib/day";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
+import { readQuery } from "@/lib/firestore-read";
 import {
   REDEMPTIONS_PAGE_SIZE,
   REDEMPTION_STATUSES,
@@ -36,7 +37,7 @@ export function newRewardId(): string {
 
 /** O catálogo inteiro, na ordem do app. */
 export async function getRewards(): Promise<Reward[]> {
-  const snapshot = await getDocs(query(collection(db(), "rewards"), orderBy("order")));
+  const snapshot = await readQuery(query(collection(db(), "rewards"), orderBy("order")));
   return snapshot.docs.map((item) => parseReward(item.id, item.data()));
 }
 
@@ -64,7 +65,7 @@ export async function getEvents(ids: readonly string[]): Promise<Map<string, Eve
 
 /** Os shows para escolher, de hoje em diante (rascunhos inclusive), do mais perto. */
 export async function getEventChoices(now: number): Promise<EventInfo[]> {
-  const snapshot = await getDocs(
+  const snapshot = await readQuery(
     query(collection(db(), "events"), where("startsAt", ">=", Timestamp.fromMillis(dayStartMs(dayKey(now)))), orderBy("startsAt"), limit(EVENT_CHOICES_MAX)),
   );
   return snapshot.docs.map((item) => eventOf(item.id, item.data()));
@@ -113,7 +114,7 @@ export async function getRedemption(code: string): Promise<Redemption | null> {
 export async function getOpenRedemptionsOf(rewardId: string): Promise<Redemption[]> {
   const [requested, approved] = await Promise.all(
     (["requested", "approved"] as const).map((status) =>
-      getDocs(query(collection(db(), "redemptions"), where("rewardId", "==", rewardId), where("status", "==", status), orderBy("requestedAt", "asc"))),
+      readQuery(query(collection(db(), "redemptions"), where("rewardId", "==", rewardId), where("status", "==", status), orderBy("requestedAt", "asc"))),
     ),
   );
   return [...requested.docs, ...approved.docs]

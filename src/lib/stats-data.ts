@@ -1,7 +1,8 @@
-import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, query, where } from "firebase/firestore";
 
 import { dayKey, daysBetween, daysOf, shiftDay, type DayRange } from "@/lib/day";
 import { db } from "@/lib/firebase";
+import { readQuery } from "@/lib/firestore-read";
 import { closeState, parseStatsDay, statsDayFromShards, type CloseState, type StatsDay } from "@/lib/stats";
 
 /**
@@ -39,14 +40,14 @@ export function chunkRange(range: DayRange, size: number = MAX_DAYS_PER_QUERY): 
 }
 
 async function readClosedDays(range: DayRange): Promise<StatsDay[]> {
-  const snapshot = await getDocs(
+  const snapshot = await readQuery(
     query(collection(db(), "statsDaily"), where(documentId(), ">=", range.from), where(documentId(), "<=", range.to)),
   );
   return snapshot.docs.map((item) => parseStatsDay(item.id, item.data()));
 }
 
 async function readOpenDay(day: string): Promise<StatsDay> {
-  const snapshot = await getDocs(collection(db(), "statsDaily", day, "statsShards"));
+  const snapshot = await readQuery(collection(db(), "statsDaily", day, "statsShards"));
   return statsDayFromShards(
     day,
     snapshot.docs.map((item) => item.data()),

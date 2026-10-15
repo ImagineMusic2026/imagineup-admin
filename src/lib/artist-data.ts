@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where, type Unsubscribe } from "firebase/firestore";
+import { collection, doc, getDoc, limit, onSnapshot, query, where, type Unsubscribe } from "firebase/firestore";
 
 import {
   createArtistsJoin,
@@ -9,6 +9,7 @@ import {
   type ArtistPrivate,
 } from "@/lib/artists";
 import { db } from "@/lib/firebase";
+import { readQuery } from "@/lib/firestore-read";
 
 /**
  * Leituras dos artistas. As regras do Firestore liberam `artists` e
@@ -75,8 +76,8 @@ export async function getArtistPrivate(artistId: string): Promise<ArtistPrivate 
  */
 export async function artistHasContent(artistId: string): Promise<boolean> {
   const [posts, events] = await Promise.all([
-    getDocs(query(collection(db(), "posts"), where("artistId", "==", artistId), limit(1))),
-    getDocs(query(collection(db(), "events"), where("artistIds", "array-contains", artistId), limit(1))),
+    readQuery(query(collection(db(), "posts"), where("artistId", "==", artistId), limit(1))),
+    readQuery(query(collection(db(), "events"), where("artistIds", "array-contains", artistId), limit(1))),
   ]);
   return !posts.empty || !events.empty;
 }

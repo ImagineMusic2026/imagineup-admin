@@ -1,6 +1,5 @@
 import {
   getCountFromServer,
-  getDocs,
   limit,
   query,
   startAfter,
@@ -8,6 +7,8 @@ import {
   type Query,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
+
+import { readQuery } from "@/lib/firestore-read";
 
 /**
  * Listas com "Carregar mais", em leitura única: cada página pede um documento
@@ -30,7 +31,7 @@ export async function getPage(
   { size, after = null }: { size: number; after?: PageCursor | null },
 ): Promise<PageResult> {
   const constraints = after ? [startAfter(after), limit(size + 1)] : [limit(size + 1)];
-  const snapshot = await getDocs(query(base, ...constraints));
+  const snapshot = await readQuery(query(base, ...constraints));
   const docs = snapshot.docs.slice(0, size);
   return { docs, cursor: docs.at(-1) ?? after, hasMore: snapshot.docs.length > size };
 }

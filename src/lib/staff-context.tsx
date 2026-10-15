@@ -24,7 +24,6 @@ interface StaffContextValue {
   retry: () => void;
 }
 
-
 const StaffContext = createContext<StaffContextValue | null>(null);
 
 export function StaffProvider({ children }: { children: React.ReactNode }) {

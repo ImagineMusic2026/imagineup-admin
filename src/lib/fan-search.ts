@@ -1,9 +1,10 @@
-import { collection, doc, endAt, getDoc, getDocs, limit, orderBy, query, startAt, where } from "firebase/firestore";
+import { collection, doc, endAt, getDoc, limit, orderBy, query, startAt, where } from "firebase/firestore";
 
 import { findFanByEmail } from "@/lib/fan-api";
 import { fanDisplayName, parseFanProfile, type FanProfile } from "@/lib/fan-profile";
 import { SEARCH_LIMIT, matchesAllWords, type FanSearchKind } from "@/lib/fans";
 import { db } from "@/lib/firebase";
+import { readQuery } from "@/lib/firestore-read";
 
 /**
  * A busca da seção Fãs (26.7): nome e @ pelo `searchKeys` e pelo @ por
@@ -24,7 +25,7 @@ async function byUid(uid: string): Promise<FanProfile | null> {
 }
 
 async function byCode(code: string): Promise<FanProfile | null> {
-  const snapshot = await getDocs(query(collection(db(), "fanInvites"), where("code", "==", code), limit(1)));
+  const snapshot = await readQuery(query(collection(db(), "fanInvites"), where("code", "==", code), limit(1)));
   const owner = snapshot.docs[0];
   if (!owner) return null;
   const uid = typeof owner.data().uid === "string" ? (owner.data().uid as string) : owner.id;
@@ -34,10 +35,10 @@ async function byCode(code: string): Promise<FanProfile | null> {
 async function byText(words: string[], longest: string, handle: string | null): Promise<{ profiles: FanProfile[]; limited: boolean }> {
   const [keys, handles] = await Promise.all([
     longest
-      ? getDocs(query(collection(db(), "users"), where("searchKeys", "array-contains", longest), limit(SEARCH_LIMIT)))
+      ? readQuery(query(collection(db(), "users"), where("searchKeys", "array-contains", longest), limit(SEARCH_LIMIT)))
       : Promise.resolve(null),
     handle
-      ? getDocs(query(collection(db(), "users"), orderBy("username"), startAt(handle), endAt(`${handle}`), limit(SEARCH_LIMIT)))
+      ? readQuery(query(collection(db(), "users"), orderBy("username"), startAt(handle), endAt(`${handle}`), limit(SEARCH_LIMIT)))
       : Promise.resolve(null),
   ]);
   const found = new Map<string, FanProfile>();
