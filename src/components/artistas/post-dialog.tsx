@@ -16,7 +16,7 @@ import { eventWhenText, type AgendaEvent } from "@/lib/events";
 import { ImageError, type ProcessedImage } from "@/lib/image-prep";
 import { createPost, setPostStatus, updatePost, type PostMediaInput } from "@/lib/post-api";
 import { getArtistEventChoices, newPostId } from "@/lib/post-data";
-import { captureVideoFrame, preparePostImage, uploadPostImage, uploadPostVideo } from "@/lib/post-media";
+import { captureVideoFrame, inspectPostVideo, preparePostImage, uploadPostImage, uploadPostVideo } from "@/lib/post-media";
 import {
   EVENT_DRAFT_WARNING,
   POST_KINDS,
@@ -28,12 +28,12 @@ import {
   fileSizeText,
   uncertainCreateText,
   validatePost,
-  videoFileProblem,
   type Post,
   type PostErrors,
   type PostForm,
   type PostKind,
 } from "@/lib/posts";
+import { VIDEO_RULES_TEXT, VideoCheckError, videoMetaText, type VideoMeta } from "@/lib/video-check";
 
 export interface PostDialogRequest {
   /** O post, ou `null` para criar. */
@@ -45,7 +45,7 @@ export interface PostDialogRequest {
 type Step = "create" | "upload" | "update" | "publish";
 const STEP_LABELS: Record<Step, string> = { create: "Criando o rascunho...", upload: "Enviando a mídia...", update: "Salvando...", publish: "Publicando..." };
 
-type VideoValue = { kind: "none" } | { kind: "current"; size: number } | { kind: "new"; file: File };
+type VideoValue = { kind: "none" } | { kind: "current"; size: number } | { kind: "new"; file: File; meta: VideoMeta };
 
 export function PostDialog({
   request,
@@ -107,6 +107,7 @@ function PostDialogBody({
   const [processing, setProcessing] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [checkingVideo, setCheckingVideo] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [step, setStep] = useState<Step | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -158,11 +159,18 @@ function PostDialogBody({
     }
   }
 
-  function chooseVideo(file: File) {
-    const problem = videoFileProblem(file);
-    setVideoError(problem);
-    if (problem) return;
-    setVideo({ kind: "new", file });
+  /** O mp4 só entra depois de conferido (codec, faststart, 720p, 20 MB); o que não passa fica de fora, com a frase. */
+  async function chooseVideo(file: File) {
+    setVideoError(null);
+    setCheckingVideo(true);
+    try {
+      const meta = await inspectPostVideo(file);
+      if (mounted.current) setVideo({ kind: "new", file, meta });
+    } catch (failure) {
+      if (mounted.current) setVideoError(failure instanceof VideoCheckError ? failure.message : "Não deu para ler o vídeo. Tente de novo.");
+    } finally {
+      if (mounted.current) setCheckingVideo(false);
+    }
   }
 
   async function captureCover() {
@@ -186,7 +194,7 @@ function PostDialogBody({
   }
 
   async function submit(intent: "save" | "publish") {
-    if (busy || processing) return;
+    if (busy || processing || checkingVideo) return;
     const checked = validatePost(form);
     const nextErrors: PostErrors = { ...checked.errors };
     if (intent === "publish" && needsMedia(form.kind) && image.kind === "none") nextErrors.media = form.kind === "video" ? "Envie a capa do vídeo antes de publicar." : "Envie a foto antes de publicar.";
@@ -242,7 +250,7 @@ function PostDialogBody({
             if (server.current.uploadedVideo?.file === video.file) videoPath = server.current.uploadedVideo.path;
             else {
               setProgress(0);
-              videoPath = await uploadPostVideo(postId, video.file, (fraction) => mounted.current && setProgress(fraction));
+              videoPath = await uploadPostVideo(postId, video.file, video.meta, (fraction) => mounted.current && setProgress(fraction));
               server.current.uploadedVideo = { file: video.file, path: videoPath };
             }
           } else if (dropVideo) {
@@ -385,14 +393,14 @@ function PostDialogBody({
                 <p className="m-0 flex items-center gap-2 text-[13.5px] text-fg/80">
                   <Film aria-hidden="true" className="size-4 text-fg/60" />
                   {video.kind === "new"
-                    ? `${video.file.name}, ${fileSizeText(video.file.size)}, enviado ao salvar.`
+                    ? `${video.file.name}, ${fileSizeText(video.file.size)}, ${videoMetaText(video.meta)}, enviado ao salvar.`
                     : video.kind === "current"
                       ? `Vídeo enviado${video.size ? `, ${fileSizeText(video.size)}` : ""}. Trocar só a capa mantém o vídeo.`
                       : "Sem vídeo. O post de vídeo pode sair só com a capa."}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => videoInput.current?.click()}>
-                    {video.kind === "none" ? "Escolher vídeo" : "Trocar vídeo"}
+                  <Button size="sm" variant="secondary" disabled={busy} busy={checkingVideo} onClick={() => videoInput.current?.click()}>
+                    {checkingVideo ? "Conferindo o vídeo..." : video.kind === "none" ? "Escolher vídeo" : "Trocar vídeo"}
                   </Button>
                   {video.kind === "new" ? (
                     <Button size="sm" variant="secondary" disabled={busy || processing} onClick={() => void captureCover()}>
@@ -413,10 +421,10 @@ function PostDialogBody({
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.target.value = "";
-                    if (file) chooseVideo(file);
+                    if (file) void chooseVideo(file);
                   }}
                 />
-                <p className="m-0 text-[12.5px] text-fg/60">MP4 até 50 MB. MOV não vale: exporte em MP4.</p>
+                <p className="m-0 text-[12.5px] text-fg/60">{VIDEO_RULES_TEXT}</p>
                 {videoError ? (
                   <p role="alert" className="m-0 text-[12.5px] font-medium text-danger">
                     {videoError}

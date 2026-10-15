@@ -43,11 +43,12 @@ test("o texto limpo como o servidor: obrigatório no texto e no show", () => {
   assert.equal(posts.textCounter("  abc  "), "3 de 2.000");
 });
 
-test("o vídeo: MP4 até 50 MB, MOV recusado com a frase", () => {
+test("o vídeo: MP4 até 20 MB, MOV recusado com a frase", () => {
   assert.equal(posts.videoFileProblem({ type: "video/mp4", name: "a.mp4", size: 1000 }), null);
   assert.equal(posts.videoFileProblem({ type: "video/quicktime", name: "a.mov", size: 1000 }), "Vídeo MOV não vale. Exporte em MP4 e tente de novo.");
   assert.equal(posts.videoFileProblem({ type: "video/webm", name: "a.webm", size: 1000 }), "O vídeo precisa ser MP4.");
-  assert.equal(posts.videoFileProblem({ type: "video/mp4", name: "a.mp4", size: 51 * 1024 * 1024 }), "O vídeo passa de 50 MB. Envie uma versão menor.");
+  assert.equal(posts.videoFileProblem({ type: "video/mp4", name: "a.mp4", size: 20 * 1024 * 1024 }), null);
+  assert.equal(posts.videoFileProblem({ type: "video/mp4", name: "a.mp4", size: 20 * 1024 * 1024 + 1 }), "O vídeo passa de 20 MB. Envie uma versão menor.");
   assert.equal(posts.fileSizeText(177_442), "173 KB");
   assert.equal(posts.fileSizeText(12.4 * 1024 * 1024), "12,4 MB");
   assert.match(posts.uncertainCreateText("o post"), /^Não deu para confirmar se o post foi criado\./);

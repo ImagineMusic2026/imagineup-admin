@@ -1,12 +1,14 @@
 import { ImageError, processImage, processSource, type ProcessedImage } from "@/lib/image-prep";
 import { uploadFileResumable, uploadImage } from "@/lib/media-storage";
 import { POST_IMAGE_SPEC, videoFileProblem } from "@/lib/posts";
+import { VideoCheckError, readMp4Info, videoCustomMetadata, videoInfoProblem, videoMetaOf, type VideoMeta } from "@/lib/video-check";
 
 /**
  * A mídia do post no navegador: a foto (ou a capa do vídeo) recortada na
  * proporção dela entre 4:5 e 16:9, com a miniatura; a capa tirada de um
- * quadro do vídeo; e o envio para `posts/{postId}/` (o mp4 em partes, com o
- * progresso). O servidor confere os arquivos no `updatePost`.
+ * quadro do vídeo; o mp4 conferido pelas caixas dele (`video-check.ts`); e o
+ * envio para `posts/{postId}/` (o mp4 em partes, com o progresso). O servidor
+ * confere os arquivos no `updatePost`.
  */
 
 export function preparePostImage(file: File): Promise<ProcessedImage> {
@@ -63,9 +65,31 @@ export async function uploadPostImage(postId: string, processed: ProcessedImage)
   return { photoPath: paths.path, thumbPath: paths.thumbPath };
 }
 
-/** Sobe o mp4 em partes, com o progresso de 0 a 1. */
-export async function uploadPostVideo(postId: string, file: File, onProgress: (fraction: number) => void, timestamp = Date.now()): Promise<string> {
+/**
+ * Confere o mp4 escolhido: o arquivo (tipo e tamanho) e as caixas dele (codec,
+ * faststart, resolução e duração), lendo só os cabeçalhos e o índice. Devolve
+ * a duração e a medida na tela, ou lança `VideoCheckError` com a frase.
+ */
+export async function inspectPostVideo(file: File): Promise<VideoMeta> {
+  const problem = videoFileProblem(file);
+  if (problem) throw new VideoCheckError(problem);
+  const info = await readMp4Info(async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer()), file.size);
+  const refused = videoInfoProblem(info);
+  if (refused) throw new VideoCheckError(refused);
+  const meta = videoMetaOf(info);
+  if (!meta) throw new VideoCheckError("Não deu para ler a duração do vídeo. Exporte de novo em MP4 (H.264).");
+  return meta;
+}
+
+/** Sobe o mp4 em partes, com o progresso de 0 a 1, e a duração e a medida no metadado do arquivo. */
+export async function uploadPostVideo(
+  postId: string,
+  file: File,
+  meta: VideoMeta,
+  onProgress: (fraction: number) => void,
+  timestamp = Date.now(),
+): Promise<string> {
   const path = `posts/${postId}/video-${timestamp}.mp4`;
-  await uploadFileResumable(path, file, "video/mp4", onProgress);
+  await uploadFileResumable(path, file, "video/mp4", onProgress, videoCustomMetadata(meta));
   return path;
 }

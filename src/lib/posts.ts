@@ -1,11 +1,12 @@
 import type { ImageSpec } from "@/lib/image-prep";
 import { toDate } from "@/lib/staff";
+import { VIDEO_MAX_BYTES } from "@/lib/video-check";
 import { cleanMultiline, isVisibleMultiline } from "@/lib/visible-line";
 
 /**
  * O mural das centrais (21 e 26.16), puro: o post lido, os tipos e as
  * situações, o formulário com a validação do servidor e as regras da mídia
- * (foto e capa no navegador; o mp4 até 50 MB).
+ * (foto e capa no navegador; o mp4 até 20 MB, conferido em `video-check.ts`).
  */
 
 export const POST_KINDS = ["photo", "video", "text", "event"] as const;
@@ -17,7 +18,6 @@ export type PostStatus = "draft" | "published" | "unpublished";
 export const POST_STATUS_LABELS: Record<PostStatus, string> = { draft: "Rascunho", published: "No ar", unpublished: "Fora do ar" };
 
 export const POST_TEXT_MAX = 2_000;
-export const VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 export const POSTS_PAGE_SIZE = 25;
 export const COMMENTS_PAGE_SIZE = 20;
 
@@ -100,12 +100,12 @@ export function postDeleteBlocked(post: Pick<Post, "publishedAt">): string | nul
   return post.publishedAt ? WAS_PUBLISHED_POST_TEXT : null;
 }
 
-/** O vídeo: mp4 até 50 MB; MOV e outros formatos recusados com a frase. */
+/** O arquivo do vídeo, antes de ler as caixas: mp4 até 20 MB; MOV e outros formatos recusados com a frase. */
 export function videoFileProblem(file: { type: string; name: string; size: number }): string | null {
   const name = file.name.toLowerCase();
   if (file.type === "video/quicktime" || name.endsWith(".mov")) return "Vídeo MOV não vale. Exporte em MP4 e tente de novo.";
   if (file.type !== "video/mp4" && !name.endsWith(".mp4")) return "O vídeo precisa ser MP4.";
-  if (file.size > VIDEO_MAX_BYTES) return "O vídeo passa de 50 MB. Envie uma versão menor.";
+  if (file.size > VIDEO_MAX_BYTES) return "O vídeo passa de 20 MB. Envie uma versão menor.";
   if (file.size === 0) return "O arquivo do vídeo está vazio.";
   return null;
 }
