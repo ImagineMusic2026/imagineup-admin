@@ -57,9 +57,14 @@ export function uploadFileResumable(
   file: Blob,
   contentType: string,
   onProgress?: (fraction: number) => void,
+  customMetadata?: Record<string, string>,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(ref(storage(), path), file, { contentType, cacheControl: IMAGE_CACHE_CONTROL });
+    const task = uploadBytesResumable(ref(storage(), path), file, {
+      contentType,
+      cacheControl: IMAGE_CACHE_CONTROL,
+      ...(customMetadata ? { customMetadata } : {}),
+    });
     task.on(
       "state_changed",
       (snapshot) => {
