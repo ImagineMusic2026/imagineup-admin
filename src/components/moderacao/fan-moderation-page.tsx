@@ -17,7 +17,7 @@ import { LoadMore } from "@/components/ui/data-table";
 import { Detail, DetailList, Missing } from "@/components/ui/detail-list";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Checkbox, Field, SelectInput, TextInput } from "@/components/ui/field";
+import { Checkbox, Field, Radio, SelectInput, TextInput } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import { useLoad } from "@/components/ui/use-load";
@@ -39,15 +39,21 @@ import {
   PROFILE_TEXT_FIELD_LABELS,
   SUSPENSION_NOTE_MAX,
   SUSPEND_TEXT,
+  USERNAME_RESET_REASONS,
+  USERNAME_RESET_REASON_HINTS,
+  USERNAME_RESET_REASON_LABELS,
   clearableProfileFields,
   clearedProfileText,
   hiddenSummary,
   hideAlsoLabel,
+  resetUsernameDoneText,
   resetUsernameText,
+  usernameLockText,
   validateSuspensionNote,
   type ProfileQueueItem,
   type ProfileTextField,
   type QueueItem,
+  type UsernameResetReason,
 } from "@/lib/moderation";
 import { countVisibleComments, createContentReader, getFanQueuePage, getProfileQueueItem, type ContentReader } from "@/lib/moderation-data";
 import { canEditSection, canSeeSection, type StaffMember } from "@/lib/staff";
@@ -69,6 +75,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const [suspending, setSuspending] = useState(false);
   const [hiding, setHiding] = useState(false);
   const [clearingText, setClearingText] = useState(false);
+  const [resettingUsername, setResettingUsername] = useState(false);
 
   const profile = useLoad(
     useCallback(() => {
@@ -140,6 +147,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const name = fanDisplayName(fan);
   const suspended = Boolean(fan.suspendedAt);
   const clearable = clearableProfileFields(fan);
+  const usernameLock = usernameLockText(fan, date);
 
   function askUnsuspend(target: FanProfile) {
     setConfirm({
@@ -151,20 +159,6 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
       tone: "default",
       action: () => setFanSuspended({ uid: target.uid, suspended: false }),
       successMessage: `Suspensão de ${name} tirada.`,
-      onUncertain: refresh,
-    });
-  }
-
-  function askResetUsername(target: FanProfile) {
-    setConfirm({
-      title: `Trocar o @ de ${name}?`,
-      body: resetUsernameText(target.username),
-      confirmLabel: "Trocar o @",
-      busyLabel: "Trocando...",
-      cancelLabel: "Voltar",
-      tone: "danger",
-      action: () => resetFanUsername({ uid: target.uid, username: target.username }),
-      successMessage: `O @${target.username} foi trocado por um automático.`,
       onUncertain: refresh,
     });
   }
@@ -228,6 +222,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
             <Detail term="No app desde">{fan.createdAt ? shortWhen(fan.createdAt, date) : <Missing>Sem data</Missing>}</Detail>
             <Detail term="Suspensão">{suspended ? `${suspensionReasonLabel(fan.suspensionReason)}, desde ${shortWhen(fan.suspendedAt, date)}` : "Não está suspenso"}</Detail>
             <Detail term="Comentários visíveis">{visibleCount === null ? "..." : visibleCount}</Detail>
+            {usernameLock ? <Detail term="Troca do @">{usernameLock}</Detail> : null}
             <Detail term="Identificador">
               <span className="font-mono text-[13px]">{fan.uid}</span>
             </Detail>
@@ -262,7 +257,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
                   Ocultar todos os comentários
                 </Button>
                 {fan.username ? (
-                  <Button size="sm" variant="secondary" onClick={() => askResetUsername(fan)}>
+                  <Button size="sm" variant="secondary" onClick={() => setResettingUsername(true)} aria-haspopup="dialog">
                     <AtSign aria-hidden="true" className="size-4" />
                     Trocar o @
                   </Button>
@@ -306,6 +301,17 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
           changed(message);
         }}
       />
+      {canEdit && resettingUsername ? (
+        <ResetUsernameDialog
+          fan={fan}
+          onClose={() => setResettingUsername(false)}
+          onUncertain={refresh}
+          onDone={(message) => {
+            setResettingUsername(false);
+            changed(message);
+          }}
+        />
+      ) : null}
       {canEdit && clearingText ? (
         <ClearProfileTextDialog
           fan={fan}
@@ -334,6 +340,83 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
         }}
       />
     </>
+  );
+}
+
+/**
+ * "Trocar o @" (32.1, decisões 1 a 5): o motivo decide o prazo. Com
+ * `moderation` (a marcada), o fã só escolhe outro @ daqui a 30 dias; com
+ * `central`, na hora. O texto acompanha a escolha, e o aviso de depois vem do
+ * `changeableAt` da resposta. Resposta incerta lê o fã de novo.
+ */
+function ResetUsernameDialog({
+  fan,
+  onClose,
+  onDone,
+  onUncertain,
+}: {
+  fan: FanProfile;
+  onClose: () => void;
+  onDone: (message: string) => void;
+  onUncertain: () => void;
+}) {
+  const mounted = useMountedRef();
+  const name = fanDisplayName(fan);
+  const [username] = useState(fan.username);
+  const [reason, setReason] = useState<UsernameResetReason>("moderation");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await resetFanUsername({ uid: fan.uid, username, reason });
+      if (!mounted.current) return;
+      onDone(resetUsernameDoneText(username, name, result.changeableAt));
+    } catch (failure) {
+      if (!mounted.current) return;
+      if (mayHaveRunOnServer(failure)) {
+        setError(actionErrorMessage(failure));
+        onUncertain();
+      } else {
+        setError(callableErrorMessage(failure));
+      }
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open size="sm" tone="danger" busy={busy} onClose={() => !busy && onClose()} title={`Trocar o @ de ${name}?`} description={resetUsernameText(username, reason)}>
+      <form onSubmit={run} noValidate className="flex flex-col gap-4">
+        <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+          <legend className="mb-2 p-0 text-[13px] font-semibold text-fg/75">Motivo</legend>
+          {USERNAME_RESET_REASONS.map((item) => (
+            <Radio
+              key={item}
+              name="motivo-troca-do-arroba"
+              value={item}
+              label={USERNAME_RESET_REASON_LABELS[item]}
+              hint={USERNAME_RESET_REASON_HINTS[item]}
+              checked={reason === item}
+              disabled={busy}
+              onChange={() => setReason(item)}
+            />
+          ))}
+        </fieldset>
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" onClick={onClose} disabled={busy} data-autofocus>
+            Voltar
+          </Button>
+          <Button type="submit" variant="danger" busy={busy}>
+            {busy ? "Trocando..." : "Trocar o @"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -702,14 +785,6 @@ function FanComments({
           <LoadMore onClick={list.loadMore} busy={list.loadingMore} hasMore={list.hasMore} announcement={list.announcement} error={list.loadMoreError} />
         </>
       )}
-      <ConfirmDialog
-        request={canEdit ? confirm : null}
-        onClose={() => setConfirm(null)}
-        onDone={(message) => {
-          setConfirm(null);
-          onChanged(message);
-        }}
-      />
       <ConfirmDialog
         request={canEdit ? confirm : null}
         onClose={() => setConfirm(null)}

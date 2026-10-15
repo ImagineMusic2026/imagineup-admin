@@ -6,7 +6,7 @@ import "./alias.mjs";
 // O Firebase de verdade fica de fora: os módulos são trocados por dublês que
 // só anotam as chamadas, para conferir a persistência escolhida em cada login.
 const calls = [];
-const fakeAuth = { name: "auth-de-teste", languageCode: null };
+const fakeAuth = { name: "auth-de-teste", languageCode: null, currentUser: null };
 const LOCAL = { type: "LOCAL" };
 const SESSION = { type: "SESSION" };
 
@@ -23,6 +23,10 @@ mock.module("firebase/auth", {
     },
     sendPasswordResetEmail: async () => undefined,
     signOut: async () => undefined,
+    EmailAuthProvider: { credential: (email, password) => ({ email, password }) },
+    reauthenticateWithCredential: async (user, credential) => {
+      calls.push(["reauth", user.uid, credential.email, credential.password]);
+    },
   },
 });
 
@@ -30,7 +34,7 @@ mock.module("@/lib/firebase", {
   namedExports: { auth: () => fakeAuth },
 });
 
-const { signInForInvite, signInWithPassword } = await import("@/lib/session");
+const { reauthenticate, signInForInvite, signInWithPassword } = await import("@/lib/session");
 
 test("login do convite guarda a sessão só na aba, antes de entrar", async () => {
   calls.length = 0;
@@ -51,4 +55,13 @@ test("login do painel só guarda no navegador com Lembrar de mim", async () => {
     [SESSION, LOCAL],
   );
   assert.equal(calls[1][2], "pessoa@imagine.com");
+});
+
+test("a senha de novo vai com o e-mail da própria conta da equipe", async () => {
+  calls.length = 0;
+  fakeAuth.currentUser = { uid: "equipe-1", email: "equipe@imagine.com" };
+  await reauthenticate("senha-da-equipe");
+  assert.deepEqual(calls, [["reauth", "equipe-1", "equipe@imagine.com", "senha-da-equipe"]]);
+  fakeAuth.currentUser = null;
+  await assert.rejects(reauthenticate("x"), { code: "functions/unauthenticated" });
 });

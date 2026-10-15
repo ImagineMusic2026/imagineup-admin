@@ -124,6 +124,17 @@ test("o perfil novo lido: bio, gênero, conta privada e redes pela lista fixa", 
   assert.equal(profile.parseFanProfile("n", {}).socialsStored, false);
 });
 
+test("o prazo do @ lido de forma tolerante (32.3)", () => {
+  const until = new Date("2026-11-14T15:00:00Z");
+  const locked = profile.parseFanProfile("l", { usernameChangeableAt: { toDate: () => until }, usernameLockReason: "moderation" });
+  assert.equal(locked.usernameChangeableAt?.getTime(), until.getTime());
+  assert.equal(locked.usernameLockReason, "moderation");
+  const free = profile.parseFanProfile("f", { usernameChangeableAt: null, usernameLockReason: "outro" });
+  assert.equal(free.usernameChangeableAt, null);
+  assert.equal(free.usernameLockReason, null);
+  assert.equal(profile.parseFanProfile("n", {}).usernameLockReason, null);
+});
+
 test("os rótulos do gênero e o usuário como a rede mostra", () => {
   assert.equal(profile.genderLabel("woman"), "Mulher");
   assert.equal(profile.genderLabel("man"), "Homem");

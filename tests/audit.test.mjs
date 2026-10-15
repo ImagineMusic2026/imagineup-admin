@@ -14,11 +14,13 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 65);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 67);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
-  assert.deepEqual(audit.actionsOfSection("fans"), ["wallet.adjusted", "fan.email.lookup"]);
+  assert.deepEqual(audit.actionsOfSection("fans"), ["wallet.adjusted", "fan.email.lookup", "fan.data.exported", "fan.account.deleted"]);
+  assert.equal(audit.AUDIT_ACTIONS["fan.data.exported"].label, "Dados do fã exportados (LGPD)");
+  assert.equal(audit.AUDIT_ACTIONS["fan.account.deleted"].label, "Conta do fã excluída (LGPD)");
 });
 
 test("rótulos com as variantes e a ação desconhecida crua", () => {
@@ -125,6 +127,17 @@ test("o details por extenso", () => {
   assert.deepEqual(audit.detailLines({ action: "fan.username.reset", details: { uid: "x", previous: "ruim", username: "fa_123" } }), [
     "@ antigo: @ruim. @ novo: @fa_123",
   ]);
+  assert.deepEqual(audit.detailLines({ action: "fan.username.reset", details: { uid: "x", previous: "ruim", username: "fa_123", reason: "moderation" } }), [
+    "Motivo: ofensivo ou impróprio",
+    "@ antigo: @ruim. @ novo: @fa_123",
+  ]);
+  assert.deepEqual(audit.detailLines({ action: "fan.username.reset", details: { uid: "x", previous: "nenho", username: "fa_9", reason: "central" } }), [
+    "Motivo: @ de artista",
+    "@ antigo: @nenho. @ novo: @fa_9",
+  ]);
+  // Os pedidos de dados só guardam o uid, que não vira linha (e nunca o e-mail).
+  assert.deepEqual(audit.detailLines({ action: "fan.data.exported", details: { uid: "x" } }), []);
+  assert.deepEqual(audit.detailLines({ action: "fan.account.deleted", details: { uid: "x" } }), []);
   assert.deepEqual(audit.detailLines({ action: "artist.reordered", details: { artistIds: ["a", "b", "c"] } }), ["centrais: 3 itens"]);
   assert.deepEqual(audit.detailLines({ action: "fan.suspended", details: { uid: "x", reason: "spam", note: "Script" } }), ["Motivo: Spam", "Nota: Script"]);
   assert.deepEqual(audit.detailLines({ action: "x", details: {} }), []);

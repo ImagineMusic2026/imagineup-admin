@@ -73,7 +73,30 @@ test("a suspensão: a nota opcional e as frases", () => {
   assert.equal(moderation.hideAlsoLabel(3), "Ocultar também os 3 comentários visíveis");
   assert.equal(moderation.hiddenSummary(0), "Nenhum comentário visível para ocultar.");
   assert.equal(moderation.hiddenSummary(25), "25 comentários ocultados.");
-  assert.match(moderation.resetUsernameText("promoseg"), /O @promoseg fica livre para qualquer pessoa\.$/);
+});
+
+test("a troca do @ pelo motivo: o texto, o aviso depois e o prazo que ainda vale", () => {
+  assert.deepEqual([...moderation.USERNAME_RESET_REASONS], ["moderation", "central"]);
+  assert.equal(
+    moderation.resetUsernameText("promoseg", "moderation"),
+    "O fã fica com um @ automático novo e só escolhe outro daqui a 30 dias. O @promoseg fica livre para qualquer pessoa.",
+  );
+  assert.equal(
+    moderation.resetUsernameText("promoseg", "central"),
+    "O fã fica com um @ automático novo e pode escolher outro na hora. O @promoseg fica livre para qualquer pessoa.",
+  );
+  const now = new Date("2026-10-15T15:00:00Z");
+  assert.equal(
+    moderation.resetUsernameDoneText("promoseg", "Promo", "2026-11-14T15:00:00.000Z", now),
+    "O @promoseg foi trocado por um automático. Promo escolhe outro a partir de 14 nov.",
+  );
+  assert.equal(moderation.resetUsernameDoneText("promoseg", "Promo", null, now), "O @promoseg foi trocado por um automático. Promo pode escolher outro na hora.");
+  assert.equal(moderation.resetUsernameDoneText("promoseg", "Promo", "quando der", now), "O @promoseg foi trocado por um automático. Promo pode escolher outro na hora.");
+  const until = new Date("2026-11-14T15:00:00Z");
+  assert.equal(moderation.usernameLockText({ usernameChangeableAt: until, usernameLockReason: "moderation" }, now), "Troca do @ liberada a partir de 14 nov, trocado pela equipe");
+  assert.equal(moderation.usernameLockText({ usernameChangeableAt: until, usernameLockReason: null }, now), "Troca do @ liberada a partir de 14 nov");
+  assert.equal(moderation.usernameLockText({ usernameChangeableAt: new Date("2026-10-01T00:00:00Z"), usernameLockReason: "moderation" }, now), null);
+  assert.equal(moderation.usernameLockText({ usernameChangeableAt: null, usernameLockReason: null }, now), null);
 });
 
 test("apagar bio e redes: os campos com o que apagar e o aviso pelo que saiu", () => {

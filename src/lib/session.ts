@@ -1,6 +1,8 @@
 import {
+  EmailAuthProvider,
   browserLocalPersistence,
   browserSessionPersistence,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
@@ -51,4 +53,16 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
 export async function signOutUser(): Promise<void> {
   await signOut(auth());
+}
+
+/**
+ * Confirma a senha de quem está logado (o `recent-login-required` dos pedidos
+ * de dados, 32.2). A credencial leva o e-mail da própria conta da equipe, nunca
+ * o e-mail de um pedido. O SDK troca o token aqui, então a chamada repetida já
+ * vai com o login novo.
+ */
+export async function reauthenticate(password: string): Promise<void> {
+  const user = auth().currentUser;
+  if (!user?.email) throw Object.assign(new Error("Sua sessão terminou. Entre de novo."), { code: "functions/unauthenticated" });
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
 }
