@@ -3,10 +3,12 @@
 // Tem tudo que a fundação e as telas importam do Firestore (o `mock.module`
 // com `namedExports` quebra o import do lib testado quando falta um nome):
 // collection, collectionGroup, doc, query, where, orderBy, limit, startAfter,
-// startAt, endAt, documentId, getDocs, getDocsFromServer, getDoc,
-// getCountFromServer e Timestamp. Com `setOffline(true)`, as leituras do
-// servidor falham com `unavailable`, e o `getDocs` resolve vazio do cache,
-// como o SDK de verdade sem rede.
+// startAt, endAt, documentId, getDocsFromServer, getDoc, getCountFromServer e
+// Timestamp. Com `setOffline(true)`, as leituras do servidor falham com
+// `unavailable`, como o SDK de verdade sem rede.
+// Não tem `getDocs`: sem rede, ele resolve com o que estiver no cache (vazio ou
+// velho), por isso o `src` consulta pelo `readQuery`, e o lint barra o import
+// dele (`eslint.config.mjs`).
 // Nunca `onSnapshot`: nenhuma tela nova escuta em tempo real.
 //
 // Os documentos moram num mapa por caminho, e as consultas são respondidas de
@@ -39,6 +41,12 @@ export class Timestamp {
 }
 
 const DOCUMENT_ID = Object.freeze({ kind: "documentId" });
+
+// As mensagens do SDK sem rede: a do documento e a da consulta do servidor (o
+// `code` das duas é `unavailable`).
+const OFFLINE_DOC = "Failed to get document because the client is offline.";
+const OFFLINE_QUERY =
+  'Failed to get documents from server. (However, these documents may exist in the local cache. Run again without setting source to "server" to retrieve the cached documents.)';
 
 function joinPath(base, segments) {
   return [base, ...segments].filter(Boolean).join("/");
@@ -186,8 +194,8 @@ export function createFirestoreFake() {
   }
 
   let offline = false;
-  function failOffline() {
-    if (offline) throw Object.assign(new Error("Failed to get document because the client is offline."), { code: "unavailable" });
+  function failOffline(message = OFFLINE_DOC) {
+    if (offline) throw Object.assign(new Error(message), { code: "unavailable" });
   }
 
   const api = {
@@ -223,17 +231,10 @@ export function createFirestoreFake() {
       failOffline();
       return snapshotOf(ref.path, documents.get(ref.path));
     },
-    getDocs: async (target) => {
-      queries.push(describe(target));
-      maybeFail();
-      // Sem rede, o SDK resolve com o cache, que no painel quase sempre está vazio.
-      const docs = offline ? [] : run(target);
-      return { docs, size: docs.length, empty: docs.length === 0, metadata: { fromCache: offline } };
-    },
     getDocsFromServer: async (target) => {
       queries.push(describe(target));
       maybeFail();
-      failOffline();
+      failOffline(OFFLINE_QUERY);
       const docs = run(target);
       return { docs, size: docs.length, empty: docs.length === 0, metadata: { fromCache: false } };
     },
