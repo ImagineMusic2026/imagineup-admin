@@ -3,7 +3,8 @@
  * seção 33 da nota do app), puro: lê as caixas do MP4 sem carregar o arquivo
  * inteiro e confere o que o app precisa para tocar em todo aparelho.
  *
- * - Só H.264 (`avc1`); HEVC (`hvc1` ou `hev1`) não toca em alguns Android.
+ * - Só H.264 (`avc1`); HEVC (`hvc1` ou `hev1`) não toca em alguns Android, e
+ *   as variantes `avc2`, `avc3` e `avc4` também não tocam em todo aparelho.
  * - O índice (`moov`) antes dos dados (`mdat`), o "faststart": sem ele, o
  *   vídeo só começa depois de baixar quase tudo.
  * - Até 720p (o lado menor até 720 e o maior até 1280) e 20 MB.
@@ -34,6 +35,8 @@ export interface VideoTrackInfo {
   height: number;
   /** O vídeo gira 90 ou 270 graus na tela (a matriz do `tkhd`). */
   rotated: boolean;
+  /** A largura do pixel sobre a altura (a caixa `pasp`); 1 sem ela, ou com ela torta. */
+  pixelRatio: number;
   durationMs: number | null;
 }
 
@@ -126,6 +129,18 @@ function timing(bytes: Uint8Array, box: Box): number | null {
   return Math.round((duration / timescale) * 1000);
 }
 
+/** O tamanho da entrada visual até as caixas filhas: o cabeçalho e os campos fixos (ISO 14496-12, VisualSampleEntry). */
+const VISUAL_ENTRY_FIXED = 86;
+
+/** `hSpacing / vSpacing` da caixa `pasp`, ou 1 sem ela (ou com valores que não valem). */
+function pixelRatioOf(bytes: Uint8Array, entry: number, end: number): number {
+  const pasp = children(bytes, entry + VISUAL_ENTRY_FIXED, end).find((box) => box.type === "pasp");
+  if (!pasp || pasp.end - pasp.start < 8) return 1;
+  const h = u32(bytes, pasp.start);
+  const v = u32(bytes, pasp.start + 4);
+  return h && v ? h / v : 1;
+}
+
 function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
   const handler = path(bytes, trak, ["mdia", "hdlr"]);
   if (!handler || typeAt(bytes, handler.start + 8) !== "vide") return null;
@@ -143,9 +158,12 @@ function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
   const mdhd = path(bytes, trak, ["mdia", "mdhd"]);
   const stsd = path(bytes, trak, ["mdia", "minf", "stbl", "stsd"]);
   let codec: string | null = null;
+  let pixelRatio = 1;
   if (stsd && stsd.end - stsd.start >= 16) {
     const entry = stsd.start + 8;
     codec = typeAt(bytes, entry + 4);
+    const entryEnd = Math.min(entry + u32(bytes, entry), stsd.end);
+    pixelRatio = pixelRatioOf(bytes, entry, entryEnd);
     // A entrada visual traz a medida codificada (ISO 14496-12, VisualSampleEntry).
     if (entry + 36 <= stsd.end) {
       const codedWidth = u16(bytes, entry + 32);
@@ -156,7 +174,7 @@ function trackInfo(bytes: Uint8Array, trak: Box): VideoTrackInfo | null {
       }
     }
   }
-  return { codec, width, height, rotated, durationMs: mdhd ? timing(bytes, mdhd) : null };
+  return { codec, width, height, rotated, pixelRatio, durationMs: mdhd ? timing(bytes, mdhd) : null };
 }
 
 /** O conteúdo de um `moov` (sem o cabeçalho dele): a duração e a primeira faixa de vídeo. */
@@ -206,10 +224,18 @@ export async function readMp4Info(read: ReadRange, size: number): Promise<Mp4Inf
   return { faststart: mdatAt === null || moov.start < mdatAt, ...parsed };
 }
 
-/** A medida como aparece na tela: o vídeo gravado de pé gira 90 graus. */
-export function displaySize(video: Pick<VideoTrackInfo, "width" | "height" | "rotated">): { width: number; height: number } {
-  return video.rotated ? { width: video.height, height: video.width } : { width: video.width, height: video.height };
+/**
+ * A medida como aparece na tela: a largura pela proporção do pixel (`pasp`) e,
+ * no vídeo gravado de pé, girada 90 graus. O limite de 720p continua pela
+ * medida codificada.
+ */
+export function displaySize(video: Pick<VideoTrackInfo, "width" | "height" | "rotated" | "pixelRatio">): { width: number; height: number } {
+  const width = Math.round(video.width * (video.pixelRatio || 1));
+  return video.rotated ? { width: video.height, height: width } : { width, height: video.height };
 }
+
+/** As variantes do H.264 que não tocam em todo aparelho (os parâmetros dentro do fluxo, ou perfis raros). */
+const H264_VARIANTS = new Set(["avc2", "avc3", "avc4"]);
 
 /** O primeiro problema do vídeo, na ordem em que a pessoa resolve ao exportar de novo; `null` quando passa. */
 export function videoInfoProblem(info: Mp4Info): string | null {
@@ -218,12 +244,17 @@ export function videoInfoProblem(info: Mp4Info): string | null {
   if (video.codec === "hvc1" || video.codec === "hev1") {
     return "Vídeo em HEVC (H.265) não vale: alguns Android não tocam. Exporte em H.264 e tente de novo.";
   }
+  if (video.codec && H264_VARIANTS.has(video.codec)) {
+    return "Este H.264 é de uma variante que nem todo aparelho toca. Exporte de novo em MP4 H.264 padrão.";
+  }
   if (video.codec !== "avc1") return "O vídeo precisa estar em H.264. Exporte de novo nesse formato.";
   const short = Math.min(video.width, video.height);
   const long = Math.max(video.width, video.height);
   if (!short || !long) return "Não deu para ler a resolução do vídeo. Exporte de novo em MP4 (H.264).";
   if (short > VIDEO_MAX_SHORT_SIDE || long > VIDEO_MAX_LONG_SIDE) {
-    return `O vídeo tem ${video.width}x${video.height}. O limite é 720p (até 1280x720, ou 720x1280 de pé). Exporte numa resolução menor.`;
+    // A frase diz a medida como a pessoa vê o vídeo (de pé, quando foi gravado assim).
+    const shown = displaySize(video);
+    return `O vídeo tem ${shown.width}x${shown.height}. O limite é 720p (até 1280x720, ou 720x1280 de pé). Exporte numa resolução menor.`;
   }
   if (!info.faststart) {
     return 'O vídeo precisa do início rápido: exporte de novo com a opção "Web Optimized" ou "Fast Start" ligada.';
