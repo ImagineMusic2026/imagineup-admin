@@ -80,9 +80,30 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const [resettingUsername, setResettingUsername] = useState(false);
   // Uma resposta incerta num diálogo aberto pede a releitura do fã, que só sai
   // quando o diálogo fecha: ler antes poria a página em "Carregando" e o
-  // diálogo sairia da tela, perdendo o que a pessoa escolheu. Lido e gravado
-  // só nos handlers.
-  const pendingRefresh = useRef(false);
+  // diálogo sairia da tela, perdendo o que a pessoa escolheu. É estado, e não
+  // ref, porque a perda da permissão de editar (abaixo) olha para ela na
+  // renderização.
+  const [pendingRefresh, setPendingRefresh] = useState(false);
+  // A permissão de editar caiu com um diálogo aberto (o acesso chega em tempo
+  // real): os diálogos fecham, e a releitura pendente sai. O ajuste é feito na
+  // renderização, comparando com a permissão de antes (o padrão do React para
+  // reagir a uma mudança de prop sem efeito).
+  const [editSeen, setEditSeen] = useState(canEdit);
+  if (editSeen !== canEdit) {
+    setEditSeen(canEdit);
+    if (!canEdit) {
+      setConfirm(null);
+      setResettingUsername(false);
+      setClearingText(false);
+      setSuspending(false);
+      setHiding(false);
+      if (pendingRefresh) {
+        setPendingRefresh(false);
+        setReader(createContentReader());
+        setRound((value) => value + 1);
+      }
+    }
+  }
 
   const profile = useLoad(
     useCallback(() => {
@@ -110,7 +131,7 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
   const show: Notify = (tone, text) => setNotice((current) => ({ key: (current?.key ?? 0) + 1, tone, text }));
 
   function refresh() {
-    pendingRefresh.current = false;
+    setPendingRefresh(false);
     setNow(Date.now());
     setReader(createContentReader());
     setRound((value) => value + 1);
@@ -118,12 +139,12 @@ function FanModerationContent({ member, uid }: { member: StaffMember; uid: strin
 
   /** A resposta incerta (ou o item que mudou por fora) com um diálogo aberto: a releitura fica para o fechamento. */
   function markStale() {
-    pendingRefresh.current = true;
+    setPendingRefresh(true);
   }
 
   /** Todo fechamento sem sucesso (Voltar, Esc, X) lê o fã de novo, se algo ficou pendente. */
   function closedWithoutChange() {
-    if (pendingRefresh.current) refresh();
+    if (pendingRefresh) refresh();
   }
 
   function changed(message: string) {
@@ -402,10 +423,12 @@ function ResetUsernameDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState(false);
-  const [done, setDone] = useState(false);
+  // A nova tentativa achou o @ já trocado: o aviso fica, e o botão de trocar sai.
+  const [doneText, setDoneText] = useState<string | null>(null);
+  const done = doneText !== null;
   const footer = useRef<HTMLDivElement>(null);
 
-  // O botão de trocar desligou com o foco nele: o foco vai para o de voltar.
+  // O botão de trocar saiu com o foco nele: o foco vai para o de fechar.
   useEffect(() => {
     if (done) footer.current?.querySelector<HTMLElement>("button")?.focus();
   }, [done]);
@@ -426,8 +449,7 @@ function ResetUsernameDialog({
         setError(UNCERTAIN_RETRY_TEXT);
         onUncertain();
       } else if (uncertain && reasonOf(failure) === "username-changed") {
-        setError(usernameChangedAfterUncertainText(username));
-        setDone(true);
+        setDoneText(usernameChangedAfterUncertainText(username));
       } else {
         setError(callableErrorMessage(failure));
       }
@@ -453,14 +475,16 @@ function ResetUsernameDialog({
             />
           ))}
         </fieldset>
-        {error ? <Notice tone="error">{error}</Notice> : null}
+        {doneText ? <Notice tone="info">{doneText}</Notice> : error ? <Notice tone="error">{error}</Notice> : null}
         <div ref={footer} className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={onClose} disabled={busy} data-autofocus>
-            Voltar
+            {done ? "Fechar" : "Voltar"}
           </Button>
-          <Button type="submit" variant="danger" busy={busy} disabled={done}>
-            {busy ? "Trocando..." : uncertain ? "Tentar de novo" : "Trocar o @"}
-          </Button>
+          {done ? null : (
+            <Button type="submit" variant="danger" busy={busy}>
+              {busy ? "Trocando..." : uncertain ? "Tentar de novo" : "Trocar o @"}
+            </Button>
+          )}
         </div>
       </form>
     </Dialog>
@@ -624,6 +648,9 @@ function HideCommentsBody({
     setRunning(true);
     setError(null);
     const parts: string[] = [];
+    // Fora do try: com a falha no meio, o que já saiu entra no resumo, e o fechamento relê a página.
+    let total = 0;
+    let summarized = false;
     try {
       if (suspend) {
         setPhase("suspending");
@@ -632,7 +659,6 @@ function HideCommentsBody({
       }
       if (!suspend || alsoHide) {
         setPhase("hiding");
-        let total = 0;
         for (;;) {
           if (stop.current) break;
           const page = await hideFanComments(fan.uid);
@@ -641,12 +667,14 @@ function HideCommentsBody({
           if (!page.more) break;
         }
         parts.push(hiddenSummary(total));
+        summarized = true;
       }
       if (!mounted.current) return;
       setPhase("done");
       setResult(parts.join(" "));
     } catch (failure) {
       if (!mounted.current) return;
+      if (total > 0 && !summarized) parts.push(hiddenSummary(total));
       setError(`${parts.length > 0 ? `${parts.join(" ")} ` : ""}${actionErrorMessage(failure)}`);
       setResult(parts.length > 0 ? parts.join(" ") : null);
       setPhase(mayHaveRunOnServer(failure) || parts.length > 0 ? "done" : "form");

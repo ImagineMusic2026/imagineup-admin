@@ -206,9 +206,22 @@ const STORAGE_MESSAGES: Record<string, string> = {
   "storage/server-file-wrong-size": "A foto chegou incompleta. Tente de novo.",
 };
 
-/** Erro do envio de fotos para o Storage (`storage/...`). */
-export function storageErrorMessage(error: unknown): string {
+/** As frases que mudam quando o arquivo é o vídeo de um post; as outras valem para os dois. */
+const VIDEO_STORAGE_MESSAGES: Record<string, string> = {
+  "storage/unauthorized": "O envio do vídeo foi recusado. Confira se você pode editar artistas e se o vídeo é MP4 de até 20 MB.",
+  "storage/retry-limit-exceeded": "A conexão caiu durante o envio do vídeo. Tente de novo.",
+  "storage/canceled": "O envio do vídeo foi cancelado.",
+  "storage/quota-exceeded": "O espaço de arquivos do projeto acabou. Avise quem cuida do Firebase.",
+  "storage/no-default-bucket": "O armazenamento de arquivos não está configurado no painel.",
+  "storage/bucket-not-found": "O armazenamento de arquivos não está configurado no painel.",
+  "storage/project-not-found": "O armazenamento de arquivos não está configurado no painel.",
+  "storage/server-file-wrong-size": "O vídeo chegou incompleto. Tente de novo.",
+};
+
+/** Erro do envio de uma foto (o padrão) ou do vídeo de um post para o Storage (`storage/...`). */
+export function storageErrorMessage(error: unknown, file: "photo" | "video" = "photo"): string {
   const { code } = readError(error);
+  if (file === "video") return VIDEO_STORAGE_MESSAGES[code] ?? STORAGE_MESSAGES[code] ?? "Não foi possível enviar o vídeo. Tente de novo.";
   return STORAGE_MESSAGES[code] ?? "Não foi possível enviar a foto. Tente de novo.";
 }
 
