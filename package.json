@@ -29,5 +29,11 @@
   },
   "engines": {
     "node": "24.x"
+  },
+  "allowScripts": {
+    "@firebase/util": true,
+    "fsevents": true,
+    "protobufjs": true,
+    "unrs-resolver": true
   }
 }
