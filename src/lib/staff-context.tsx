@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/lib/auth-context";
-import { accessStateOf, type StaffMember } from "@/lib/staff";
+import { accessStateOf, sameStaffMember, type StaffMember } from "@/lib/staff";
 import { subscribeToOwnStaff, type OwnStaffSnapshot } from "@/lib/staff-data";
 
 /**
@@ -26,6 +26,19 @@ interface StaffContextValue {
 
 type Result = { uid: string; attempt: number } & (OwnStaffSnapshot | { kind: "error"; error: unknown });
 
+/**
+ * Um evento que não muda nada (só de metadados, ou de um campo que o painel não
+ * lê) mantém o resultado anterior: o `member` não muda de identidade, e as telas
+ * que dependem dele (a ficha do fã, os nomes das centrais) não voltam a
+ * "Carregando" nem fecham os diálogos abertos.
+ */
+function keepSame(previous: Result | null, next: Result): Result {
+  if (!previous || previous.uid !== next.uid || previous.attempt !== next.attempt) return next;
+  if (previous.kind === "member" && next.kind === "member" && sameStaffMember(previous.member, next.member)) return previous;
+  if (previous.kind === "missing" && next.kind === "missing") return previous;
+  return next;
+}
+
 const StaffContext = createContext<StaffContextValue | null>(null);
 
 export function StaffProvider({ children }: { children: React.ReactNode }) {
@@ -38,7 +51,7 @@ export function StaffProvider({ children }: { children: React.ReactNode }) {
     if (!uid) return;
     return subscribeToOwnStaff(
       uid,
-      (snapshot) => setResult({ uid, attempt, ...snapshot }),
+      (snapshot) => setResult((previous) => keepSame(previous, { uid, attempt, ...snapshot })),
       (error) => setResult({ uid, attempt, kind: "error", error }),
     );
   }, [uid, attempt]);

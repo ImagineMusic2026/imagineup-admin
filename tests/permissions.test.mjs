@@ -17,6 +17,7 @@ const {
   navGroupsFor,
   pageForPathname,
   parseStaffMember,
+  sameStaffMember,
   sectionsSummary,
   sortMembers,
 } = await import("@/lib/staff");
@@ -144,4 +145,34 @@ test("lista da equipe: ativos antes, admin antes, depois por nome", () => {
     { status: "active", role: "admin", displayName: "Álvaro", email: "c@x.com" },
   ]);
   assert.deepEqual(sorted.map((member) => member.displayName), ["Álvaro", "Bruno", "Ana", "Zeca"]);
+});
+
+test("o mesmo retrato da equipe, campo a campo", () => {
+  const raw = {
+    email: "a@b.com",
+    displayName: "Ana",
+    role: "editor",
+    status: "active",
+    sections: ["fans", "missions"],
+    createdAt: { toDate: () => new Date("2026-09-29T12:00:00Z") },
+  };
+  const base = parseStaffMember("u1", raw);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", raw)), true);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, campoQueOPainelNaoLe: 1 })), true);
+
+  assert.equal(sameStaffMember(base, parseStaffMember("u2", raw)), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, role: "viewer" })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, status: "disabled" })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, displayName: "Ana Paula" })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, sections: ["fans"] })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, sections: ["fans", "rewards"] })), false);
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, createdAt: null })), false);
+  assert.equal(
+    sameStaffMember(base, parseStaffMember("u1", { ...raw, createdAt: { toDate: () => new Date("2026-09-30T12:00:00Z") } })),
+    false,
+  );
+  assert.equal(
+    sameStaffMember(base, parseStaffMember("u1", { ...raw, updatedAt: { toDate: () => new Date("2026-09-30T12:00:00Z") } })),
+    false,
+  );
 });
