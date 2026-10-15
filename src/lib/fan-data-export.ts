@@ -85,7 +85,8 @@ export type FetchPage = (request: FanDataPageRequest) => Promise<FanDataPage>;
  * O progresso só anda depois de uma página que chegou inteira: se uma página
  * falha, a mesma chamada com o mesmo `progress` continua dali, sem outra
  * primeira chamada (que contaria no teto e entraria nos Logs). `stopped` é
- * conferido antes de cada página.
+ * conferido antes de cada página e de novo no fim: o "Parar" durante a última
+ * página também descarta o arquivo.
  */
 export async function collectFanData(
   start: FanDataStart,
@@ -111,7 +112,7 @@ export async function collectFanData(
       progress.after = page.after;
     }
   }
-  return "done";
+  return hooks.stopped?.() ? "stopped" : "done";
 }
 
 /** O arquivo: o começo na ordem em que veio, sem o `partes`, e cada parte como lista (a vazia vira `[]`). */

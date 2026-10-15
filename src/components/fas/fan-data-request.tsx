@@ -239,7 +239,8 @@ function ExportDialog({ uid, name, onClose }: { uid: string; name: string; onClo
         stopped: () => stop.current || !mounted.current,
       });
       if (!mounted.current) return;
-      if (result === "stopped") {
+      // O "Parar" vale até o último instante: nada baixa depois dele.
+      if (result === "stopped" || stop.current) {
         release();
         onClose();
         return;
