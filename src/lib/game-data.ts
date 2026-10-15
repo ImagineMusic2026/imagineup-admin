@@ -1,9 +1,10 @@
-import { Timestamp, collection, doc, getDoc, getDocs, limit, orderBy, query, where } from "firebase/firestore";
+import { Timestamp, collection, doc, getDoc, limit, orderBy, query, where } from "firebase/firestore";
 
 import { parseAchievementsCatalog, type AchievementsCatalog } from "@/lib/achievements";
 import { dayKey, dayStartMs, type DayRange } from "@/lib/day";
 import { db } from "@/lib/firebase";
 import { getPage, type PageCursor } from "@/lib/firestore-page";
+import { readQuery } from "@/lib/firestore-read";
 import { parseMission, parseMissionsCatalog, type Mission, type MissionsCatalog } from "@/lib/missions";
 import { parsePointsConfig, type PointsConfig } from "@/lib/points-config";
 import { parseSeasonConfig, type SeasonConfig } from "@/lib/season";
@@ -58,7 +59,7 @@ export async function getGameConfigs(): Promise<GameConfigs> {
 
 /** As arquivadas, da mais nova (até 50). */
 export async function getArchivedMissions(): Promise<Mission[]> {
-  const snapshot = await getDocs(query(collection(db(), "missionArchive"), orderBy("archivedAt", "desc"), limit(ARCHIVE_LIMIT)));
+  const snapshot = await readQuery(query(collection(db(), "missionArchive"), orderBy("archivedAt", "desc"), limit(ARCHIVE_LIMIT)));
   return snapshot.docs.map((item) => parseMission({ ...item.data(), id: item.id })).filter((item): item is Mission => item !== null);
 }
 

@@ -1,9 +1,10 @@
-import { Timestamp, collection, collectionGroup, doc, getDoc, getDocs, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
+import { Timestamp, collection, collectionGroup, doc, getDoc, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
 
 import { dayKey, dayStartMs } from "@/lib/day";
 import { EVENTS_PAGE_SIZE, parseEvent, type AgendaEvent, type EventStatus } from "@/lib/events";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
+import { readQuery } from "@/lib/firestore-read";
 
 /**
  * Leituras da Agenda, todas únicas (21.9 e decisão 19): os próximos (de hoje
@@ -75,7 +76,7 @@ export async function getEventDetail(eventId: string, sees: { fans: boolean; rew
     countEventPosts(eventId),
     sees.fans ? countOf(query(collectionGroup(db(), "eventRsvps"), where("eventId", "==", eventId), where("going", "==", true))) : Promise.resolve(null),
     sees.rewards
-      ? getDocs(query(collection(db(), "rewards"), where("eventId", "==", eventId), limit(20))).then((snapshot) =>
+      ? readQuery(query(collection(db(), "rewards"), where("eventId", "==", eventId), limit(20))).then((snapshot) =>
           snapshot.docs.map((item) => ({ id: item.id, title: typeof item.data().title === "string" ? (item.data().title as string) : item.id })),
         )
       : Promise.resolve(null),

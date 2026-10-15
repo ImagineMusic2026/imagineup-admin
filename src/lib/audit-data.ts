@@ -1,9 +1,10 @@
-import { Timestamp, collection, getDocs, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
+import { Timestamp, collection, limit, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
 
 import { auditPlan, parseAuditEntry, periodStartDay, type AuditEntry, type AuditFilters } from "@/lib/audit";
 import { dayKey, dayStartMs, shiftDay } from "@/lib/day";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
+import { readQuery } from "@/lib/firestore-read";
 import { parseStaffMember, sortMembers } from "@/lib/staff";
 
 /**
@@ -61,7 +62,7 @@ export function countAudit(filters: AuditFilters, now: number): Promise<number> 
 
 /** A equipe para o filtro por pessoa, na ordem da lista da Equipe. */
 export async function getAuditPeople(): Promise<{ uid: string; name: string }[]> {
-  const snapshot = await getDocs(collection(db(), "staff"));
+  const snapshot = await readQuery(collection(db(), "staff"));
   return sortMembers(snapshot.docs.map((item) => parseStaffMember(item.id, item.data()))).map((member) => ({
     uid: member.uid,
     name: member.displayName || member.email || member.uid,
@@ -75,6 +76,6 @@ export async function getAuditPeople(): Promise<{ uid: string; name: string }[]>
 export async function findFanUidByHandle(handle: string): Promise<string | null> {
   const username = handle.trim().replace(/^@/, "").toLowerCase();
   if (!username) return null;
-  const snapshot = await getDocs(query(collection(db(), "users"), where("username", "==", username), limit(1)));
+  const snapshot = await readQuery(query(collection(db(), "users"), where("username", "==", username), limit(1)));
   return snapshot.docs[0]?.id ?? null;
 }

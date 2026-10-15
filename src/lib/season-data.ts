@@ -1,6 +1,7 @@
-import { collection, doc, getDoc, getDocs, limit, orderBy, query } from "firebase/firestore";
+import { collection, doc, getDoc, limit, orderBy, query } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { readQuery } from "@/lib/firestore-read";
 import { parsePastSeason, parseSeasonConfig, parseStanding, type PastSeason, type SeasonConfig, type StandingRow } from "@/lib/season";
 
 /**
@@ -24,13 +25,13 @@ export async function getSeasonState(): Promise<{ config: SeasonConfig; archiveS
 
 /** As temporadas fechadas (o arquivo), da mais nova. */
 export async function getPastSeasons(): Promise<PastSeason[]> {
-  const snapshot = await getDocs(query(collection(db(), "seasons"), orderBy("startsAt", "desc"), limit(PAST_SEASONS_LIMIT)));
+  const snapshot = await readQuery(query(collection(db(), "seasons"), orderBy("startsAt", "desc"), limit(PAST_SEASONS_LIMIT)));
   return snapshot.docs.map((item) => parsePastSeason(item.id, item.data())).filter((item): item is PastSeason => item !== null);
 }
 
 /** O pódio de uma temporada fechada: os 10 primeiros no geral ou numa central, com o nome da virada. */
 export async function getPodium(seasonId: string, artistId: string | null): Promise<StandingRow[]> {
   const field = artistId ? `centrals.${artistId}.position` : "position";
-  const snapshot = await getDocs(query(collection(db(), "seasons", seasonId, "standings"), orderBy(field), limit(PODIUM_SIZE)));
+  const snapshot = await readQuery(query(collection(db(), "seasons", seasonId, "standings"), orderBy(field), limit(PODIUM_SIZE)));
   return snapshot.docs.map((item) => parseStanding(item.id, item.data(), artistId)).filter((item): item is StandingRow => item !== null);
 }

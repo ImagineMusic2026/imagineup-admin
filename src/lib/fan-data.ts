@@ -3,7 +3,6 @@ import {
   collectionGroup,
   doc,
   getDoc,
-  getDocs,
   orderBy,
   query,
   where,
@@ -16,6 +15,7 @@ import { createFanProfileReader, type FanProfileReader } from "@/lib/fan-profile
 import { parseLedgerEntry, parseReferral, parseWallet, joinFanCentrals, type FanCentral, type LedgerEntry, type Referral, type Wallet } from "@/lib/fans";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
+import { readQuery } from "@/lib/firestore-read";
 import { parseLevels, type Level } from "@/lib/levels";
 import { toDate } from "@/lib/staff";
 
@@ -159,7 +159,7 @@ async function readOrigin(uid: string, reader: FanProfileReader): Promise<FanOri
       ? getDoc(doc(db(), "artists", target)).then((artist) => (typeof artist.data()?.name === "string" ? (artist.data()?.name as string) : null), () => null)
       : Promise.resolve(null),
     referral.inviterUid && data.claimedAt
-      ? getDocs(query(collection(db(), "wallets", referral.inviterUid, "ledger"), where("createdAt", "==", data.claimedAt))).then(
+      ? readQuery(query(collection(db(), "wallets", referral.inviterUid, "ledger"), where("createdAt", "==", data.claimedAt))).then(
           (ledger) => {
             const entries = ledger.docs.map((entry) => parseLedgerEntry(entry.id, entry.data()));
             const of = (source: string) => {
@@ -196,8 +196,8 @@ export async function getAdjustmentEntry(uid: string, adjustmentId: string): Pro
 /** As centrais do fã: os vínculos de agora e os pontos de cada uma (também das que ele saiu). */
 export async function getFanCentrals(uid: string): Promise<FanCentral[]> {
   const [links, points] = await Promise.all([
-    getDocs(collection(db(), "users", uid, "centrals")),
-    getDocs(collection(db(), "wallets", uid, "centralPoints")),
+    readQuery(collection(db(), "users", uid, "centrals")),
+    readQuery(collection(db(), "wallets", uid, "centralPoints")),
   ]);
   return joinFanCentrals(
     links.docs.map((item) => ({ id: item.id, data: item.data() })),
@@ -315,7 +315,7 @@ export interface InviteSummary {
 export async function getInviteSummary(uid: string): Promise<InviteSummary> {
   const [invite, links, brought] = await Promise.all([
     getDoc(doc(db(), "fanInvites", uid)),
-    getDocs(query(collection(db(), "fanInvites", uid, "inviteLinks"), orderBy("createdAt", "desc"))),
+    readQuery(query(collection(db(), "fanInvites", uid, "inviteLinks"), orderBy("createdAt", "desc"))),
     countOf(query(collection(db(), "referrals"), where("inviterUid", "==", uid))),
   ]);
   return {
