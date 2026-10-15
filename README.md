@@ -8,7 +8,7 @@ Regras do Firestore e Cloud Functions ficam no repositório do app (`ImagineMusi
 
 ## Como rodar
 
-Com o Node 20.9 ou mais novo:
+Com o Node 24 (a versão do `.nvmrc`, a mesma do CI, da Vercel e das Cloud Functions do app):
 
 ```bash
 npm install
