@@ -1,0 +1,29 @@
+# Checagens em todo PR e em todo push na main. A publicação fica na Vercel,
+# que publica cada push na main: este workflow não bloqueia nada sozinho.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # Sem o .env.local: o build não precisa das variáveis do Firebase, que
+      # só são lidas no navegador, quando o painel abre.
+      - run: npm run build
