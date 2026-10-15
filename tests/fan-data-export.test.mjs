@@ -118,6 +118,18 @@ test("parar confere antes de cada página, e a página que repete o cursor ou ve
   assert.equal(result, "stopped");
   assert.deepEqual(requests.map((request) => request.part), ["extrato", "pontosPorCentral"]);
 
+  // O "Parar" que chega durante a última página: ela entra, mas o resultado é "stopped" e nada baixa.
+  let late = false;
+  const lastPart = PARTS[PARTS.length - 1];
+  const slow = async (request) => {
+    if (request.part === lastPart) late = true;
+    return { part: request.part, items: [{ id: `${request.part}-1` }], after: null };
+  };
+  const lateProgress = exp.newExportProgress();
+  assert.equal(await exp.collectFanData(start(), lateProgress, slow, { stopped: () => late }), "stopped");
+  assert.equal(lateProgress.index, PARTS.length);
+  assert.equal(await exp.collectFanData(start(), exp.newExportProgress(), slow, { stopped: () => false }), "done");
+
   const stuck = async (request) => ({ part: request.part, items: [], after: "mesmo" });
   await assert.rejects(exp.collectFanData(start(), { index: 0, after: "mesmo", items: {} }, stuck), /não avançou/);
   const wrong = async () => ({ part: "outra", items: [], after: null });
