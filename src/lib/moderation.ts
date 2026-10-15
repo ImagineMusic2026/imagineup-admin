@@ -93,11 +93,11 @@ export function resetUsernameDoneText(previous: string, name: string, changeable
   return `O @${previous} foi trocado por um automático. ${name} ${wait}.`;
 }
 
-/** "Troca do @ liberada a partir de 14 nov, trocado pela equipe": o prazo que ainda vale, ou `null`. */
+/** "Liberada a partir de 14 nov, @ trocado pela equipe" (o item "Troca do @"): o prazo que ainda vale, ou `null`. */
 export function usernameLockText(profile: { usernameChangeableAt: Date | null; usernameLockReason: "moderation" | null }, now: Date): string | null {
   const until = profile.usernameChangeableAt;
   if (!until || until.getTime() <= now.getTime()) return null;
-  return `Troca do @ liberada a partir de ${formatDay(until, now)}${profile.usernameLockReason === "moderation" ? ", trocado pela equipe" : ""}`;
+  return `Liberada a partir de ${formatDay(until, now)}${profile.usernameLockReason === "moderation" ? ", @ trocado pela equipe" : ""}`;
 }
 
 export interface QueueItem {

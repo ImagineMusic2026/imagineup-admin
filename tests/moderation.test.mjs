@@ -93,8 +93,8 @@ test("a troca do @ pelo motivo: o texto, o aviso depois e o prazo que ainda vale
   assert.equal(moderation.resetUsernameDoneText("promoseg", "Promo", null, now), "O @promoseg foi trocado por um automático. Promo pode escolher outro na hora.");
   assert.equal(moderation.resetUsernameDoneText("promoseg", "Promo", "quando der", now), "O @promoseg foi trocado por um automático. Promo pode escolher outro na hora.");
   const until = new Date("2026-11-14T15:00:00Z");
-  assert.equal(moderation.usernameLockText({ usernameChangeableAt: until, usernameLockReason: "moderation" }, now), "Troca do @ liberada a partir de 14 nov, trocado pela equipe");
-  assert.equal(moderation.usernameLockText({ usernameChangeableAt: until, usernameLockReason: null }, now), "Troca do @ liberada a partir de 14 nov");
+  assert.equal(moderation.usernameLockText({ usernameChangeableAt: until, usernameLockReason: "moderation" }, now), "Liberada a partir de 14 nov, @ trocado pela equipe");
+  assert.equal(moderation.usernameLockText({ usernameChangeableAt: until, usernameLockReason: null }, now), "Liberada a partir de 14 nov");
   assert.equal(moderation.usernameLockText({ usernameChangeableAt: new Date("2026-10-01T00:00:00Z"), usernameLockReason: "moderation" }, now), null);
   assert.equal(moderation.usernameLockText({ usernameChangeableAt: null, usernameLockReason: null }, now), null);
 });
