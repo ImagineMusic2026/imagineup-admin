@@ -1,8 +1,10 @@
 "use client";
 
+import type { User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/lib/auth-context";
+import { sessionAuthTime } from "@/lib/session";
 import { accessStateOf, keepSameStaffResult, type OwnStaffResult, type StaffMember } from "@/lib/staff";
 import { subscribeToOwnStaff } from "@/lib/staff-data";
 
@@ -16,6 +18,7 @@ export type StaffAccess =
   | { state: "signed-out" }
   | { state: "active"; member: StaffMember }
   | { state: "disabled"; member: StaffMember }
+  | { state: "old-session" }
   | { state: "none" }
   | { state: "error"; error: unknown };
 
@@ -24,6 +27,15 @@ interface StaffContextValue {
   retry: () => void;
 }
 
+/**
+ * O `auth_time` desta sessão, por login e por tentativa. Cada login traz um
+ * `User` novo: entrar de novo com a mesma conta não reaproveita o de antes.
+ */
+type SessionResult = { user: User; attempt: number } & (
+  | { kind: "time"; authTime: number | null }
+  | { kind: "error"; error: unknown }
+);
+
 const StaffContext = createContext<StaffContextValue | null>(null);
 
 export function StaffProvider({ children }: { children: React.ReactNode }) {
@@ -31,6 +43,7 @@ export function StaffProvider({ children }: { children: React.ReactNode }) {
   const uid = user?.uid ?? null;
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<OwnStaffResult | null>(null);
+  const [session, setSession] = useState<SessionResult | null>(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -41,19 +54,38 @@ export function StaffProvider({ children }: { children: React.ReactNode }) {
     );
   }, [uid, attempt]);
 
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    sessionAuthTime(user).then(
+      (authTime) => {
+        if (active) setSession({ user, attempt, kind: "time", authTime });
+      },
+      (error: unknown) => {
+        if (active) setSession({ user, attempt, kind: "error", error });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [user, attempt]);
+
   // O resultado guardado só vale para a mesma pessoa e a mesma tentativa:
   // trocar de conta volta para "carregando" sem precisar limpar estado no efeito.
   const access = useMemo<StaffAccess>(() => {
     if (loading) return { state: "loading" };
-    if (!uid) return { state: "signed-out" };
-    if (!result || result.uid !== uid || result.attempt !== attempt) return { state: "loading" };
+    if (!user) return { state: "signed-out" };
+    if (!result || result.uid !== user.uid || result.attempt !== attempt) return { state: "loading" };
     if (result.kind === "error") return { state: "error", error: result.error };
     if (result.kind === "missing") return { state: "none" };
-    const state = accessStateOf(result.member);
+    if (!session || session.user !== user || session.attempt !== attempt) return { state: "loading" };
+    if (session.kind === "error") return { state: "error", error: session.error };
+    const state = accessStateOf(result.member, session.authTime);
     if (state === "active") return { state: "active", member: result.member };
     if (state === "disabled") return { state: "disabled", member: result.member };
+    if (state === "old-session") return { state: "old-session" };
     return { state: "none" };
-  }, [loading, uid, result, attempt]);
+  }, [loading, user, result, session, attempt]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const value = useMemo(() => ({ access, retry }), [access, retry]);

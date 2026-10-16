@@ -17,9 +17,11 @@ const {
   keepSameStaffResult,
   navGroupsFor,
   pageForPathname,
+  parseAuthTime,
   parseStaffMember,
   sameStaffMember,
   sectionsSummary,
+  sessionAllowed,
   sortMembers,
 } = await import("@/lib/staff");
 
@@ -65,10 +67,59 @@ test("sem documento ativo não há acesso nenhum", () => {
     assert.equal(firstAllowedRoute(member), null);
   }
   assert.deepEqual(allowedSections(null), []);
-  assert.equal(accessStateOf(null), "none");
-  assert.equal(accessStateOf({ status: "pending" }), "none");
-  assert.equal(accessStateOf({ status: "disabled" }), "disabled");
-  assert.equal(accessStateOf({ status: "active" }), "active");
+  assert.equal(accessStateOf(null, NOW), "none");
+  assert.equal(accessStateOf({ status: "pending", authValidAfter: null }, NOW), "none");
+  assert.equal(accessStateOf({ status: "disabled", authValidAfter: null }, NOW), "disabled");
+  assert.equal(accessStateOf({ status: "active", authValidAfter: null }, NOW), "active");
+});
+
+// auth_time (em segundos) do login desta sessão e o do login que ligou a conta.
+const NOW = 1_800_000_000;
+const LINKED_AT = NOW - 60;
+
+test("a sessão usa o acesso a partir do authValidAfter, como as regras", () => {
+  // Sem o campo, qualquer sessão vale, até um token sem auth_time.
+  assert.equal(sessionAllowed(null, NOW), true);
+  assert.equal(sessionAllowed(null, null), true);
+  // O próprio login que ligou vale (igual), e os de depois também.
+  assert.equal(sessionAllowed(LINKED_AT, LINKED_AT), true);
+  assert.equal(sessionAllowed(LINKED_AT, NOW), true);
+  // Um login de antes do vínculo, ou um token sem auth_time (conta como 0), não.
+  assert.equal(sessionAllowed(LINKED_AT, LINKED_AT - 1), false);
+  assert.equal(sessionAllowed(LINKED_AT, null), false);
+});
+
+test("sessão de antes do vínculo, ou de um corte, sai do painel com motivo próprio", () => {
+  const linked = { status: "active", authValidAfter: LINKED_AT };
+  assert.equal(accessStateOf(linked, LINKED_AT), "active");
+  assert.equal(accessStateOf(linked, NOW), "active");
+  assert.equal(accessStateOf(linked, LINKED_AT - 1), "old-session");
+  assert.equal(accessStateOf(linked, null), "old-session");
+  // Um corte depois do login desta sessão: o mesmo login passa a ser antigo.
+  assert.equal(accessStateOf({ ...linked, authValidAfter: NOW + 1 }, NOW), "old-session");
+  // Desativada ou pendente vale mais que a sessão: o motivo é o do documento.
+  assert.equal(accessStateOf({ status: "disabled", authValidAfter: LINKED_AT }, LINKED_AT - 1), "disabled");
+  assert.equal(accessStateOf({ status: "pending", authValidAfter: LINKED_AT }, LINKED_AT - 1), "none");
+});
+
+test("authValidAfter do documento: sem o campo, qualquer sessão; torto, nenhuma", () => {
+  const raw = { email: "a@b.com", displayName: "Ana", role: "editor", status: "active", sections: ["fans"] };
+  assert.equal(parseStaffMember("u1", raw).authValidAfter, null);
+  assert.equal(parseStaffMember("u1", { ...raw, authValidAfter: LINKED_AT }).authValidAfter, LINKED_AT);
+  // As regras comparam com o número; outro tipo (até null gravado) faz a comparação falhar.
+  for (const value of [null, "1800000000", { seconds: LINKED_AT }, Number.NaN]) {
+    const member = parseStaffMember("u1", { ...raw, authValidAfter: value });
+    assert.equal(accessStateOf(member, NOW), "old-session", String(value));
+  }
+});
+
+test("auth_time do token: número no JWT, texto no tipo do SDK", () => {
+  assert.equal(parseAuthTime(NOW), NOW);
+  assert.equal(parseAuthTime(String(NOW)), NOW);
+  assert.equal(parseAuthTime(undefined), null);
+  assert.equal(parseAuthTime(""), null);
+  assert.equal(parseAuthTime("ontem"), null);
+  assert.equal(parseAuthTime(Number.POSITIVE_INFINITY), null);
 });
 
 test("a primeira rota liberada segue a ordem da lateral", () => {
@@ -175,6 +226,8 @@ test("o mesmo retrato da equipe, campo a campo", () => {
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, accountCreatedByInvite: true })), false);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, inviteId: "convite-1" })), false);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, invitedBy: "admin-1" })), false);
+  // Um corte (authValidAfter novo) troca o retrato: o guard confere a sessão de novo.
+  assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, authValidAfter: 1_800_000_000 })), false);
   assert.equal(sameStaffMember(base, parseStaffMember("u1", { ...raw, createdAt: null })), false);
   assert.equal(
     sameStaffMember(base, parseStaffMember("u1", { ...raw, createdAt: { toDate: () => new Date("2026-09-30T12:00:00Z") } })),

@@ -89,6 +89,12 @@ export interface StaffMember {
   invitedBy: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+  /**
+   * `auth_time` (em segundos) a partir do qual a sessão usa o acesso. O
+   * linkStaffInvite grava o do login que ligou uma conta que já existia; sem o
+   * campo (null), qualquer sessão vale.
+   */
+  authValidAfter: number | null;
 }
 
 export type InviteStatus = "pending" | "accepted" | "canceled";
@@ -171,7 +177,17 @@ export function parseStaffMember(uid: string, data: Record<string, unknown>): St
     invitedBy: textOrNull(data.invitedBy),
     createdAt: toDate(data.createdAt),
     updatedAt: toDate(data.updatedAt),
+    authValidAfter: parseAuthValidAfter(data.authValidAfter),
   };
+}
+
+/**
+ * Sem o campo, qualquer sessão vale. Um valor que não é número faz as regras
+ * recusarem toda sessão (a comparação dá erro), então aqui também nenhuma vale.
+ */
+function parseAuthValidAfter(value: unknown): number | null {
+  if (value === undefined) return null;
+  return typeof value === "number" && !Number.isNaN(value) ? value : Number.POSITIVE_INFINITY;
 }
 
 export function parseStaffInvite(id: string, data: Record<string, unknown>): StaffInvite {
@@ -197,18 +213,42 @@ export function parseStaffInvite(id: string, data: Record<string, unknown>): Sta
 // Acesso
 // ---------------------------------------------------------------------------
 
-export type AccessState = "active" | "disabled" | "none";
+export type AccessState = "active" | "disabled" | "old-session" | "none";
 
 /**
- * O que o guard faz com o documento da própria pessoa: só `active` entra.
- * `pending` é a marca que o servidor grava antes de criar a conta, então conta
- * como sem acesso (o aceite termina com `active`).
+ * A sessão usa o acesso do membro: o login dela (`auth_time` do token, em
+ * segundos) é igual ou posterior ao `authValidAfter`. O que falta conta como 0,
+ * a mesma conta do staffSessionAllowed() do firestore.rules e do
+ * sessionAllowed das Cloud Functions.
  */
-export function accessStateOf(member: Pick<StaffMember, "status"> | null): AccessState {
+export function sessionAllowed(authValidAfter: number | null, authTime: number | null): boolean {
+  return (authTime ?? 0) >= (authValidAfter ?? 0);
+}
+
+/**
+ * O que o guard faz com o documento da própria pessoa: só `active`, numa
+ * sessão a partir do `authValidAfter`, entra. `pending` é a marca que o
+ * servidor grava antes de criar a conta, então conta como sem acesso (o aceite
+ * termina com `active`). A sessão aberta antes do vínculo, ou antes de um
+ * corte, é `old-session`: as regras já recusam todas as leituras dela.
+ */
+export function accessStateOf(
+  member: Pick<StaffMember, "status" | "authValidAfter"> | null,
+  authTime: number | null,
+): AccessState {
   if (!member) return "none";
-  if (member.status === "active") return "active";
   if (member.status === "disabled") return "disabled";
-  return "none";
+  if (member.status !== "active") return "none";
+  return sessionAllowed(member.authValidAfter, authTime) ? "active" : "old-session";
+}
+
+/**
+ * Segundos do login desta sessão, do `auth_time` do token. O SDK tipa os
+ * claims como texto, mas o JWT traz um número; os dois são aceitos.
+ */
+export function parseAuthTime(value: unknown): number | null {
+  const seconds = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : null;
 }
 
 type Permissions = Pick<StaffMember, "role" | "sections" | "status">;
@@ -244,6 +284,7 @@ const STAFF_MEMBER_FIELDS: FieldComparers = {
   invitedBy: same,
   createdAt: sameTime,
   updatedAt: sameTime,
+  authValidAfter: same,
 };
 
 function sameField<K extends keyof StaffMember>(key: K, a: StaffMember, b: StaffMember): boolean {

@@ -71,7 +71,10 @@ export async function getAuditPeople(): Promise<{ uid: string; name: string }[]>
 
 /**
  * O uid do fã pelo @, para o filtro de alvo. Lista `users` pelo @, o que as
- * regras só deixam para quem vê Fãs (a Moderação lista só os suspensos).
+ * regras só deixam para quem vê Fãs. A Moderação lista só com o filtro dos
+ * suspensos (`suspendedAt`), que esta consulta não tem: para quem tem só a
+ * Moderação, ela é recusada inteira (`permission-denied`), mesmo com o fã
+ * suspenso.
  */
 export async function findFanUidByHandle(handle: string): Promise<string | null> {
   const username = handle.trim().replace(/^@/, "").toLowerCase();

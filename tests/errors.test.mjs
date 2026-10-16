@@ -143,6 +143,12 @@ test("motivo de volta ao login vai no endereço", async () => {
   assert.equal(parseExitReason(null), null);
   assert.equal(EXIT_REASON_MESSAGES["sem-acesso"], "Esta conta não tem acesso ao painel.");
   assert.equal(EXIT_REASON_MESSAGES.desativado, "Seu acesso ao painel foi desativado. Fale com um admin.");
+  assert.equal(loginUrl("sessao-antiga"), "/entrar?motivo=sessao-antiga");
+  assert.equal(parseExitReason("sessao-antiga"), "sessao-antiga");
+  assert.equal(
+    EXIT_REASON_MESSAGES["sessao-antiga"],
+    "Esta sessão é de antes da última mudança no seu acesso. Entre de novo para usar o painel.",
+  );
 });
 
 test("motivos do bloco 11: frase própria quando o servidor não manda a dele", async () => {
