@@ -4,9 +4,10 @@
 // com `namedExports` quebra o import do lib testado quando falta um nome):
 // collection, collectionGroup, doc, query, where, orderBy, limit, startAfter,
 // startAt, endAt, documentId, getDocs, getDocsFromServer, getDoc,
-// getCountFromServer e Timestamp. Com `setOffline(true)`, as leituras do
-// servidor falham com `unavailable`, e o `getDocs` resolve vazio do cache,
-// como o SDK de verdade sem rede.
+// getDocFromServer, getCountFromServer e Timestamp. Com `setOffline(true)`, as
+// leituras do servidor falham com `unavailable`; o `getDocs` resolve vazio do
+// cache e o `getDoc` resolve o documento que já foi lido na sessão, como o SDK
+// de verdade sem rede.
 // Nunca `onSnapshot`: nenhuma tela nova escuta em tempo real.
 //
 // Os documentos moram num mapa por caminho, e as consultas são respondidas de
@@ -218,6 +219,15 @@ export function createFirestoreFake() {
     endAt: (...values) => ({ kind: "endAt", values }),
     documentId: () => DOCUMENT_ID,
     getDoc: async (ref) => {
+      const cached = reads.includes(ref.path);
+      reads.push(ref.path);
+      maybeFail();
+      // Sem rede, o SDK resolve do cache o documento já lido na sessão (com
+      // `fromCache`); só o que nunca foi lido falha.
+      if (offline && !cached) failOffline();
+      return snapshotOf(ref.path, documents.get(ref.path));
+    },
+    getDocFromServer: async (ref) => {
       reads.push(ref.path);
       maybeFail();
       failOffline();
