@@ -337,8 +337,8 @@ function TargetFilter({ value, member, onChange }: { value: string; member: Staf
       onChange(`fan:${raw}`);
       return;
     }
-    if (!canSeeSection(member, "fans") && !canSeeSection(member, "moderation")) {
-      setProblem("Cole o identificador do fã (o @ precisa da seção Fãs ou Moderação).");
+    if (!canSeeSection(member, "fans")) {
+      setProblem("Cole o identificador do fã (o @ precisa da seção Fãs).");
       return;
     }
     setBusy(true);
