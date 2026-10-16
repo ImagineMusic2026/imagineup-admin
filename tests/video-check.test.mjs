@@ -166,6 +166,8 @@ test("até 1 minuto, com meio segundo de folga: 60,499 s passa, 60,5 s fica de f
   assert.equal(vc.durationText(120_000), "2 min");
   assert.equal(vc.VIDEO_MAX_SECONDS, 60);
   assert.match(vc.VIDEO_RULES_TEXT, /de até 1 minuto/);
+  // A regra embaixo do campo avisa do fragmentado antes de a pessoa escolher o arquivo.
+  assert.match(vc.VIDEO_RULES_TEXT, /sem fragmentar/);
 });
 
 test("todo MP4 fragmentado é recusado, com o mehd ou sem ele", async () => {

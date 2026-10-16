@@ -9,8 +9,10 @@
  *   100 do `avcC`): o High 10 e o 4:2:2 não tocam em muitos aparelhos.
  * - O índice (`moov`) antes dos dados (`mdat`), o "faststart": sem ele, o
  *   vídeo só começa depois de baixar quase tudo.
- * - Nada fragmentado (o `mvex` no `moov`): o app ainda não toca vídeo, e o
- *   fragmentado não dá para conferir nele hoje (decisão do dono de 15/10/2026).
+ * - Nada fragmentado (o `mvex` no `moov`): o `mvhd` cobre só o primeiro
+ *   fragmento, e a duração inteira só vem no `mehd`, que muito export não
+ *   traz. Sem a duração, o limite de 1 minuto não dá para conferir, toque o
+ *   app o fragmentado ou não (decisão do dono de 15/10/2026).
  * - Até 720p (o lado menor até 720 e o maior até 1280) e 20 MB.
  * - Até 1 minuto (decisão do dono de 15/10/2026).
  *
@@ -36,7 +38,7 @@ export const VIDEO_MAX_SECONDS = 60;
 /** Teto da leitura do índice: um `moov` de vídeo curto tem poucos KB. */
 const MOOV_READ_MAX = 16 * 1024 * 1024;
 
-export const VIDEO_RULES_TEXT = "MP4 em H.264, de até 1 minuto, 720p e 20 MB, com o início rápido (faststart). MOV não vale: exporte em MP4.";
+export const VIDEO_RULES_TEXT = "MP4 em H.264, de até 1 minuto, 720p e 20 MB, com o início rápido (faststart) e sem fragmentar. MOV não vale: exporte em MP4.";
 
 export class VideoCheckError extends Error {}
 
