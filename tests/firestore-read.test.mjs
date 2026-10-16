@@ -7,6 +7,8 @@ import { installFirestoreFake } from "./fakes/firestore.mjs";
 const firestore = installFirestoreFake();
 const { getArtistNames } = await import("@/lib/artist-names-data");
 const { errorMessage } = await import("@/lib/errors");
+const { getTargetDocs } = await import("@/lib/game-data");
+const { getPost } = await import("@/lib/post-data");
 
 test.beforeEach(() => {
   firestore.reset();
@@ -35,4 +37,23 @@ test("sem rede, a leitura falha com \"Sem conexão\" em vez de voltar vazia do c
   // A conexão voltou: a mesma leitura traz os nomes.
   firestore.setOffline(false);
   assert.equal((await getArtistNames(true)).size, 2);
+});
+
+test("sem rede, a leitura de documento das telas falha mesmo com o documento já lido", async () => {
+  // O `getDoc` resolve do cache o documento já lido na sessão: a tela mostrava
+  // "Atualizado às" de agora sobre o dado de antes da queda.
+  firestore.set("posts/p1", { artistId: "netto", kind: "text", text: "Olá", status: "published" });
+  assert.equal((await getPost("p1"))?.text, "Olá");
+
+  firestore.setOffline(true);
+  await assert.rejects(getPost("p1"), (error) => {
+    assert.equal(errorMessage(error), "Sem conexão. Verifique a internet e tente de novo.");
+    return true;
+  });
+  // O alvo da missão também, lido um por um.
+  await assert.rejects(getTargetDocs(["post:p1"]), { code: "unavailable" });
+
+  // A conexão voltou: a mesma leitura traz o post do servidor.
+  firestore.setOffline(false);
+  assert.equal((await getPost("p1"))?.text, "Olá");
 });

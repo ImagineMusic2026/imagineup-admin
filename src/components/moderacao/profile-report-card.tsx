@@ -87,14 +87,17 @@ export function ProfileReportCard({
   onDecide?: (item: ProfileQueueItem, decision: ProfileDecision, name: string) => void;
 }) {
   const given = profile !== undefined;
+  // Com o perfil vindo da tela, o card não lê: o `profile` é outro objeto a cada
+  // leitura da página, e tê-lo na função de leitura punha o card em
+  // "Carregando..." a cada releitura. A chave vai no `useLoad`, que lê de novo
+  // com o dado na tela.
   const read = useLoad(
-    useCallback(() => {
-      void refreshKey;
-      return given ? Promise.resolve(profile ?? null) : getFanProfile(item.uid);
-    }, [given, profile, item.uid, refreshKey]),
+    useCallback(() => (given ? Promise.resolve(null) : getFanProfile(item.uid)), [given, item.uid]),
+    refreshKey,
   );
-  const fan = read.state.status === "ready" ? read.state.data : null;
-  const deleted = read.state.status === "ready" && !fan;
+  const ready = given || read.state.status === "ready";
+  const fan = given ? (profile ?? null) : read.state.status === "ready" ? read.state.data : null;
+  const deleted = ready && !fan;
   const name = fan ? fanDisplayName(fan) : deleted ? ACCOUNT_DELETED_TEXT : "Carregando...";
   const decisions = fan && canEdit && onDecide ? profileDecisions(item) : [];
   const Heading = headingLevel === 3 ? "h3" : "h4";
