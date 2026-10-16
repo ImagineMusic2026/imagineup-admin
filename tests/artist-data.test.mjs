@@ -30,6 +30,11 @@ mock.module("firebase/firestore", {
       const data = stored.get(ref.path);
       return { id: ref.path.split("/").pop(), exists: () => data !== undefined, data: () => data };
     },
+    // O `readDoc` (`firestore-read`) importa este nome; nada daqui lê por ele.
+    getDocFromServer: async (ref) => {
+      const data = stored.get(ref.path);
+      return { id: ref.path.split("/").pop(), exists: () => data !== undefined, data: () => data };
+    },
     // A lixeira (`artistHasContent`): as consultas viram o caminho e os filtros, e o teste diz se há documento.
     where: (field, op, value) => ({ field, op, value }),
     limit: (count) => ({ limit: count }),

@@ -3,7 +3,7 @@ import { Timestamp, collection, doc, getDoc, limit, orderBy, query, where, type 
 import { dayKey, dayStartMs, type DayRange } from "@/lib/day";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
-import { readQuery } from "@/lib/firestore-read";
+import { readDoc, readQuery } from "@/lib/firestore-read";
 import {
   REDEMPTIONS_PAGE_SIZE,
   REDEMPTION_STATUSES,
@@ -42,7 +42,7 @@ export async function getRewards(): Promise<Reward[]> {
 }
 
 export async function getReward(rewardId: string): Promise<Reward | null> {
-  const snapshot = await getDoc(doc(db(), "rewards", rewardId));
+  const snapshot = await readDoc(doc(db(), "rewards", rewardId));
   const data = snapshot.data();
   return data ? parseReward(snapshot.id, data) : null;
 }
@@ -105,7 +105,7 @@ export async function getRedemptionCounts(rewardId: string | null): Promise<Reco
 
 /** O pedido pelo código já normalizado, ou `null`. */
 export async function getRedemption(code: string): Promise<Redemption | null> {
-  const snapshot = await getDoc(doc(db(), "redemptions", code));
+  const snapshot = await readDoc(doc(db(), "redemptions", code));
   const data = snapshot.data();
   return data ? parseRedemption(snapshot.id, data) : null;
 }

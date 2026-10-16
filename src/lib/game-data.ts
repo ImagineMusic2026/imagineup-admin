@@ -4,7 +4,7 @@ import { parseAchievementsCatalog, type AchievementsCatalog } from "@/lib/achiev
 import { dayKey, dayStartMs, type DayRange } from "@/lib/day";
 import { db } from "@/lib/firebase";
 import { getPage, type PageCursor } from "@/lib/firestore-page";
-import { readQuery } from "@/lib/firestore-read";
+import { readDoc, readQuery } from "@/lib/firestore-read";
 import { parseMission, parseMissionsCatalog, type Mission, type MissionsCatalog } from "@/lib/missions";
 import { parsePointsConfig, type PointsConfig } from "@/lib/points-config";
 import { parseSeasonConfig, type SeasonConfig } from "@/lib/season";
@@ -25,16 +25,16 @@ export const ARCHIVE_LIMIT = 50;
 export const TARGET_PAGE_SIZE = 20;
 
 export async function getMissionsCatalog(): Promise<MissionsCatalog> {
-  return parseMissionsCatalog((await getDoc(doc(db(), "config", "missions"))).data());
+  return parseMissionsCatalog((await readDoc(doc(db(), "config", "missions"))).data());
 }
 
 export async function getAchievementsCatalog(): Promise<AchievementsCatalog> {
-  return parseAchievementsCatalog((await getDoc(doc(db(), "config", "achievements"))).data());
+  return parseAchievementsCatalog((await readDoc(doc(db(), "config", "achievements"))).data());
 }
 
 /** A régua gravada, ou `null` sem documento (versão 0). */
 export async function getPointsConfig(): Promise<{ version: number; config: PointsConfig | null }> {
-  const data = (await getDoc(doc(db(), "config", "points"))).data();
+  const data = (await readDoc(doc(db(), "config", "points"))).data();
   const config = parsePointsConfig(data);
   return { version: config?.version ?? (typeof data?.version === "number" ? data.version : 0), config };
 }
@@ -52,7 +52,7 @@ export async function getGameConfigs(): Promise<GameConfigs> {
     getMissionsCatalog(),
     getAchievementsCatalog(),
     getPointsConfig(),
-    getDoc(doc(db(), "config", "season")).then((snapshot) => parseSeasonConfig(snapshot.data())),
+    readDoc(doc(db(), "config", "season")).then((snapshot) => parseSeasonConfig(snapshot.data())),
   ]);
   return { missions, achievements, points, season };
 }
@@ -124,12 +124,12 @@ export function targetKeysOf(missions: readonly Pick<Mission, "target">[]): stri
   return [...keys].sort();
 }
 
-/** Os alvos pelas chaves (um `getDoc` de cada); o que não existe mais fica `null`. */
+/** Os alvos pelas chaves (uma leitura de cada); o que não existe mais fica `null`. */
 export async function getTargetDocs(keys: readonly string[]): Promise<Map<string, TargetDoc | null>> {
   const entries = await Promise.all(
     keys.map(async (key) => {
       const [kind, id] = key.split(":") as ["post" | "event", string];
-      const snapshot = await getDoc(doc(db(), kind === "post" ? "posts" : "events", id));
+      const snapshot = await readDoc(doc(db(), kind === "post" ? "posts" : "events", id));
       const data = snapshot.data();
       return [key, data ? (kind === "post" ? postOf(id, data) : eventOf(id, data)) : null] as const;
     }),

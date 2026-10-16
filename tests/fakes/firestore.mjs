@@ -3,9 +3,10 @@
 // Tem tudo que a fundação e as telas importam do Firestore (o `mock.module`
 // com `namedExports` quebra o import do lib testado quando falta um nome):
 // collection, collectionGroup, doc, query, where, orderBy, limit, startAfter,
-// startAt, endAt, documentId, getDocsFromServer, getDoc, getCountFromServer e
-// Timestamp. Com `setOffline(true)`, as leituras do servidor falham com
-// `unavailable`, como o SDK de verdade sem rede.
+// startAt, endAt, documentId, getDocsFromServer, getDoc, getDocFromServer,
+// getCountFromServer e Timestamp. Com `setOffline(true)`, as leituras do
+// servidor falham com `unavailable`, e o `getDoc` resolve o documento que já
+// foi lido na sessão, como o SDK de verdade sem rede.
 // Não tem `getDocs`: sem rede, ele resolve com o que estiver no cache (vazio ou
 // velho), por isso o `src` consulta pelo `readQuery`, e o lint barra o import
 // dele (`eslint.config.mjs`).
@@ -226,6 +227,15 @@ export function createFirestoreFake() {
     endAt: (...values) => ({ kind: "endAt", values }),
     documentId: () => DOCUMENT_ID,
     getDoc: async (ref) => {
+      const cached = reads.includes(ref.path);
+      reads.push(ref.path);
+      maybeFail();
+      // Sem rede, o SDK resolve do cache o documento já lido na sessão (com
+      // `fromCache`); só o que nunca foi lido falha.
+      if (offline && !cached) failOffline();
+      return snapshotOf(ref.path, documents.get(ref.path));
+    },
+    getDocFromServer: async (ref) => {
       reads.push(ref.path);
       maybeFail();
       failOffline();

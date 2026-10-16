@@ -4,6 +4,7 @@ import { dayKey, dayStartMs } from "@/lib/day";
 import { parseEvent, type AgendaEvent } from "@/lib/events";
 import { db } from "@/lib/firebase";
 import { countOf, getPage, type PageCursor } from "@/lib/firestore-page";
+import { readDoc } from "@/lib/firestore-read";
 import { parseComment, type CommentInfo } from "@/lib/moderation";
 import { COMMENTS_PAGE_SIZE, POSTS_PAGE_SIZE, parsePost, type Post, type PostStatus } from "@/lib/posts";
 
@@ -39,7 +40,7 @@ export async function getPostsPage(filters: PostFilters, after: PageCursor | nul
 }
 
 export async function getPost(postId: string): Promise<Post | null> {
-  const snapshot = await getDoc(doc(db(), "posts", postId));
+  const snapshot = await readDoc(doc(db(), "posts", postId));
   const data = snapshot.data();
   return data ? parsePost(snapshot.id, data) : null;
 }
