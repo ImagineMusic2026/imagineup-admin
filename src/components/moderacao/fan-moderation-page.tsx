@@ -862,6 +862,11 @@ function FanQueue({ member, uid, reader, now, round }: { member: StaffMember; ui
           <LoadMore onClick={list.loadMore} busy={list.loadingMore} hasMore={list.hasMore} announcement={list.announcement} error={list.loadMoreError} />
         </>
       )}
+      {list.refreshError ? (
+        <div className="px-5 pb-4">
+          <Notice tone="error">Não deu para atualizar: {list.refreshError}</Notice>
+        </div>
+      ) : null}
     </SectionCard>
   );
 }
@@ -952,6 +957,11 @@ function FanComments({
           <LoadMore onClick={list.loadMore} busy={list.loadingMore} hasMore={list.hasMore} announcement={list.announcement} error={list.loadMoreError} />
         </>
       )}
+      {list.refreshError ? (
+        <div className="px-5 pb-4">
+          <Notice tone="error">Não deu para atualizar: {list.refreshError}</Notice>
+        </div>
+      ) : null}
     </SectionCard>
   );
 }
