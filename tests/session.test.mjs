@@ -34,7 +34,7 @@ mock.module("@/lib/firebase", {
   namedExports: { auth: () => fakeAuth },
 });
 
-const { reauthenticate, signInForInvite, signInWithPassword } = await import("@/lib/session");
+const { reauthenticate, sessionAuthTime, signInForInvite, signInWithPassword } = await import("@/lib/session");
 
 test("login do convite guarda a sessão só na aba, antes de entrar", async () => {
   calls.length = 0;
@@ -64,4 +64,21 @@ test("a senha de novo vai com o e-mail da própria conta da equipe", async () =>
   assert.deepEqual(calls, [["reauth", "equipe-1", "equipe@imagine.com", "senha-da-equipe"]]);
   fakeAuth.currentUser = null;
   await assert.rejects(reauthenticate("x"), { code: "functions/unauthenticated" });
+});
+
+test("o auth_time da sessão sai do token, sem forçar a troca", async () => {
+  const requests = [];
+  const userWith = (claims) => ({
+    getIdTokenResult: async (forceRefresh) => {
+      requests.push(forceRefresh);
+      return { claims };
+    },
+  });
+  assert.equal(await sessionAuthTime(userWith({ auth_time: 1_800_000_000 })), 1_800_000_000);
+  assert.equal(await sessionAuthTime(userWith({ auth_time: "1800000000" })), 1_800_000_000);
+  assert.equal(await sessionAuthTime(userWith({})), null);
+  // Renovar o token não muda o auth_time: o que está guardado basta.
+  assert.deepEqual(requests, [undefined, undefined, undefined]);
+  const offline = { getIdTokenResult: async () => Promise.reject(Object.assign(new Error("x"), { code: "auth/network-request-failed" })) };
+  await assert.rejects(sessionAuthTime(offline), { code: "auth/network-request-failed" });
 });

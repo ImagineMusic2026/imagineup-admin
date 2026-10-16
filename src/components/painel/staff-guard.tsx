@@ -6,16 +6,25 @@ import { useEffect, useRef } from "react";
 import { FullScreenLoading, FullScreenMessage } from "@/components/painel/full-screen-state";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { firestoreErrorMessage } from "@/lib/errors";
+import { errorMessage } from "@/lib/errors";
 import { loginUrl, type ExitReason } from "@/lib/login-reasons";
 import { useStaffAccess } from "@/lib/staff-context";
+
+/** O motivo que vai para /entrar em cada recusa do guard. */
+const EXIT_REASONS = {
+  none: "sem-acesso",
+  disabled: "desativado",
+  "old-session": "sessao-antiga",
+} as const satisfies Record<string, ExitReason>;
 
 /**
  * Só deixa o painel aparecer para quem tem `staff/{uid}` com status `active`.
  *
  * - Sem login: vai para /entrar.
- * - Logado sem documento (fã, conta removida da equipe) ou com o documento
- *   desativado: sai da conta e vai para /entrar com o motivo no endereço.
+ * - Logado sem documento (fã, conta removida da equipe), com o documento
+ *   desativado ou numa sessão de antes do `authValidAfter` (aberta antes do
+ *   vínculo, ou antes de um corte): sai da conta e vai para /entrar com o
+ *   motivo no endereço.
  * - Como o documento é lido em tempo real, desativar ou remover alguém tira a
  *   pessoa do painel na hora.
  *
@@ -33,8 +42,8 @@ export function StaffGuard({ children }: { children: React.ReactNode }) {
       router.replace(loginUrl(exitReason.current));
       return;
     }
-    if (access.state === "none" || access.state === "disabled") {
-      exitReason.current = access.state === "disabled" ? "desativado" : "sem-acesso";
+    if (access.state === "none" || access.state === "disabled" || access.state === "old-session") {
+      exitReason.current = EXIT_REASONS[access.state];
       // Ao sair, o estado vira "signed-out" e o ramo acima leva ao login com o motivo.
       signOut().catch(() => router.replace(loginUrl(exitReason.current)));
     }
@@ -58,12 +67,13 @@ export function StaffGuard({ children }: { children: React.ReactNode }) {
         }
       >
         <p className="m-0" role="alert">
-          {firestoreErrorMessage(access.error)}
+          {errorMessage(access.error)}
         </p>
       </FullScreenMessage>
     );
   }
 
-  const leaving = access.state === "none" || access.state === "disabled" || access.state === "signed-out";
+  const leaving =
+    access.state === "none" || access.state === "disabled" || access.state === "old-session" || access.state === "signed-out";
   return <FullScreenLoading label={leaving ? "Saindo..." : "Conferindo seu acesso..."} />;
 }

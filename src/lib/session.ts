@@ -12,6 +12,7 @@ import {
 
 import { readError } from "@/lib/errors";
 import { auth } from "@/lib/firebase";
+import { parseAuthTime } from "@/lib/staff";
 
 /**
  * Ações de sessão usadas pelas telas de login e de convite. Entrar nunca quer
@@ -53,6 +54,16 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
 export async function signOutUser(): Promise<void> {
   await signOut(auth());
+}
+
+/**
+ * Segundos do login desta sessão (o `auth_time` do token), que as regras
+ * comparam com o `authValidAfter` da equipe. Renovar o token não muda o
+ * `auth_time`; só um login novo (ou a confirmação de senha) muda.
+ */
+export async function sessionAuthTime(user: User): Promise<number | null> {
+  const { claims } = await user.getIdTokenResult();
+  return parseAuthTime(claims.auth_time);
 }
 
 /**
