@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { PageHeader } from "@/components/painel/page-header";
@@ -31,6 +32,7 @@ import {
   changeFilters,
   detailLines,
   filterBlocked,
+  filtersFromLink,
   normalizeTargetId,
   parseTarget,
   primaryTarget,
@@ -49,14 +51,20 @@ import { canSeeSection, sectionInfo, type StaffMember } from "@/lib/staff";
 const INFO = sectionInfo("audit");
 const GRID = "xl:grid xl:grid-cols-[150px_minmax(0,0.9fr)_110px_minmax(0,1.1fr)_minmax(0,1fr)_110px] xl:items-center xl:gap-4";
 
-/** Logs e auditoria (`/logs`): quem fez o quê no painel, e quando. Leitura única; ninguém muda nada aqui. */
+/**
+ * Logs e auditoria (`/logs`): quem fez o quê no painel, e quando. Leitura
+ * única; ninguém muda nada aqui. O `?alvo=` do endereço (o "Abrir nos Logs"
+ * de uma ficha) abre já filtrado pelo alvo; o `useSearchParams` pede o
+ * `Suspense` da rota.
+ */
 export function LogsPage() {
   return <SectionGate section="audit">{(member) => <LogsContent member={member} />}</SectionGate>;
 }
 
 function LogsContent({ member }: { member: StaffMember }) {
+  const params = useSearchParams();
   const [now] = useState(() => Date.now());
-  const [filters, setFilters] = useState<AuditFilters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<AuditFilters>(() => filtersFromLink(params.get("alvo")));
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const loadPage = useCallback(
@@ -210,6 +218,23 @@ function TargetCell({ entry, member, names }: { entry: AuditEntry; member: Staff
     );
   }
   if (!target) return <span className="text-fg/55">Sem alvo</span>;
+  if (target.type === "fanClub") {
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate">
+          {TARGET_LABELS.fanClub} <span className="font-mono text-[12px] text-fg/75">{target.id}</span>
+          {extra}
+        </span>
+        {canSeeSection(member, "fanClubs") ? (
+          <span className="relative z-10 flex flex-wrap gap-x-3 text-[12.5px]">
+            <Link href={`/fa-clubes/${encodeURIComponent(target.id)}`} className="font-semibold text-cyan underline-offset-2 hover:underline">
+              Ficha<span className="sr-only"> do fã-clube</span>
+            </Link>
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   if (target.type === "fan") {
     const seesFans = canSeeSection(member, "fans");
     const seesModeration = canSeeSection(member, "moderation");
@@ -379,7 +404,7 @@ function TargetFilter({ value, member, onChange }: { value: string; member: Staf
           id="alvo-id"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={type === "fan" ? "uid do fã ou @" : type === "artist" ? "@ da central" : type === "redemption" ? "código do pedido" : "id"}
+          placeholder={type === "fan" ? "uid do fã ou @" : type === "artist" ? "@ da central" : type === "redemption" ? "código do pedido" : type === "fanClub" ? "id do fã-clube" : "id"}
           describedBy={problem ? "alvo-problema" : undefined}
           invalid={Boolean(problem)}
           spellCheck={false}

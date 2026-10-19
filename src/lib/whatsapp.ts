@@ -1,9 +1,10 @@
 /**
  * O WhatsApp do fã nos pedidos da loja (seção 35 da nota do app,
- * `docs/arquitetura-api.md`). O número chega do `getRedemptionContacts` no
- * formato guardado, o celular brasileiro em E.164 (`+5575991234567`), e o
- * painel confere de novo antes de mostrar e de montar o link, como as redes
- * do perfil: fora do formato, não aparece. O link abre a conversa no WhatsApp
+ * `docs/arquitetura-api.md`) e na ficha da candidatura a fã-clube (seção 34).
+ * O número chega do `getRedemptionContacts` ou do contato do fã no formato
+ * guardado, o celular brasileiro em E.164 (`+5575991234567`), e o painel
+ * confere de novo antes de mostrar e de montar o link, como as redes do
+ * perfil: fora do formato, não aparece. O link abre a conversa no WhatsApp
  * (`https://wa.me/<dígitos>`) com uma mensagem pronta, que a pessoa da equipe
  * pode mudar antes de mandar. Nada aqui guarda o número.
  */
@@ -43,11 +44,22 @@ export function whatsappMessage(code: string): string {
   return `Olá! Aqui é a equipe do ImagineUP, sobre o seu resgate ${code}.`;
 }
 
+/** A mensagem pronta da conversa com o candidato a fã-clube (seção 34 da nota do app), com o nome proposto. */
+export function fanClubWhatsappMessage(clubName: string): string {
+  return `Olá! Aqui é a equipe do ImagineUP, sobre a sua candidatura ao fã-clube ${clubName}.`;
+}
+
 /**
- * O link que abre a conversa (`https://wa.me/5575991234567?text=...`), com o
- * domínio fixo e o número conferido de novo; fora do formato, `null`.
+ * O link que abre a conversa (`https://wa.me/5575991234567?text=...`) com uma
+ * mensagem pronta, com o domínio fixo e o número conferido de novo; fora do
+ * formato, `null`.
  */
-export function whatsappLink(value: unknown, code: string): string | null {
+export function whatsappChatLink(value: unknown, message: string): string | null {
   if (!isWhatsapp(value)) return null;
-  return `https://wa.me/${value.slice(1)}?text=${encodeURIComponent(whatsappMessage(code))}`;
+  return `https://wa.me/${value.slice(1)}?text=${encodeURIComponent(message)}`;
+}
+
+/** O link da conversa sobre um pedido da loja, com o código dele. */
+export function whatsappLink(value: unknown, code: string): string | null {
+  return whatsappChatLink(value, whatsappMessage(code));
 }

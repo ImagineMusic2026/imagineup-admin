@@ -71,13 +71,16 @@ export async function getArtistPrivate(artistId: string): Promise<ArtistPrivate 
 }
 
 /**
- * A central tem post ou show (rascunho inclusive)? O `deleteArtist` recusa
- * com `has-content`; a lixeira avisa antes, como no `has-fans`. Duas leituras.
+ * A central tem post ou show (rascunho inclusive), ou fã-clube ativo ou
+ * pausado (seção 34)? O `deleteArtist` recusa com `has-content`; a lixeira
+ * avisa antes, como no `has-fans`. Três leituras; a dos fã-clubes pede a seção
+ * Fã-clubes, que o admin (o único que apaga) tem pelo papel.
  */
 export async function artistHasContent(artistId: string): Promise<boolean> {
-  const [posts, events] = await Promise.all([
+  const [posts, events, fanClubs] = await Promise.all([
     readQuery(query(collection(db(), "posts"), where("artistId", "==", artistId), limit(1))),
     readQuery(query(collection(db(), "events"), where("artistIds", "array-contains", artistId), limit(1))),
+    readQuery(query(collection(db(), "fanClubs"), where("artistId", "==", artistId), where("status", "in", ["active", "paused"]), limit(1))),
   ]);
-  return !posts.empty || !events.empty;
+  return !posts.empty || !events.empty || !fanClubs.empty;
 }

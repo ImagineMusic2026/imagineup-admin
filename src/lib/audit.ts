@@ -1,4 +1,5 @@
-import { joinPt } from "@/lib/format";
+import { CLOSE_REASON_LABELS, REJECT_REASON_LABELS } from "@/lib/fan-clubs";
+import { formatDay, joinPt } from "@/lib/format";
 import { PROFILE_RESOLUTION_LABELS, type ProfileResolution } from "@/lib/moderation";
 import { ROLES, SECTION_IDS, isRole, isSectionId, sectionInfo, toDate, type SectionId } from "@/lib/staff";
 
@@ -92,6 +93,13 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "fan.email.lookup": { label: "Fã buscado por e-mail", section: "fans" },
   "fan.data.exported": { label: "Dados do fã exportados (LGPD)", section: "fans" },
   "fan.account.deleted": { label: "Conta do fã excluída (LGPD)", section: "fans" },
+  "fanClub.application.approved": { label: "Candidatura a fã-clube aprovada", section: "fanClubs" },
+  "fanClub.application.rejected": { label: "Candidatura a fã-clube recusada", section: "fanClubs" },
+  "fanClub.paused": { label: "Fã-clube pausado", section: "fanClubs" },
+  "fanClub.resumed": { label: "Fã-clube reativado", section: "fanClubs" },
+  "fanClub.closed": { label: "Fã-clube encerrado", section: "fanClubs" },
+  "fanClub.featured": { label: "Fã-clube em destaque", section: "fanClubs" },
+  "fanClub.unfeatured": { label: "Destaque do fã-clube tirado", section: "fanClubs" },
 };
 
 /** As seções do filtro, na ordem: Equipe e as do painel, mais "Outros". */
@@ -168,6 +176,7 @@ export function actorLabel(entry: Pick<AuditEntry, "actorUid" | "actorName">): s
 export const TARGET_TYPES = [
   "fan",
   "artist",
+  "fanClub",
   "post",
   "event",
   "comment",
@@ -184,6 +193,7 @@ export type TargetType = (typeof TARGET_TYPES)[number];
 export const TARGET_LABELS: Record<TargetType, string> = {
   fan: "Fã",
   artist: "Central",
+  fanClub: "Fã-clube",
   post: "Post",
   event: "Show",
   comment: "Comentário",
@@ -226,12 +236,19 @@ export function normalizeTargetId(type: TargetType, text: string): string {
   return value;
 }
 
+const TARGET_ORDER: TargetType[] = ["fan", "redemption", "reward", "comment", "post", "event", "fanClub", "artist", "mission", "achievement", "season", "invite", "staff"];
+
+/** Nas ações do fã-clube (34.8), o fã-clube vem antes do gestor (`fan`) e da central. */
+const FAN_CLUB_TARGET_ORDER: TargetType[] = ["fanClub", ...TARGET_ORDER.filter((type) => type !== "fanClub")];
+
 /** O alvo principal de uma entrada, para a coluna "Alvo", e quantos mais há. */
-export function primaryTarget(entry: Pick<AuditEntry, "targets" | "targetEmail" | "targetUid">): { target: Target | null; email: string | null; more: number } {
+export function primaryTarget(
+  entry: Pick<AuditEntry, "targets" | "targetEmail" | "targetUid"> & { action?: string },
+): { target: Target | null; email: string | null; more: number } {
   if (entry.targetEmail) {
     return { target: entry.targetUid ? { type: "staff", id: entry.targetUid } : null, email: entry.targetEmail, more: Math.max(0, entry.targets.length - 1) };
   }
-  const order: TargetType[] = ["fan", "redemption", "reward", "comment", "post", "event", "artist", "mission", "achievement", "season", "invite", "staff"];
+  const order = entry.action?.startsWith("fanClub.") ? FAN_CLUB_TARGET_ORDER : TARGET_ORDER;
   const parsed = entry.targets.map(parseTarget);
   for (const type of order) {
     const found = parsed.find((target) => target.type === type);
@@ -269,6 +286,24 @@ export interface AuditFilters {
 }
 
 export const EMPTY_FILTERS: AuditFilters = { period: "30", section: "", person: "", action: "", target: "" };
+
+/** O endereço dos Logs já filtrados por um alvo (`fanClub:<id>`), para o "Abrir nos Logs" de uma ficha. */
+export function logsHref(target: string): string {
+  return `/logs?alvo=${encodeURIComponent(target)}`;
+}
+
+/**
+ * Os filtros de quem chega pelo `logsHref`: o alvo conhecido e normalizado,
+ * com o período inteiro, porque a ficha quer a história toda. O alvo que não
+ * vale abre os Logs sem filtro.
+ */
+export function filtersFromLink(target: string | null): AuditFilters {
+  if (!target) return EMPTY_FILTERS;
+  const parsed = parseTarget(target);
+  const id = parsed.type ? normalizeTargetId(parsed.type, parsed.id) : "";
+  if (!parsed.type || !id || id.length > 200 || id.includes("/")) return EMPTY_FILTERS;
+  return { ...EMPTY_FILTERS, period: "all", target: `${parsed.type}:${id}` };
+}
 
 export type AuditPlan =
   | { kind: "all" }
@@ -452,6 +487,8 @@ const SKIPPED = new Set([
   "uid",
   "authorUid",
   "entryId",
+  "clubId",
+  "fanUid",
 ]);
 
 /**
@@ -516,8 +553,25 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
     if (typeof round === "number") lines.push(`Rodada: ${number(round)}`);
   }
 
+  if (entry.action.startsWith("fanClub.")) {
+    const round = take("round");
+    if (typeof round === "number" && round >= 1) lines.push(`Rodada: ${number(round)}`);
+    const nameChanged = take("nameChanged");
+    if (nameChanged === true) lines.push("Nome ajustado pela equipe");
+    if (nameChanged === false) lines.push("Nome proposto pelo fã");
+    const until = take("featuredUntil");
+    if (typeof until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(until)) lines.push(`Destaque até ${formatDay(until)}`);
+  }
+
   const reason = take("reason");
-  const reasonLabels = entry.action === "fan.username.reset" ? USERNAME_RESET_LABELS : SUSPENSION_LABELS;
+  const reasonLabels: Record<string, string> =
+    entry.action === "fan.username.reset"
+      ? USERNAME_RESET_LABELS
+      : entry.action === "fanClub.application.rejected"
+        ? REJECT_REASON_LABELS
+        : entry.action === "fanClub.closed"
+          ? CLOSE_REASON_LABELS
+          : SUSPENSION_LABELS;
   if (typeof reason === "string") lines.push(`Motivo: ${reasonLabels[reason] ?? reason}`);
   const note = take("note");
   if (typeof note === "string" && note) lines.push(`Nota: ${note}`);

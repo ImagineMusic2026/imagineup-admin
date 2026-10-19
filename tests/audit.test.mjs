@@ -14,13 +14,55 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 67);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 74);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
   assert.deepEqual(audit.actionsOfSection("fans"), ["wallet.adjusted", "fan.email.lookup", "fan.data.exported", "fan.account.deleted"]);
   assert.equal(audit.AUDIT_ACTIONS["fan.data.exported"].label, "Dados do fã exportados (LGPD)");
   assert.equal(audit.AUDIT_ACTIONS["fan.account.deleted"].label, "Conta do fã excluída (LGPD)");
+});
+
+test("o fã-clube nos Logs: as ações da etapa 1, o alvo, os detalhes e o endereço já filtrado", () => {
+  // As 7 ações que o servidor da etapa 1 grava (34.8 e 34.22), na seção Fã-clubes.
+  assert.deepEqual(audit.actionsOfSection("fanClubs"), [
+    "fanClub.application.approved",
+    "fanClub.application.rejected",
+    "fanClub.paused",
+    "fanClub.resumed",
+    "fanClub.closed",
+    "fanClub.featured",
+    "fanClub.unfeatured",
+  ]);
+  assert.equal(audit.auditSectionLabel("fanClubs"), "Fã-clubes");
+  assert.equal(audit.TARGET_LABELS.fanClub, "Fã-clube");
+
+  // Na ação do fã-clube, o alvo principal é o fã-clube; na suspensão que pausou, continua o fã.
+  const approved = { action: "fanClub.application.approved", targetEmail: "", targetUid: null, targets: ["fanClub:club1", "artist:netto", "fan:uidCamila"] };
+  assert.deepEqual(audit.primaryTarget(approved), { target: { type: "fanClub", id: "club1" }, email: null, more: 2 });
+  const suspended = { action: "fan.suspended", targetEmail: "", targetUid: "uidCamila", targets: ["fan:uidCamila", "fanClub:club1"] };
+  assert.deepEqual(audit.primaryTarget(suspended), { target: { type: "fan", id: "uidCamila" }, email: null, more: 1 });
+
+  assert.deepEqual(audit.detailLines({ action: "fanClub.application.approved", details: { clubId: "club1", artistId: "netto", fanUid: "u1", round: 2, nameChanged: true } }), [
+    "Rodada: 2",
+    "Nome ajustado pela equipe",
+  ]);
+  assert.deepEqual(audit.detailLines({ action: "fanClub.application.rejected", details: { artistId: "netto", fanUid: "u1", round: 1, reason: "image_rights" } }), [
+    "Rodada: 1",
+    "Motivo: Uso de imagem",
+  ]);
+  assert.deepEqual(audit.detailLines({ action: "fanClub.closed", details: { clubId: "club1", artistId: "netto", fanUid: "u1", reason: "owner_request" } }), ["Motivo: A pedido do gestor"]);
+  assert.deepEqual(audit.detailLines({ action: "fanClub.paused", details: { clubId: "club1", artistId: "netto", fanUid: null } }), []);
+  assert.deepEqual(audit.detailLines({ action: "fanClub.featured", details: { clubId: "club1", featuredUntil: "2026-11-02" } }), ["Destaque até 2 nov"]);
+  // A suspensão leva o `clubId` do fã-clube que pausou: vira alvo, e não linha.
+  assert.deepEqual(audit.detailLines({ action: "fan.suspended", details: { reason: "spam", clubId: "club1" } }), ["Motivo: Spam"]);
+
+  assert.equal(audit.logsHref("fanClub:club1"), "/logs?alvo=fanClub%3Aclub1");
+  assert.deepEqual(audit.filtersFromLink("fanClub:club1"), { ...audit.EMPTY_FILTERS, period: "all", target: "fanClub:club1" });
+  assert.deepEqual(audit.filtersFromLink("artist:@Netto"), { ...audit.EMPTY_FILTERS, period: "all", target: "artist:netto" });
+  for (const bad of [null, "", "sem-tipo", "planeta:x", "fanClub:", "fanClub:a/b"]) {
+    assert.deepEqual(audit.filtersFromLink(bad), audit.EMPTY_FILTERS, String(bad));
+  }
 });
 
 test("rótulos com as variantes e a ação desconhecida crua", () => {

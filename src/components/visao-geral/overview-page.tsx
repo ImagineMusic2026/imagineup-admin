@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 
+import { FanClubsWaitingCard } from "@/components/fa-clubes/waiting-card";
 import { DataFreshness, useTodayStats, type TodayState } from "@/components/painel/data-freshness";
 import { PageHeader } from "@/components/painel/page-header";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
@@ -20,6 +21,8 @@ import { countLabel, formatDayRange, formatDelta, formatNumber, formatPoints, fo
 import { createGameNamesReader } from "@/lib/game-names-data";
 import { engagementOf, overviewNumbers, overviewSpan, previousLabel, type Comparison, type OverviewNumbers } from "@/lib/overview";
 import { lastClosedAt, seriesByDay, sourceLabel, type StatsDay } from "@/lib/stats";
+import { canSeeSection } from "@/lib/staff";
+import { useStaffMember } from "@/lib/staff-context";
 import { getStatsDays, type StatsRead } from "@/lib/stats-data";
 
 interface OverviewData {
@@ -54,16 +57,25 @@ export function OverviewPage() {
   const load = useCallback(() => loadOverview(period, now), [period, now]);
   const { state, reload, reloading, loadedAt, refreshError } = useLoad(load);
   const today = useTodayStats();
+  // "Aguardando a equipe" (34.10, item 9): só com a seção Fã-clubes, e o "Atualizar" lê o cartão de novo.
+  const member = useStaffMember();
+  const [waitingRound, setWaitingRound] = useState(0);
+  const waiting = canSeeSection(member, "fanClubs") ? <FanClubsWaitingCard round={waitingRound} /> : null;
 
   const data = state.status === "ready" ? state.data : null;
   const nowDate = new Date(now);
+
+  function refresh() {
+    reload();
+    setWaitingRound((value) => value + 1);
+  }
 
   return (
     <>
       <PageHeader
         title="Visão geral"
         subtitle="Números fechados até ontem."
-        actions={<RefreshButton onClick={reload} busy={reloading} loadedAt={loadedAt} />}
+        actions={<RefreshButton onClick={refresh} busy={reloading} loadedAt={loadedAt} />}
       />
 
       <div className="flex flex-col gap-3">
@@ -82,13 +94,19 @@ export function OverviewPage() {
       {refreshError ? <Notice tone="error">Não deu para atualizar: {refreshError}</Notice> : null}
 
       {state.status === "error" ? (
-        <SectionCard id="titulo-visao-geral" title="Números do período">
-          <LoadError message={state.message} headingId="titulo-visao-geral" onRetry={reload} />
-        </SectionCard>
+        <>
+          <SectionCard id="titulo-visao-geral" title="Números do período">
+            <LoadError message={state.message} headingId="titulo-visao-geral" onRetry={reload} />
+          </SectionCard>
+          {waiting}
+        </>
       ) : data && data.read.state.kind === "not-started" ? (
-        <Notice tone="info">Os números ainda não começaram: o fechamento espera a carga dos cadastros.</Notice>
+        <>
+          <Notice tone="info">Os números ainda não começaram: o fechamento espera a carga dos cadastros.</Notice>
+          {waiting}
+        </>
       ) : (
-        <OverviewContent data={data} period={period} now={nowDate} today={today} />
+        <OverviewContent data={data} period={period} now={nowDate} today={today} waiting={waiting} />
       )}
     </>
   );
@@ -99,11 +117,14 @@ function OverviewContent({
   period,
   now,
   today,
+  waiting,
 }: {
   data: OverviewData | null;
   period: PeriodDays;
   now: Date;
   today: { state: TodayState; day: StatsDay | null };
+  /** O cartão "Aguardando a equipe", no topo da coluna da direita. */
+  waiting: React.ReactNode;
 }) {
   const numbers = data?.numbers ?? null;
   const loading = !numbers;
@@ -187,6 +208,7 @@ function OverviewContent({
           <SourcesCard numbers={numbers} />
         </div>
         <div className="flex min-w-0 flex-col gap-6">
+          {waiting}
           <EngagementCard numbers={numbers} period={period} />
           <StoreCard numbers={numbers} />
           <MissionsCard data={data} />

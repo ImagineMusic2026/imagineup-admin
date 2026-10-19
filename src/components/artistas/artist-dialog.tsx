@@ -29,6 +29,8 @@ import {
   cleanHandleInput,
   createArtistInput,
   emptyArtistForm,
+  fanClubBoxShown,
+  fanClubBoxesText,
   formatFans,
   handleStatusFromCheck,
   handleStatusText,
@@ -42,6 +44,7 @@ import {
   normalizeArtistForm,
   pickPrivateFields,
   publishBlockedText,
+  savedFanClubBoxes,
   shouldCheckHandle,
   suggestHandle,
   validateArtistForm,
@@ -335,6 +338,7 @@ function ArtistDetails({ artist, onClose }: { artist: ArtistEntry; onClose: () =
               <Detail term="Autorização de uso de imagem">
                 {internalValue(internal?.imageRightsConfirmed ? "Recebida" : "Ainda não recebida", "")}
               </Detail>
+              <Detail term="Fã-clubes">{internalValue(internal ? fanClubBoxesText(internal) : null, "")}</Detail>
               <Detail term="E-mail de contato">{internalValue(internal?.email, "Sem e-mail")}</Detail>
               <Detail term="Celular de contato">{internalValue(internal?.phone, "Sem celular")}</Detail>
             </dl>
@@ -664,7 +668,9 @@ function ArtistForm({
     let failure: unknown;
     try {
       const { artistId: id } = await createArtist(createArtistInput(form));
-      return { ok: true, id, serverForm: form };
+      // O createArtist não recebe as caixas do fã-clube: a central nasce sem
+      // elas, e a caixa mexida vai no updateArtist do passo seguinte.
+      return { ok: true, id, serverForm: { ...form, fanClubsEnabled: null, fanClubsPhotos: null } };
     } catch (error) {
       failure = error;
     }
@@ -791,7 +797,7 @@ function ArtistForm({
       }
       savedSomething = true;
       const before = server.current.form;
-      server.current.form = includePrivate ? form : { ...form, ...pickPrivateFields(before) };
+      server.current.form = includePrivate ? { ...form, ...savedFanClubBoxes(before, form, changes.fanClubs) } : { ...form, ...pickPrivateFields(before) };
       if (photoChange) {
         server.current.hasPhoto = Boolean(photoChange.photo);
         server.current.savedPhoto = photoChange.source;
@@ -1124,6 +1130,27 @@ function ArtistForm({
               {privateState === "loading" ? " Carregando..." : privateState === "error" ? " Não carregou. Salvar não muda a autorização." : ""}
             </p>
           </div>
+
+          <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0" aria-describedby={`${ids}-fa-clubes`}>
+            <legend className="mb-1 p-0 text-[13px] font-semibold text-fg/85">Fã-clubes</legend>
+            <Checkbox
+              label="Aceita fã-clubes"
+              checked={fanClubBoxShown(values.fanClubsEnabled, values.imageRightsConfirmed)}
+              onChange={(event) => update("fanClubsEnabled", event.target.checked)}
+              disabled={disabled || !privateReady}
+            />
+            <Checkbox
+              label="Fãs podem postar fotos deste artista"
+              checked={fanClubBoxShown(values.fanClubsPhotos, values.imageRightsConfirmed)}
+              onChange={(event) => update("fanClubsPhotos", event.target.checked)}
+              disabled={disabled || !privateReady}
+            />
+            <p id={`${ids}-fa-clubes`} className="m-0 pl-[28px] text-[12.5px] leading-snug text-fg/60">
+              Ligadas para toda central com a autorização de uso de imagem, e só valem com ela. Desligar a primeira fecha a candidatura e esconde do
+              app os fã-clubes do artista; a segunda fecha só os envios novos de foto.
+              {privateState === "loading" ? " Carregando..." : privateState === "error" ? " Não carregou. Salvar não muda as caixas." : ""}
+            </p>
+          </fieldset>
         </div>
       </div>
 

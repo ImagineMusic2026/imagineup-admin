@@ -30,11 +30,15 @@ const editor = { role: "editor", sections: ["missions", "fans"], status: "active
 const viewer = { role: "viewer", sections: ["audit", "growth"], status: "active" };
 
 test("as seções seguem a ordem e as rotas do contrato", () => {
-  assert.deepEqual(SECTION_IDS, ["overview", "growth", "ranking", "fans", "artists", "missions", "rewards", "moderation", "audit"]);
+  // A `fanClubs` (seção 34, decisão 5) fica ao lado de Fãs e de Artistas, na mesma ordem do servidor.
+  assert.deepEqual(SECTION_IDS, ["overview", "growth", "ranking", "fans", "artists", "fanClubs", "missions", "rewards", "moderation", "audit"]);
   assert.deepEqual(
     SECTIONS.map((section) => section.route),
-    ["/", "/crescimento", "/ranking", "/fas", "/artistas", "/missoes", "/recompensas", "/moderacao", "/logs"],
+    ["/", "/crescimento", "/ranking", "/fas", "/artistas", "/fa-clubes", "/missoes", "/recompensas", "/moderacao", "/logs"],
   );
+  const fanClubs = SECTIONS.find((section) => section.id === "fanClubs");
+  assert.equal(fanClubs.label, "Fã-clubes");
+  assert.equal(fanClubs.group, "community");
 });
 
 test("admin vê todas as seções, mesmo com a lista vazia no documento", () => {

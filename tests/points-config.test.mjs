@@ -94,8 +94,12 @@ test("o level-in-use lista as conquistas que pedem o degrau que sai", () => {
 });
 
 test("os tetos novos na ordem do servidor, com o padrão dele na chave ausente ou fora da regra", () => {
-  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-3), ["photo_upload", "profile_save", "name_change"]);
-  assert.equal(points.ACTION_CAP_KEYS.length, 13);
+  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-4), ["photo_upload", "profile_save", "name_change", "fanclub_apply"]);
+  assert.equal(points.ACTION_CAP_KEYS.length, 14);
+  // As candidaturas a fã-clube (seção 34, decisão 11): 3 por dia no servidor.
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_apply, "Candidaturas a fã-clube");
+  assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_apply, 3);
+  assert.equal(CONFIG.actionCaps.fanclub_apply, 3);
   assert.equal(points.ACTION_CAP_LABELS.photo_upload, "Envios de foto");
   assert.equal(points.ACTION_CAP_LABELS.profile_save, "Salvamentos do perfil");
   assert.equal(points.ACTION_CAP_LABELS.name_change, "Trocas de nome");

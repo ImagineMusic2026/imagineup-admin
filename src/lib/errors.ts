@@ -84,7 +84,7 @@ export const REASON_MESSAGES: Record<string, string> = {
   "unknown-artist": "A lista de centrais mudou enquanto você mexia. Confira a ordem e tente de novo.",
   "has-fans": "Essa central tem fãs. Tire do ar em vez de apagar.",
   "has-content":
-    "Essa central tem posts ou shows. Tire do ar em vez de apagar, ou apague antes os rascunhos que nunca foram ao ar.",
+    "Essa central tem posts, shows ou fã-clubes ativos ou pausados. Tire do ar em vez de apagar, ou apague antes os rascunhos que nunca foram ao ar e encerre os fã-clubes.",
   // Acesso (todas as callables do painel)
   "not-staff": "Só a equipe ativa do painel pode fazer isso.",
   "no-section": "Seu acesso ao painel não permite fazer isso nesta seção.",
@@ -175,6 +175,12 @@ export const REASON_MESSAGES: Record<string, string> = {
   "fan-is-staff": "Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta.",
   "export-daily-limit": "Você chegou ao limite de 20 exportações de dados hoje.",
   "deletion-daily-limit": "Você chegou ao limite de 5 exclusões de conta hoje.",
+  // Fã-clubes (34.3, as frases do servidor, de reserva)
+  "fan-club-not-found": "Esse fã-clube não existe mais.",
+  "application-not-found": "Essa candidatura não existe mais.",
+  "stale-decision": "Isso mudou desde que a tela abriu. Abra de novo.",
+  "artist-not-open": "O artista está fora do ar ou não aceita fã-clubes.",
+  "owner-suspended": "O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.",
 };
 
 /** O `details.reason` de um erro, ou `null`. */

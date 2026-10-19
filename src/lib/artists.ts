@@ -87,6 +87,15 @@ export interface Artist {
   updatedAt: Date | null;
 }
 
+/**
+ * As caixas do fã-clube como estão gravadas (seção 34 da nota do app, decisão
+ * 9): `null` sem a caixa, que então segue a autorização de uso de imagem.
+ */
+export interface StoredFanClubBoxes {
+  enabled: boolean | null;
+  photosAllowed: boolean | null;
+}
+
 /** `artistPrivate/{id}`: o que só a equipe vê. */
 export interface ArtistPrivate {
   email: string | null;
@@ -94,6 +103,8 @@ export interface ArtistPrivate {
   managerUid: string | null;
   managerName: string | null;
   imageRightsConfirmed: boolean;
+  /** "Aceita fã-clubes" e "Fãs podem postar fotos deste artista", como gravadas. */
+  fanClubs: StoredFanClubBoxes;
   createdBy: string;
   updatedBy: string;
   updatedAt: Date | null;
@@ -172,14 +183,20 @@ export function parseArtist(id: string, data: Record<string, unknown>): Artist {
   };
 }
 
+function storedBox(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 /** Documento `artistPrivate/{id}`. A autorização só vale com `true` de verdade. */
 export function parseArtistPrivate(data: Record<string, unknown>): ArtistPrivate {
+  const boxes = data.fanClubs && typeof data.fanClubs === "object" && !Array.isArray(data.fanClubs) ? (data.fanClubs as Record<string, unknown>) : {};
   return {
     email: textOrNull(data.email),
     phone: textOrNull(data.phone),
     managerUid: textOrNull(data.managerUid),
     managerName: textOrNull(data.managerName),
     imageRightsConfirmed: data.imageRightsConfirmed === true,
+    fanClubs: { enabled: storedBox(boxes.enabled), photosAllowed: storedBox(boxes.photosAllowed) },
     createdBy: text(data.createdBy),
     updatedBy: text(data.updatedBy),
     updatedAt: toDate(data.updatedAt),
@@ -443,6 +460,10 @@ export interface ArtistFormValues {
   imageRightsConfirmed: boolean;
   contactEmail: string;
   contactPhone: string;
+  /** "Aceita fã-clubes": `null` segue a autorização (a caixa nunca gravada nem mexida). */
+  fanClubsEnabled: boolean | null;
+  /** "Fãs podem postar fotos deste artista", do mesmo jeito. */
+  fanClubsPhotos: boolean | null;
 }
 
 export type ArtistFormField = "name" | "handle" | "shortName" | "genre" | "city" | "bio" | "contactEmail" | "contactPhone";
@@ -462,6 +483,8 @@ export function emptyArtistForm(managerUid: string): ArtistFormValues {
     imageRightsConfirmed: false,
     contactEmail: "",
     contactPhone: "",
+    fanClubsEnabled: null,
+    fanClubsPhotos: null,
   };
 }
 
@@ -483,6 +506,8 @@ export function artistFormFromArtist(artist: Artist, internal: ArtistPrivate | n
     imageRightsConfirmed: internal?.imageRightsConfirmed === true,
     contactEmail: internal?.email ?? "",
     contactPhone: internal?.phone ?? "",
+    fanClubsEnabled: internal?.fanClubs.enabled ?? null,
+    fanClubsPhotos: internal?.fanClubs.photosAllowed ?? null,
   };
 }
 
@@ -572,6 +597,8 @@ export interface NormalizedArtistForm {
   imageRightsConfirmed: boolean;
   contactEmail: string | null;
   contactPhone: string | null;
+  fanClubsEnabled: boolean | null;
+  fanClubsPhotos: boolean | null;
 }
 
 /** Valores como vão para o servidor: texto limpo e `null` no que ficou vazio. */
@@ -591,6 +618,8 @@ export function normalizeArtistForm(values: ArtistFormValues): NormalizedArtistF
     imageRightsConfirmed: values.imageRightsConfirmed,
     contactEmail: email || null,
     contactPhone: phone || null,
+    fanClubsEnabled: values.fanClubsEnabled,
+    fanClubsPhotos: values.fanClubsPhotos,
   };
 }
 
@@ -620,6 +649,8 @@ export interface UpdateArtistInput {
   imageRightsConfirmed?: boolean;
   contactEmail?: string | null;
   contactPhone?: string | null;
+  /** As caixas do fã-clube que mudam (decisão 9): só a mandada é gravada, com o `merge` que não apaga a outra. */
+  fanClubs?: { enabled?: boolean; photosAllowed?: boolean };
   /** Os dois caminhos no Storage, ou `null` para tirar a foto. */
   photo?: ArtistPhotoPaths | null;
 }
@@ -646,15 +677,19 @@ export function createArtistInput(form: NormalizedArtistForm): CreateArtistInput
 
 /** Campos que o servidor grava no documento público. */
 const PUBLIC_FIELDS = ["name", "shortName", "genre", "city", "bio", "verified"] as const;
-/** Campos que o servidor grava no `artistPrivate`. */
+/** Campos que o servidor grava no `artistPrivate`, um a um. */
 export const PRIVATE_FIELDS = ["managerUid", "imageRightsConfirmed", "contactEmail", "contactPhone"] as const;
 
-export type PrivateField = (typeof PRIVATE_FIELDS)[number];
+/** As caixas do fã-clube, também no `artistPrivate`, mandadas juntas no `fanClubs` do pedido. */
+export const FAN_CLUB_BOX_FIELDS = ["fanClubsEnabled", "fanClubsPhotos"] as const;
+
+export type PrivateField = (typeof PRIVATE_FIELDS)[number] | (typeof FAN_CLUB_BOX_FIELDS)[number];
 
 /**
- * Só gestor, autorização e contato de um formulário (cru ou normalizado), para
- * trocar esses campos sem mexer no resto: quando o privado chega, e quando um
- * envio sem o privado carregado deixa o servidor com os valores de antes.
+ * Só gestor, autorização, contato e as caixas do fã-clube de um formulário
+ * (cru ou normalizado), para trocar esses campos sem mexer no resto: quando o
+ * privado chega, e quando um envio sem o privado carregado deixa o servidor
+ * com os valores de antes.
  */
 export function pickPrivateFields<T extends Record<PrivateField, unknown>>(form: T): Pick<T, PrivateField> {
   return {
@@ -662,7 +697,67 @@ export function pickPrivateFields<T extends Record<PrivateField, unknown>>(form:
     imageRightsConfirmed: form.imageRightsConfirmed,
     contactEmail: form.contactEmail,
     contactPhone: form.contactPhone,
+    fanClubsEnabled: form.fanClubsEnabled,
+    fanClubsPhotos: form.fanClubsPhotos,
   };
+}
+
+const BOX_KEYS = { fanClubsEnabled: "enabled", fanClubsPhotos: "photosAllowed" } as const;
+
+type BoxForm = Pick<NormalizedArtistForm, "imageRightsConfirmed" | "fanClubsEnabled" | "fanClubsPhotos">;
+
+/** O que a caixa do fã-clube mostra no diálogo (decisão 9): a gravada ou, sem ela, a autorização de imagem. */
+export function fanClubBoxShown(box: boolean | null, imageRightsConfirmed: boolean): boolean {
+  return box ?? imageRightsConfirmed;
+}
+
+/** O que a caixa vale para o fã: só com a autorização de imagem, e só o `false` gravado desliga. */
+export function fanClubBoxOpen(box: boolean | null, imageRightsConfirmed: boolean): boolean {
+  return imageRightsConfirmed && box !== false;
+}
+
+/**
+ * As caixas que vão no `fanClubs` do `updateArtist`, no molde do servidor
+ * (34.22): a caixa mexida na tela vai quando o valor dela difere do que o
+ * diálogo mostrava com a autorização de antes ou com a de depois do envio. Com
+ * a autorização trocada no mesmo salvamento, a caixa mexida é gravada, para
+ * valer o que a equipe escolheu. A caixa nunca mexida (`null`) não vai e
+ * segue a autorização.
+ */
+export function fanClubBoxChanges(before: BoxForm, after: BoxForm): { enabled?: boolean; photosAllowed?: boolean } | null {
+  const changes: { enabled?: boolean; photosAllowed?: boolean } = {};
+  for (const field of FAN_CLUB_BOX_FIELDS) {
+    const value = after[field];
+    if (value === null) continue;
+    const stored = before[field];
+    if (value !== fanClubBoxShown(stored, before.imageRightsConfirmed) || value !== fanClubBoxShown(stored, after.imageRightsConfirmed)) {
+      changes[BOX_KEYS[field]] = value;
+    }
+  }
+  return Object.keys(changes).length > 0 ? changes : null;
+}
+
+/**
+ * As caixas como o servidor guarda depois de um envio que deu certo: as que
+ * foram no pedido ficam gravadas; as outras, como estavam (a caixa que não
+ * mudou nada não é gravada, e segue a autorização).
+ */
+export function savedFanClubBoxes(
+  before: Pick<NormalizedArtistForm, "fanClubsEnabled" | "fanClubsPhotos">,
+  after: Pick<NormalizedArtistForm, "fanClubsEnabled" | "fanClubsPhotos">,
+  sent: { enabled?: boolean; photosAllowed?: boolean } | undefined,
+): Pick<NormalizedArtistForm, "fanClubsEnabled" | "fanClubsPhotos"> {
+  return {
+    fanClubsEnabled: sent?.enabled !== undefined ? after.fanClubsEnabled : before.fanClubsEnabled,
+    fanClubsPhotos: sent?.photosAllowed !== undefined ? after.fanClubsPhotos : before.fanClubsPhotos,
+  };
+}
+
+/** As caixas como valem para o fã, para a leitura do privado: "Aceita fã-clubes, com fotos dos fãs". */
+export function fanClubBoxesText(internal: Pick<ArtistPrivate, "imageRightsConfirmed" | "fanClubs">): string {
+  if (!internal.imageRightsConfirmed) return "Não aceita fã-clubes (falta a autorização de uso de imagem)";
+  if (!fanClubBoxOpen(internal.fanClubs.enabled, true)) return "Não aceita fã-clubes";
+  return fanClubBoxOpen(internal.fanClubs.photosAllowed, true) ? "Aceita fã-clubes, com fotos dos fãs" : "Aceita fã-clubes, só com texto";
 }
 
 /**
@@ -680,6 +775,8 @@ export function artistChanges(
   for (const field of fields) {
     if (before[field] !== after[field]) changes[field] = after[field];
   }
+  const boxes = includePrivate ? fanClubBoxChanges(before, after) : null;
+  if (boxes) changes.fanClubs = boxes;
   return changes as ArtistChanges;
 }
 

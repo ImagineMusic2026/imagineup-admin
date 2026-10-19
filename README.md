@@ -74,7 +74,7 @@ imagineup-admin/
     (painel)/                  tudo que fica atrás do login
       layout.tsx               AuthProvider, StaffProvider, guard e casca
       page.tsx                 Visão geral (/)
-      crescimento/ ranking/ fas/ artistas/ missoes/ recompensas/ moderacao/ logs/
+      crescimento/ ranking/ fas/ artistas/ fa-clubes/ missoes/ recompensas/ moderacao/ logs/
       equipe/                  equipe e convites (só admin)
   src/components/
     ui/                        botão, campos (texto, lista, interruptor), avisos, diálogo,
@@ -94,6 +94,8 @@ imagineup-admin/
     ranking/                   temporada atual e próxima, ranking ao vivo, temporadas passadas
     fas/                       lista e busca, a ficha com as abas e o ajuste de pontos
     missoes/                   missões e meta, conquistas, régua de pontos
+    fa-clubes/                 candidaturas e fã-clubes, as duas fichas, os diálogos das decisões
+                               e o cartão "Aguardando a equipe" da Visão geral
     recompensas/               pedidos (com os contatos), catálogo e números
     moderacao/                 fila, resolvidos, ocultos, suspensos e a página do fã
     logs/                      auditoria com os filtros e os detalhes
@@ -133,6 +135,7 @@ imagineup-admin/
     season.ts season-data.ts season-api.ts         Ranking e temporadas
     missions.ts achievements.ts points-config.ts   missões, conquistas e régua (puros)
     game-data.ts game-api.ts   leituras e callables de Missões e régua
+    fan-clubs.ts fan-club-data.ts fan-club-api.ts  Fã-clubes: candidaturas, fã-clubes e a decideFanClub
     rewards.ts reward-data.ts reward-api.ts        Recompensas e resgates
     moderation.ts moderation-data.ts               a Moderação (puro e leituras)
     posts.ts post-data.ts post-api.ts post-media.ts   o Mural (o vídeo e a capa no navegador)
@@ -163,7 +166,7 @@ O contrato das telas novas é a seção 26 de `imagineup-app/docs/arquitetura-ap
 - **Configuração versionada.** Régua, missões, conquistas e temporada levam o `version` lido como `expectedVersion`. O `config-changed` mostra "A configuração mudou enquanto você editava. Recarregue os dados, confira e salve de novo." com "Recarregar dados", que lê o documento de novo e refaz o formulário. Ações em sequência (ordem, "Arquivar encerradas") encadeiam a versão de cada resposta.
 - **Ids do painel.** `createReward`, `createPost` e `createEvent` recebem o id gerado no navegador (`doc(collection(...)).id`): a nova tentativa depois de uma resposta perdida não cria outro rascunho. A criação em passos (criar, enviar a mídia, gravar, publicar) retoma do passo que falhou. O `createMission` sem resposta é conferido em `config/missions/versions/{n}`.
 - **Lotes.** "Arquivar encerradas", "Recusar pedidos abertos" e "Ocultar todos os comentários" rodam uma chamada por vez, com o progresso, o botão de parar e o resumo (`batch.ts`, `BatchProgress`).
-- **Dados de fã.** Os contatos de um pedido (`getRedemptionContacts`: o nome, o @, o e-mail e, desde a seção 35 da nota do app, o WhatsApp) vivem só no diálogo: fechou, saem da memória, e nada vai para o armazenamento do navegador. O WhatsApp é conferido de novo (`src/lib/whatsapp.ts`) antes de virar o link `https://wa.me/<dígitos>`, com a mensagem do pedido; abrir o link deixa o endereço no histórico do navegador, como qualquer link. Quem denunciou um comentário nunca aparece.
+- **Dados de fã.** Os contatos de um pedido (`getRedemptionContacts`: o nome, o @, o e-mail e, desde a seção 35 da nota do app, o WhatsApp) vivem só no diálogo: fechou, saem da memória, e nada vai para o armazenamento do navegador. O WhatsApp é conferido de novo (`src/lib/whatsapp.ts`) antes de virar o link `https://wa.me/<dígitos>`, com a mensagem do pedido; abrir o link deixa o endereço no histórico do navegador, como qualquer link. Na ficha da candidatura a fã-clube, as redes, o texto de divulgação e o WhatsApp (do contato do fã) aparecem só para quem edita a seção, como as regras deixam, e também só vivem na tela. Quem denunciou um comentário nunca aparece.
 
 ### O que cada tela faz
 
@@ -174,7 +177,8 @@ O contrato das telas novas é a seção 26 de `imagineup-app/docs/arquitetura-ap
 - **Missões e régua** (`/missoes`): missões com a meta da temporada, filtros, alvo pela central, publicar, encerrar, arquivar e trazer de volta; conquistas; a régua em três blocos com "Salvar" próprio.
 - **Recompensas e resgates** (`/recompensas`): pedidos por situação com a busca pelo código e os contatos (com o WhatsApp e o link da conversa); o catálogo com foto, estoque e ordem; os números do período.
 - **Moderação** (`/moderacao` e `/moderacao/fas/[uid]`): a fila, os resolvidos, os ocultos e os suspensos; na página do fã, suspender, ocultar em lote, trocar o @ e tirar a foto.
-- **Logs e auditoria** (`/logs`): as entradas com os filtros por período, seção, pessoa, ação e alvo, e os detalhes de cada uma.
+- **Fã-clubes** (`/fa-clubes`, `/fa-clubes/candidaturas/[uid]` e `/fa-clubes/[id]`): as candidaturas em análise e as resolvidas, com Aprovar e Recusar na ficha; os fã-clubes, com Pausar, Reativar e Encerrar (só admin) na ficha. Detalhes em "Fã-clubes", abaixo.
+- **Logs e auditoria** (`/logs`): as entradas com os filtros por período, seção, pessoa, ação e alvo, e os detalhes de cada uma. O `?alvo=` do endereço (`/logs?alvo=fanClub:<id>`, o "Abrir nos Logs" de uma ficha) abre já filtrado pelo alvo, no período inteiro.
 - **Artistas** (`/artistas`, `/artistas/mural`, `/artistas/agenda`): as centrais; o mural com a mídia e os comentários; a agenda com o fuso de cada show.
 
 ## Artistas e centrais
@@ -192,6 +196,20 @@ Cada central tem dois documentos com o mesmo id. `artists/{id}` é o que o app m
 - **Apagar.** Só admin vê a lixeira, em todas as linhas de "Rascunhos" e de "Todas as centrais", e ela vale para central em qualquer status. A confirmação é vermelha, e a de central no ar avisa que ela sai do app na hora. O servidor apaga os dois documentos, a reserva do @ e todos os arquivos de `artists/{id}/`. Central com fãs (`fanCount > 0`) não é apagada: a lixeira fica com `aria-disabled` e o clique mostra na linha "Essa central tem fãs. Tire do ar em vez de apagar.", a mesma regra do servidor (`has-fans`). Depois de apagar, o aviso vai para o topo da lista e o foco para o título dela.
 - **Avisos.** O resultado de cada ação aparece onde ela aconteceu: na linha da central, no topo da lista (quando a linha saiu dela) ou no topo da página (criar). O leitor de tela ouve pelas regiões vivas do topo da página.
 - **Edição.** Só o que mudou vai para o `updateArtist`, que grava cada campo no documento certo. Gestor, autorização e contato vêm do privado que a lista já trouxe; se ele ainda não chegou, é lido uma vez ao abrir, e até lá esses campos ficam travados. Se a leitura falhar, salvar não mexe neles e "Salvar e publicar" não publica. O gestor vem da equipe ativa para admin; para editor, as regras não deixam listar `staff`, então aparecem só a própria pessoa e o gestor atual.
+
+## Fã-clubes
+
+O fã-clube gerido pelo fã é a seção 34 de `imagineup-app/docs/arquitetura-api.md`: o fã pede o fã-clube de um artista nos Ajustes do app, e a equipe aprova. Esta seção é o Painel A, só com o que o servidor da etapa 1 entrega (34.14 e 34.22). Publicações, denúncias, Destaque, números, seguidores e prêmio ficam para o Painel B, com as etapas 2 a 5 do servidor.
+
+- **Quem mexe.** A seção `fanClubs` (Fã-clubes, grupo Comunidade). O editor com a seção aprova, recusa, pausa e reativa; só o admin encerra; o Leitor vê tudo sem botões. Ninguém decide a própria candidatura nem o próprio fã-clube (`self`). Tudo passa pela callable `decideFanClub` (`src/lib/fan-club-api.ts`), uma só, com a auditoria na mesma transação.
+- **O estado que a tela mostrou.** Cada decisão manda o `expected` (a rodada e o `submittedAt` da candidatura, em ms; o status do fã-clube). Diferente do de agora, o servidor recusa com `stale-decision`: o diálogo mostra a frase, tira o botão de confirmar e a ficha lê de novo ao fechar. A mesma decisão já tomada responde `ok` sem gravar, então a falha incerta trava os campos e "Tentar de novo" repete o mesmo pedido.
+- **Candidaturas** (a aba padrão). As pendentes da mais antiga para a mais nova, com a contagem por `count()` e o filtro por central (uma, todas, ou "Centrais que eu cuido", pelo `artistPrivate.managerUid`, só com a seção Artistas, até 30 centrais pelo `in`); embaixo, as resolvidas de um status (aprovadas, recusadas ou retiradas), da decisão mais nova. Cada linha traz a foto, o nome e o @ (cópias), a central, o nome proposto, a rodada e há quanto tempo espera.
+- **Ficha da candidatura.** A central, o nome proposto, a situação, a rodada, o envio, a decisão, o aceite das regras e a declaração de 18 anos; para quem edita, as redes como links montados pelo painel, o WhatsApp do contato do fã (`users/{uid}/contact/main`, lido só com a candidatura existindo, como a regra pede) com o link `wa.me` e o texto de divulgação até a aprovação; as rodadas pelo `history`; os atalhos para a ficha do fã e a Moderação, para quem tem essas seções. Aprovar confirma ou ajusta o nome (3 a 40; a palavra "oficial" e o filtro ficam com o servidor, que recusa com o motivo embaixo do campo); Recusar pede o motivo da lista.
+- **Fã-clubes.** A lista de um status (ativos, pausados ou encerrados), com a central opcional, da aprovação mais nova (os índices `status, approvedAt` e `artistId, status, approvedAt`). A ficha mostra a situação com o motivo, o gestor (com os atalhos), a aprovação, a pausa e o encerramento, a candidatura do gestor e o "Abrir nos Logs" (com a seção Logs). Encerrar pergunta quem pediu: a equipe (o fã nunca mais se candidata) ou o gestor (ele volta depois de 30 dias numa rodada 1 nova).
+- **Visão geral.** O cartão "Aguardando a equipe", só para quem vê a seção, com as candidaturas em análise: o alarme possível sem notificação, para o prazo de até 24 horas úteis.
+- **Artistas.** No diálogo da central, "Aceita fã-clubes" e "Fãs podem postar fotos deste artista" (`artistPrivate.fanClubs`), ao lado da autorização de uso de imagem: sem a caixa gravada, ela segue a autorização, e só vale com ela. O `updateArtist` recebe só a caixa mexida que muda o que o diálogo mostrava com a autorização de antes ou com a de depois do envio, no molde do servidor; o `createArtist` não recebe as caixas, então a caixa mexida numa central nova vai no passo do `updateArtist`. A lixeira avisa antes da recusa `has-content` também com o fã-clube ativo ou pausado.
+- **Rótulos.** As 7 ações da etapa 1 nos Logs (`fanClub.*`), o alvo `fanClub` (o gestor vai como `fan`), o teto "Candidaturas a fã-clube" (`fanclub_apply`) na régua e a frase da suspensão, que agora também pausa o fã-clube do fã.
+- **Ordem.** O merge do painel vem depois da publicação do servidor do fã-clube (34.15, passo 7): antes dela, a seção, as coleções e a `decideFanClub` não existem no ar.
 
 ## Publicação (Vercel)
 
