@@ -1,5 +1,6 @@
 import { call } from "@/lib/callable";
-import type { RewardInput, RewardPatch } from "@/lib/rewards";
+import { CODE_PATTERN, type RewardInput, type RewardPatch } from "@/lib/rewards";
+import { isWhatsapp } from "@/lib/whatsapp";
 
 /**
  * Callables da loja (25.8), para admin e editor com `rewards`. Todas gravam
@@ -52,9 +53,48 @@ export interface RedemptionContact {
   name: string | null;
   username: string | null;
   email: string | null;
+  /**
+   * O WhatsApp de agora do fã (seção 35 da nota do app), em E.164, ou `null`:
+   * o fã que só resgatou pelo app de antes, a conta que saiu, ou o servidor de
+   * antes da seção 35, que não manda o campo.
+   */
+  whatsapp: string | null;
 }
 
-/** O nome, o @ e o e-mail de agora de quem fez os pedidos abertos (até 50; fica na auditoria). */
-export function getRedemptionContacts(redemptionIds: string[]): Promise<{ contacts: RedemptionContact[] }> {
-  return call("getRedemptionContacts", { redemptionIds });
+const textOrNull = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
+
+/**
+ * Um contato da resposta, com o que falta valendo `null` e o WhatsApp
+ * conferido de novo. O código fora do formato do pedido vira "" e o contato
+ * sai da lista: ele entraria no texto do link da conversa.
+ */
+export function parseRedemptionContact(raw: unknown): RedemptionContact {
+  const data = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  return {
+    redemptionId: typeof data.redemptionId === "string" && CODE_PATTERN.test(data.redemptionId) ? data.redemptionId : "",
+    name: textOrNull(data.name),
+    username: textOrNull(data.username),
+    email: textOrNull(data.email),
+    whatsapp: isWhatsapp(data.whatsapp) ? data.whatsapp : null,
+  };
+}
+
+/**
+ * A conta que saiu do Auth: o servidor devolve o contato com tudo `null`. Uma
+ * conta que existe sem e-mail (o login sem e-mail que o bloco B pode trazer)
+ * não é excluída: o diálogo mostra "Sem e-mail" e o WhatsApp dela.
+ */
+export function isDeletedContact(contact: RedemptionContact): boolean {
+  return contact.name === null && contact.username === null && contact.email === null && contact.whatsapp === null;
+}
+
+/**
+ * O nome, o @, o e-mail e o WhatsApp de agora de quem fez os pedidos abertos
+ * (até 50; fica na auditoria, sem os contatos). O resultado vive só no
+ * diálogo que o pediu.
+ */
+export async function getRedemptionContacts(redemptionIds: string[]): Promise<{ contacts: RedemptionContact[] }> {
+  const result = await call<{ redemptionIds: string[] }, { contacts?: unknown }>("getRedemptionContacts", { redemptionIds });
+  const contacts = Array.isArray(result?.contacts) ? result.contacts : [];
+  return { contacts: contacts.map(parseRedemptionContact).filter((contact) => contact.redemptionId !== "") };
 }

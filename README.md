@@ -163,7 +163,7 @@ O contrato das telas novas é a seção 26 de `imagineup-app/docs/arquitetura-ap
 - **Configuração versionada.** Régua, missões, conquistas e temporada levam o `version` lido como `expectedVersion`. O `config-changed` mostra "A configuração mudou enquanto você editava. Recarregue os dados, confira e salve de novo." com "Recarregar dados", que lê o documento de novo e refaz o formulário. Ações em sequência (ordem, "Arquivar encerradas") encadeiam a versão de cada resposta.
 - **Ids do painel.** `createReward`, `createPost` e `createEvent` recebem o id gerado no navegador (`doc(collection(...)).id`): a nova tentativa depois de uma resposta perdida não cria outro rascunho. A criação em passos (criar, enviar a mídia, gravar, publicar) retoma do passo que falhou. O `createMission` sem resposta é conferido em `config/missions/versions/{n}`.
 - **Lotes.** "Arquivar encerradas", "Recusar pedidos abertos" e "Ocultar todos os comentários" rodam uma chamada por vez, com o progresso, o botão de parar e o resumo (`batch.ts`, `BatchProgress`).
-- **Dados de fã.** Os contatos de um pedido (`getRedemptionContacts`) vivem só no diálogo: fechou, saem da memória. Quem denunciou um comentário nunca aparece.
+- **Dados de fã.** Os contatos de um pedido (`getRedemptionContacts`: o nome, o @, o e-mail e, desde a seção 35 da nota do app, o WhatsApp) vivem só no diálogo: fechou, saem da memória, e nada vai para o armazenamento do navegador. O WhatsApp é conferido de novo (`src/lib/whatsapp.ts`) antes de virar o link `https://wa.me/<dígitos>`, com a mensagem do pedido; abrir o link deixa o endereço no histórico do navegador, como qualquer link. Quem denunciou um comentário nunca aparece.
 
 ### O que cada tela faz
 
@@ -172,7 +172,7 @@ O contrato das telas novas é a seção 26 de `imagineup-app/docs/arquitetura-ap
 - **Ranking e temporadas** (`/ranking`): a temporada atual e a próxima, o ranking ao vivo (`getPanelRanking`), as passadas com o pódio, encerrar e rodar a virada.
 - **Fãs** (`/fas` e `/fas/[uid]`): lista, busca por nome, @, código, uid e e-mail; a ficha com extrato, centrais, curtidas, presenças, comentários, convites e resgates; o ajuste de pontos.
 - **Missões e régua** (`/missoes`): missões com a meta da temporada, filtros, alvo pela central, publicar, encerrar, arquivar e trazer de volta; conquistas; a régua em três blocos com "Salvar" próprio.
-- **Recompensas e resgates** (`/recompensas`): pedidos por situação com a busca pelo código e os contatos; o catálogo com foto, estoque e ordem; os números do período.
+- **Recompensas e resgates** (`/recompensas`): pedidos por situação com a busca pelo código e os contatos (com o WhatsApp e o link da conversa); o catálogo com foto, estoque e ordem; os números do período.
 - **Moderação** (`/moderacao` e `/moderacao/fas/[uid]`): a fila, os resolvidos, os ocultos e os suspensos; na página do fã, suspender, ocultar em lote, trocar o @ e tirar a foto.
 - **Logs e auditoria** (`/logs`): as entradas com os filtros por período, seção, pessoa, ação e alvo, e os detalhes de cada uma.
 - **Artistas** (`/artistas`, `/artistas/mural`, `/artistas/agenda`): as centrais; o mural com a mídia e os comentários; a agenda com o fuso de cada show.
