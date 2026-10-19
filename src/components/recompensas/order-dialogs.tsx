@@ -1,5 +1,6 @@
 "use client";
 
+import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,9 @@ import { Notice } from "@/components/ui/notice";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { actionErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
 import { countLabel, formatNumber } from "@/lib/format";
-import { setRedemptionStatus, type RedemptionContact } from "@/lib/reward-api";
+import { isDeletedContact, setRedemptionStatus, type RedemptionContact } from "@/lib/reward-api";
 import { CONTACTS_AUDIT_TEXT, REFUSAL_REASON_MAX, RESTOCK_HINT, refundText, validateRefusal, type Redemption } from "@/lib/rewards";
+import { formatWhatsapp, whatsappLink } from "@/lib/whatsapp";
 
 /**
  * Recusar um pedido: o motivo opcional, que o fã vê, e a vaga de volta ao
@@ -108,8 +110,38 @@ function RefuseBody({ redemption, onClose, onDone, onUncertain }: { redemption: 
 export type ContactsState = { status: "loading" } | { status: "ready"; contacts: RedemptionContact[] } | { status: "error"; message: string };
 
 /**
- * Os contatos dos pedidos abertos escolhidos. Vivem só aqui: quem abriu
- * guarda o resultado enquanto o diálogo está aberto e joga fora ao fechar.
+ * O WhatsApp do fã (seção 35 da nota do app), com o link que abre a conversa
+ * em outra aba, já com a mensagem do pedido. Sem número (o fã só resgatou
+ * pelo app de antes), "Sem WhatsApp". A conta que saiu fica só com "Conta
+ * excluída", sem esta linha.
+ */
+function WhatsappContact({ contact }: { contact: RedemptionContact }) {
+  const number = formatWhatsapp(contact.whatsapp);
+  const href = whatsappLink(contact.whatsapp, contact.redemptionId);
+  if (!number || !href) return <span className="text-[13px] text-fg/55">Sem WhatsApp</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 self-start text-[13.5px] text-cyan underline-offset-2 hover:underline"
+    >
+      <span className="font-semibold">WhatsApp:</span>{" "}
+      {/* O número nunca corta: na coluna estreita, ele desce inteiro, com o ícone. */}
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        {number}
+        <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+      </span>
+      <span className="sr-only"> (abre a conversa em outra aba)</span>
+    </a>
+  );
+}
+
+/**
+ * Os contatos dos pedidos abertos escolhidos: o nome, o @, o e-mail e o
+ * WhatsApp com o link da conversa. Vivem só aqui: quem abriu guarda o
+ * resultado enquanto o diálogo está aberto e joga fora ao fechar, e nada vai
+ * para o armazenamento do navegador.
  */
 export function ContactsDialog({ request, onClose }: { request: { codes: string[]; state: ContactsState } | null; onClose: () => void }) {
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
@@ -155,7 +187,18 @@ export function ContactsDialog({ request, onClose }: { request: { codes: string[
                     {contact.name ?? "Sem nome"}
                     {contact.username ? <span className="text-fg/60"> · @{contact.username}</span> : null}
                   </span>
-                  <span className="min-w-0 break-all text-[13.5px] text-fg/90">{contact.email ?? <span className="text-fg/55">Conta excluída</span>}</span>
+                  {isDeletedContact(contact) ? (
+                    <span className="min-w-0 text-[13.5px] text-fg/55">Conta excluída</span>
+                  ) : (
+                    <span className="flex min-w-0 flex-col gap-1">
+                      {contact.email ? (
+                        <span className="break-all text-[13.5px] text-fg/90">{contact.email}</span>
+                      ) : (
+                        <span className="text-[13px] text-fg/55">Sem e-mail</span>
+                      )}
+                      <WhatsappContact contact={contact} />
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
