@@ -24,8 +24,17 @@ const { whatsappChatLink, fanClubWhatsappMessage, whatsappLink } = await import(
 
 const DASHES = /[–—]/;
 const sp = (local) => new Date(`${local}-03:00`);
-/** Um `Timestamp` do SDK do navegador: o `toDate` e os nanossegundos que o `toMillis` não arredonda. */
-const ts = (date) => ({ toDate: () => date });
+/**
+ * Um `Timestamp` do SDK do navegador: o `toMillis` leva a fração de ms dos
+ * nanossegundos (o Firestore guarda em µs), e o `toDate` a trunca, como o
+ * `toMillis` do Admin SDK que a `decideFanClub` compara.
+ */
+const ts = (date, extraNanos = 0) => {
+  const seconds = Math.floor(date.getTime() / 1e3);
+  const nanoseconds = (date.getTime() - seconds * 1e3) * 1e6 + extraNanos;
+  const toMillis = () => seconds * 1e3 + nanoseconds / 1e6;
+  return { seconds, nanoseconds, toMillis, toDate: () => new Date(toMillis()) };
+};
 
 test("a candidatura lida: os padrões do servidor, as cópias do perfil e o submittedAt em ms inteiros", () => {
   const submitted = sp("2026-10-19T10:00:00.250");
@@ -38,7 +47,7 @@ test("a candidatura lida: os padrões do servidor, as cópias do perfil e o subm
     rulesVersion: "termos-2026-10",
     rulesAcceptedAt: ts(submitted),
     adultDeclared: true,
-    submittedAt: ts(submitted),
+    submittedAt: ts(submitted, 999_000),
     decidedAt: null,
     decidedBy: null,
     rejectReason: null,
@@ -56,6 +65,8 @@ test("a candidatura lida: os padrões do servidor, as cópias do perfil e o subm
   });
   assert.equal(application.status, "pending");
   assert.equal(application.round, 2);
+  // O dublê leva os 0,999 ms a mais, e o painel manda os ms inteiros, como o servidor compara.
+  assert.equal(Number.isInteger(ts(submitted, 999_000).toMillis()), false);
   assert.equal(application.submittedAtMs, submitted.getTime());
   assert.equal(Number.isSafeInteger(application.submittedAtMs), true);
   assert.equal(application.adultDeclared, true);
@@ -87,8 +98,8 @@ test("o privado mostra só as redes no padrão, com o link de domínio fixo; o W
   assert.equal(model.parseContactWhatsapp({ whatsapp: "75991234567" }), null);
   assert.equal(model.parseContactWhatsapp(undefined), null);
 
-  const link = whatsappChatLink("+5575991234567", fanClubWhatsappMessage("Netto de Coração"));
-  assert.equal(link, `https://wa.me/5575991234567?text=${encodeURIComponent("Olá! Aqui é a equipe do ImagineUP, sobre a sua candidatura ao fã-clube Netto de Coração.")}`);
+  const link = whatsappChatLink("+5575991234567", fanClubWhatsappMessage("Netto Brito"));
+  assert.equal(link, `https://wa.me/5575991234567?text=${encodeURIComponent("Olá! Aqui é a equipe do ImagineUP, sobre a sua candidatura a fã-clube de Netto Brito.")}`);
   assert.equal(whatsappChatLink("+55 75 99123", "x"), null);
   // O link do pedido da loja continua o mesmo.
   assert.equal(whatsappLink("+5575991234567", "UP-4KD9TM"), `https://wa.me/5575991234567?text=${encodeURIComponent("Olá! Aqui é a equipe do ImagineUP, sobre o seu resgate UP-4KD9TM.")}`);

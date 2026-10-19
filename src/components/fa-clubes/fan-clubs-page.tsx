@@ -81,6 +81,7 @@ function FanClubsContent({ member }: { member: StaffMember }) {
   const names = useLoad(useCallback(() => getArtistNames(seesArtists), [seesArtists]));
   const artistNames = names.state.status === "ready" ? names.state.data : null;
   const pending = useLoad(useCallback(() => countPendingApplications(), []), round);
+  const allPending = pending.state.status === "ready" ? pending.state.data : null;
   const date = new Date(now);
 
   function refresh() {
@@ -102,7 +103,7 @@ function FanClubsContent({ member }: { member: StaffMember }) {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "applications", label: "Candidaturas", render: () => <ApplicationsTab member={member} names={artistNames} now={date} round={round} /> },
+          { id: "applications", label: "Candidaturas", render: () => <ApplicationsTab member={member} names={artistNames} now={date} round={round} allPending={allPending} /> },
           { id: "clubs", label: "Fã-clubes", render: () => <ClubsTab names={artistNames} now={date} round={round} /> },
         ]}
       />
@@ -123,7 +124,20 @@ function artistOf(names: Names, id: string, copy: string): string {
 // Candidaturas
 // ---------------------------------------------------------------------------
 
-function ApplicationsTab({ member, names, now, round }: { member: StaffMember; names: Names; now: Date; round: number }) {
+function ApplicationsTab({
+  member,
+  names,
+  now,
+  round,
+  allPending,
+}: {
+  member: StaffMember;
+  names: Names;
+  now: Date;
+  round: number;
+  /** A contagem do cabeçalho, que serve ao filtro "Todas" sem ler de novo. */
+  allPending: number | null;
+}) {
   const seesArtists = canSeeSection(member, "artists");
   const [artist, setArtist] = useState("");
   const [resolvedStatus, setResolvedStatus] = useState<ResolvedApplicationStatus>("approved");
@@ -133,18 +147,21 @@ function ApplicationsTab({ member, names, now, round }: { member: StaffMember; n
     round,
   );
   const mineIds = mine.state.status === "ready" ? mine.state.data : null;
+  // As centrais vão como texto: a releitura do "Atualizar" devolve uma lista nova com o mesmo conteúdo, e o filtro só muda quando ela muda.
+  const mineKey = mineIds ? JSON.stringify(mineIds) : null;
   // Sem "Centrais que eu cuido", o filtro é uma central ou todas; com ele, só depois de ler as centrais da pessoa.
   const artists = useMemo<ArtistFilter | undefined>(() => {
     if (artist === "" || (artist === MINE && !seesArtists)) return null;
-    if (artist === MINE) return mineIds ?? undefined;
+    if (artist === MINE) return mineKey === null ? undefined : (JSON.parse(mineKey) as string[]);
     return [artist];
-  }, [artist, mineIds, seesArtists]);
+  }, [artist, mineKey, seesArtists]);
 
+  // Com "Todas" (`null`), a contagem é a do cabeçalho; carregando as centrais (`undefined`), ainda nenhuma.
   const count = useLoad(
-    useCallback(() => (artists === undefined ? Promise.resolve(null) : countPendingApplications(artists)), [artists]),
+    useCallback(() => (!artists ? Promise.resolve(null) : countPendingApplications(artists)), [artists]),
     round,
   );
-  const total = count.state.status === "ready" ? count.state.data : null;
+  const total = artists === null ? allPending : count.state.status === "ready" ? count.state.data : null;
 
   const options = [
     { value: "", label: "Todas" },

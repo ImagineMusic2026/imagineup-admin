@@ -9,8 +9,9 @@ import type { CloseReason, FanClubStatus, RejectReason } from "@/lib/fan-clubs";
  * de novo. A mesma decisão já tomada responde `ok` sem gravar, então repetir
  * depois de uma falha incerta é seguro.
  *
- * O servidor da etapa 1 decide a candidatura e o fã-clube; as publicações, as
- * denúncias, o Destaque e o Recompensar ficam para o Painel B.
+ * O servidor da etapa 1 decide a candidatura e o fã-clube, o Destaque
+ * inclusive (`feature` e `unfeature`, que este painel deixou para o Painel B);
+ * as publicações, as denúncias e o Recompensar chegam com as etapas 2 a 5.
  */
 
 export interface DecisionResult {

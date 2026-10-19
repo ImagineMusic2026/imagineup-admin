@@ -10,9 +10,10 @@ import { isWhatsapp } from "@/lib/whatsapp";
  * puro: as candidaturas, o fã-clube e o contato do fã como a seção Fã-clubes
  * lê, os rótulos e as frases das decisões. O que vem do servidor da etapa 1
  * (34.14 e 34.22): aprovar e recusar a candidatura, pausar, reativar e
- * encerrar o fã-clube, todas pela `decideFanClub` (`fan-club-api.ts`). As
- * publicações, as denúncias, o Destaque, os números e o prêmio chegam com as
- * etapas 2 a 5 do servidor.
+ * encerrar o fã-clube, todas pela `decideFanClub` (`fan-club-api.ts`). O
+ * Destaque (`feature` e `unfeature`) o servidor da etapa 1 já tem, e fica para
+ * o Painel B; as publicações, as denúncias, os números e o prêmio chegam com
+ * as etapas 2 a 5 do servidor.
  */
 
 /** Tamanho das páginas das listas da seção (o "Carregar mais"). */
@@ -137,7 +138,11 @@ function personOf(value: unknown): { uid: string; name: string } | null {
   return { uid: value.uid, name: text(value.name) };
 }
 
-/** Um `Timestamp` em ms inteiros (o `toMillis` do servidor arredonda para baixo), ou `null`. */
+/**
+ * Um `Timestamp` em ms inteiros, ou `null`: o `toDate` do SDK do navegador já
+ * trunca a fração de ms, que o `toMillis` dele mantém, e o resultado bate com o
+ * `toMillis` do Admin SDK, que arredonda para baixo. Nunca o `toMillis` daqui.
+ */
 function millisOf(value: unknown): number | null {
   const date = toDate(value);
   return date ? Math.floor(date.getTime()) : null;
@@ -271,6 +276,13 @@ const NAME_PROBLEMS: Record<string, string> = {
   official: "O nome não pode ter a palavra oficial. Ajuste o nome.",
   not_allowed: "O nome tem um termo que o app não aceita. Ajuste o nome.",
 };
+
+/**
+ * A recusa da aprovação com o fã suspenso (`owner-suspended`): a frase do
+ * servidor fala em reativar o fã-clube, que é o outro caso do mesmo motivo, e
+ * aqui o fã-clube ainda não existe.
+ */
+export const APPROVE_SUSPENDED_TEXT = "O fã está suspenso. Tire a suspensão na Moderação antes de aprovar.";
 
 /**
  * O nome recusado pelo servidor na aprovação (34.22): `invalid-request` com

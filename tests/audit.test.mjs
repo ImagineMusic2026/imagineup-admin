@@ -57,6 +57,12 @@ test("o fã-clube nos Logs: as ações da etapa 1, o alvo, os detalhes e o ender
   // A suspensão leva o `clubId` do fã-clube que pausou: vira alvo, e não linha.
   assert.deepEqual(audit.detailLines({ action: "fan.suspended", details: { reason: "spam", clubId: "club1" } }), ["Motivo: Spam"]);
 
+  // As caixas do fã-clube no diálogo da central, como o `editArtist` grava no `changed`.
+  assert.deepEqual(
+    audit.detailLines({ action: "artist.updated", details: { artistId: "nenho", name: "Nenho", changed: ["imageRightsConfirmed", "fanClubs.enabled", "fanClubs.photosAllowed"] } }),
+    ["Nome: Nenho", "Campos mudados: autorização de imagem, aceita fã-clubes e fotos dos fãs no fã-clube"],
+  );
+
   assert.equal(audit.logsHref("fanClub:club1"), "/logs?alvo=fanClub%3Aclub1");
   assert.deepEqual(audit.filtersFromLink("fanClub:club1"), { ...audit.EMPTY_FILTERS, period: "all", target: "fanClub:club1" });
   assert.deepEqual(audit.filtersFromLink("artist:@Netto"), { ...audit.EMPTY_FILTERS, period: "all", target: "artist:netto" });

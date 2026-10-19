@@ -44,9 +44,12 @@ export function whatsappMessage(code: string): string {
   return `Olá! Aqui é a equipe do ImagineUP, sobre o seu resgate ${code}.`;
 }
 
-/** A mensagem pronta da conversa com o candidato a fã-clube (seção 34 da nota do app), com o nome proposto. */
-export function fanClubWhatsappMessage(clubName: string): string {
-  return `Olá! Aqui é a equipe do ImagineUP, sobre a sua candidatura ao fã-clube ${clubName}.`;
+/**
+ * A mensagem pronta da conversa com o candidato a fã-clube (seção 34 da nota
+ * do app), com a central: o nome proposto pode ter sido ajustado na aprovação.
+ */
+export function fanClubWhatsappMessage(artist: string): string {
+  return `Olá! Aqui é a equipe do ImagineUP, sobre a sua candidatura a fã-clube de ${artist}.`;
 }
 
 /**

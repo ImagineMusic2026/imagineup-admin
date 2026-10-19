@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ExternalLink, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApproveDialog, RejectDialog } from "@/components/fa-clubes/fan-club-dialogs";
 import { APPLICATION_STYLES, FanClubsBackLink, shortWhen } from "@/components/fa-clubes/fan-club-bits";
@@ -89,6 +89,13 @@ function ApplicationContent({ uid, member }: { uid: string; member: StaffMember 
     setPendingRefresh(false);
     setRound((value) => value + 1);
   }
+
+  // O aviso da decisão recebe o foco: o diálogo devolve o foco ao botão que o
+  // abriu, e a releitura tira esse botão da tela (no molde da ficha do fã).
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus();
+  }, [notice]);
 
   const read = useLoad(
     useCallback(() => readApplication(uid, canEdit), [uid, canEdit]),
@@ -186,7 +193,7 @@ function ApplicationContent({ uid, member }: { uid: string; member: StaffMember 
       </header>
 
       {notice ? (
-        <Notice key={`aviso-${notice.key}`} tone="success">
+        <Notice key={`aviso-${notice.key}`} tone="success" focusable ref={noticeRef}>
           {notice.text}
         </Notice>
       ) : null}
@@ -257,7 +264,7 @@ function ApplicationContent({ uid, member }: { uid: string; member: StaffMember 
                 />
               </Detail>
               <Detail term="WhatsApp" wide>
-                <PartValue part={read.state.data.whatsapp} render={(value) => <WhatsappLink value={value} clubName={application.proposedName} />} />
+                <PartValue part={read.state.data.whatsapp} render={(value) => <WhatsappLink value={value} artist={application.artistName || `@${application.artistId}`} />} />
               </Detail>
               <Detail term="Como e onde vai divulgar" wide>
                 <PartValue
@@ -310,9 +317,9 @@ function PartValue<T>({ part, render }: { part: Part<T>; render: (value: T) => R
 }
 
 /** O WhatsApp do contato do fã, com o link da conversa (`wa.me`) em outra aba e a mensagem da candidatura. */
-function WhatsappLink({ value, clubName }: { value: string | null; clubName: string }) {
+function WhatsappLink({ value, artist }: { value: string | null; artist: string }) {
   const number = formatWhatsapp(value);
-  const href = whatsappChatLink(value, fanClubWhatsappMessage(clubName));
+  const href = whatsappChatLink(value, fanClubWhatsappMessage(artist));
   if (!number || !href) return <Missing>Sem WhatsApp</Missing>;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1.5 whitespace-nowrap text-cyan underline-offset-2 hover:underline">

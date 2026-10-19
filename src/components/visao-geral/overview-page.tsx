@@ -21,6 +21,7 @@ import { countLabel, formatDayRange, formatDelta, formatNumber, formatPoints, fo
 import { createGameNamesReader } from "@/lib/game-names-data";
 import { engagementOf, overviewNumbers, overviewSpan, previousLabel, type Comparison, type OverviewNumbers } from "@/lib/overview";
 import { lastClosedAt, seriesByDay, sourceLabel, type StatsDay } from "@/lib/stats";
+import { countPendingApplications } from "@/lib/fan-club-data";
 import { canSeeSection } from "@/lib/staff";
 import { useStaffMember } from "@/lib/staff-context";
 import { getStatsDays, type StatsRead } from "@/lib/stats-data";
@@ -58,9 +59,13 @@ export function OverviewPage() {
   const { state, reload, reloading, loadedAt, refreshError } = useLoad(load);
   const today = useTodayStats();
   // "Aguardando a equipe" (34.10, item 9): só com a seção Fã-clubes, e o "Atualizar" lê o cartão de novo.
-  const member = useStaffMember();
+  const seesFanClubs = canSeeSection(useStaffMember(), "fanClubs");
   const [waitingRound, setWaitingRound] = useState(0);
-  const waiting = canSeeSection(member, "fanClubs") ? <FanClubsWaitingCard round={waitingRound} /> : null;
+  const waitingCount = useLoad(
+    useCallback(() => (seesFanClubs ? countPendingApplications() : Promise.resolve(0)), [seesFanClubs]),
+    waitingRound,
+  );
+  const waiting = seesFanClubs ? <FanClubsWaitingCard count={waitingCount} /> : null;
 
   const data = state.status === "ready" ? state.data : null;
   const nowDate = new Date(now);

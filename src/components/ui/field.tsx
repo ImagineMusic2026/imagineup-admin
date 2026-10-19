@@ -174,7 +174,12 @@ export function Radio({
   return (
     <div className={cx("flex flex-col gap-1", className)}>
       <label className={cx("inline-flex cursor-pointer items-center gap-2.5 text-sm text-fg/85", props.disabled && "cursor-not-allowed opacity-60")}>
-        <input type="radio" {...props} aria-describedby={hint ? hintId : undefined} className="size-[18px] shrink-0 cursor-[inherit] accent-pink-strong" />
+        <input
+          type="radio"
+          {...props}
+          aria-describedby={[props["aria-describedby"], hint ? hintId : null].filter(Boolean).join(" ") || undefined}
+          className="size-[18px] shrink-0 cursor-[inherit] accent-pink-strong"
+        />
         <span>{label}</span>
       </label>
       {hint ? (

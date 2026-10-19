@@ -2,7 +2,7 @@
 
 import { Ban, Pause, Play } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CloseDialog } from "@/components/fa-clubes/fan-club-dialogs";
 import { FAN_CLUB_STYLES, FanClubsBackLink, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
@@ -19,7 +19,7 @@ import { useLoad } from "@/components/ui/use-load";
 import { logsHref } from "@/lib/audit";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
 import { setFanClubPaused } from "@/lib/fan-club-api";
-import { getFanClub } from "@/lib/fan-club-data";
+import { getApplication, getFanClub } from "@/lib/fan-club-data";
 import {
   FAN_CLUB_AUDIT_TEXT,
   PAUSE_TEXT,
@@ -37,10 +37,33 @@ import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/
 /**
  * A ficha do fã-clube (`/fa-clubes/[id]`, 34.10, item 5): o status, o gestor,
  * a central, a aprovação e o encerramento, com Pausar, Reativar e Encerrar
- * (Encerrar só para admin), a candidatura de origem e o "Abrir nos Logs".
- * Os números, os seguidores, as publicações, o Destaque e as recompensas
- * chegam com as etapas 2 a 5 do servidor (o Painel B).
+ * (Encerrar só para admin), a candidatura de origem (ou a atual, quando o
+ * gestor se candidatou de novo) e o "Abrir nos Logs".
+ * Os números, os seguidores, as publicações e as recompensas chegam com as
+ * etapas 2 a 5 do servidor; o Destaque, que o servidor já tem (34.22), entra
+ * com eles no Painel B.
  */
+/**
+ * A candidatura do gestor diante deste fã-clube: a de origem (o `clubId` dela é
+ * este); uma nova, que substituiu a de origem (o encerramento a pedido deixa
+ * o fã voltar, e a candidatura é um documento só por fã); nenhuma, sem gestor
+ * ou sem documento; ou desconhecida, quando a leitura falhou.
+ */
+type Origin = "same" | "replaced" | "gone" | "unknown";
+
+/** O fã-clube e a candidatura do gestor. A falha da candidatura não derruba a ficha. */
+async function readFanClub(clubId: string): Promise<{ club: FanClub | null; origin: Origin }> {
+  const club = await getFanClub(clubId);
+  if (!club?.ownerUid) return { club, origin: "gone" };
+  try {
+    const application = await getApplication(club.ownerUid);
+    if (!application) return { club, origin: "gone" };
+    return { club, origin: application.clubId === club.id ? "same" : "replaced" };
+  } catch {
+    return { club, origin: "unknown" };
+  }
+}
+
 export function FanClubPage({ clubId }: { clubId: string }) {
   return <SectionGate section="fanClubs">{(member) => <FanClubContent clubId={clubId} member={member} />}</SectionGate>;
 }
@@ -73,8 +96,15 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     setRound((value) => value + 1);
   }
 
+  // O aviso da decisão recebe o foco: o diálogo devolve o foco ao botão que o
+  // abriu, e a releitura tira esse botão da tela (no molde da ficha do fã).
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus();
+  }, [notice]);
+
   const read = useLoad(
-    useCallback(() => getFanClub(clubId), [clubId]),
+    useCallback(() => readFanClub(clubId), [clubId]),
     round,
   );
   const date = read.loadedAt ?? new Date(now);
@@ -134,7 +164,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     );
   }
 
-  const club = read.state.data;
+  const { club, origin } = read.state.data;
   if (!club) {
     return (
       <>
@@ -194,7 +224,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       </header>
 
       {notice ? (
-        <Notice key={`aviso-${notice.key}`} tone="success">
+        <Notice key={`aviso-${notice.key}`} tone="success" focusable ref={noticeRef}>
           {notice.text}
         </Notice>
       ) : null}
@@ -244,11 +274,16 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
             <Detail term="Identificador">
               <span className="font-mono text-[13px]">{club.id}</span>
             </Detail>
+            {origin === "replaced" ? (
+              <Detail term="Candidatura" wide>
+                A candidatura de origem foi substituída por uma nova do gestor, depois do encerramento a pedido.
+              </Detail>
+            ) : null}
           </DetailList>
           <div className="flex flex-wrap gap-2">
-            {club.ownerUid ? (
+            {club.ownerUid && origin !== "gone" ? (
               <ButtonLink href={`/fa-clubes/candidaturas/${club.ownerUid}`} size="sm" variant="secondary">
-                Candidatura do gestor
+                {origin === "same" ? "Candidatura de origem" : "Candidatura atual do gestor"}
               </ButtonLink>
             ) : null}
             {seesAudit ? (

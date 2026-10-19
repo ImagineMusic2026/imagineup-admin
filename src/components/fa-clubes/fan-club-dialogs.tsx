@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -9,6 +9,7 @@ import { Notice } from "@/components/ui/notice";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { approveApplication, closeFanClub, rejectApplication } from "@/lib/fan-club-api";
 import {
+  APPROVE_SUSPENDED_TEXT,
   CLOSE_REASONS,
   CLOSE_REASON_HINTS,
   CLOSE_REASON_LABELS,
@@ -27,7 +28,7 @@ import {
   type FanClubApplication,
   type RejectReason,
 } from "@/lib/fan-clubs";
-import { UNCERTAIN_RETRY_TEXT, callableErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
+import { UNCERTAIN_RETRY_TEXT, callableErrorMessage, mayHaveRunOnServer, reasonOf } from "@/lib/errors";
 
 /**
  * Os diálogos das decisões com campo (34.10): aprovar com o nome, recusar com
@@ -138,13 +139,20 @@ export function ApproveDialog({ application, ...props }: DecisionProps & { appli
   const { busy, error, uncertain, blocked, footer, run } = useDecision(props);
   const [name, setName] = useState(application.proposedName);
   const [nameError, setNameError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const fan = applicantLabel(application);
+
+  /** O erro do nome leva o foco ao campo, que lê o erro pela descrição (como os outros diálogos do painel). */
+  function showNameError(message: string) {
+    setNameError(message);
+    requestAnimationFrame(() => nameRef.current?.focus());
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const checked = checkApprovalName(name);
     if (!checked.ok) {
-      setNameError(checked.message);
+      showNameError(checked.message);
       return;
     }
     setNameError(null);
@@ -153,8 +161,9 @@ export function ApproveDialog({ application, ...props }: DecisionProps & { appli
       () => approveApplication(application.uid, application, sent),
       `Candidatura de ${fan} aprovada. O fã-clube ${checked.name} está ativo.`,
       (failure) => {
+        if (reasonOf(failure) === "owner-suspended") return APPROVE_SUSPENDED_TEXT;
         const problem = approveNameProblem(failure);
-        if (problem) setNameError(problem);
+        if (problem) showNameError(problem);
         return problem ? "Ajuste o nome e aprove de novo." : null;
       },
     );
@@ -173,6 +182,7 @@ export function ApproveDialog({ application, ...props }: DecisionProps & { appli
         <Field label="Nome do fã-clube" error={nameError} hint={`De 3 a ${FAN_CLUB_NAME_MAX} caracteres, sem a palavra oficial. O proposto pelo fã vem preenchido.`}>
           {({ id, describedBy, invalid }) => (
             <TextInput
+              ref={nameRef}
               id={id}
               describedBy={describedBy}
               invalid={invalid}
@@ -201,13 +211,17 @@ export function RejectDialog({ application, ...props }: DecisionProps & { applic
   const { busy, error, uncertain, blocked, footer, run } = useDecision(props);
   const [reason, setReason] = useState<RejectReason | null>(null);
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const firstReasonRef = useRef<HTMLInputElement>(null);
+  const errorId = useId();
   const fan = applicantLabel(application);
   const last = application.round >= 3;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!reason) {
+      // O erro vai em cada opção, e o foco na primeira: o leitor de tela não lê a descrição do grupo ao entrar nele.
       setReasonError("Escolha o motivo.");
+      requestAnimationFrame(() => firstReasonRef.current?.focus());
       return;
     }
     await run(() => rejectApplication(application.uid, application, reason), `Candidatura de ${fan} recusada.`);
@@ -224,11 +238,14 @@ export function RejectDialog({ application, ...props }: DecisionProps & { applic
       description={`${last ? "Esta é a 3ª rodada: o fã não manda outra candidatura." : "O fã vê o motivo no app e pode mandar outra candidatura depois de 30 dias."} As redes e o texto de divulgação saem. ${FAN_CLUB_AUDIT_TEXT}`}
     >
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-        <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0" aria-describedby={reasonError ? "motivo-recusa-erro" : undefined}>
+        <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0">
           <legend className="mb-2 p-0 text-[13px] font-semibold text-fg/75">Motivo</legend>
-          {REJECT_REASONS.map((item) => (
+          {REJECT_REASONS.map((item, index) => (
             <Radio
               key={item}
+              ref={index === 0 ? firstReasonRef : undefined}
+              aria-invalid={reasonError ? true : undefined}
+              aria-describedby={reasonError ? errorId : undefined}
               name="motivo-recusa-candidatura"
               value={item}
               label={REJECT_REASON_LABELS[item]}
@@ -241,7 +258,7 @@ export function RejectDialog({ application, ...props }: DecisionProps & { applic
             />
           ))}
           {reasonError ? (
-            <p id="motivo-recusa-erro" className="m-0 text-[12.5px] font-medium text-danger">
+            <p id={errorId} className="m-0 text-[12.5px] font-medium text-danger">
               {reasonError}
             </p>
           ) : null}

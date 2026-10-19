@@ -1,26 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback } from "react";
 
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
-import { useLoad } from "@/components/ui/use-load";
-import { countPendingApplications } from "@/lib/fan-club-data";
+import type { LoadResult } from "@/components/ui/use-load";
 import { formatNumber } from "@/lib/format";
 
 /**
  * O cartão "Aguardando a equipe" da Visão geral (34.10, item 9), só para quem
  * vê a seção Fã-clubes: o alarme possível sem notificação, para o prazo de até
  * 24 horas úteis (decisão 7). Por enquanto conta as candidaturas em análise;
- * as publicações em análise e as denúncias abertas entram com as etapas 2 do
- * servidor e o Painel B. `round` muda no "Atualizar" da Visão geral.
+ * as publicações em análise e as denúncias abertas entram com a etapa 2 do
+ * servidor e o Painel B. A contagem vem da Visão geral, que a lê uma vez e no
+ * "Atualizar": o cartão muda de lugar na árvore conforme o estado dos números
+ * (o erro, o "ainda não começaram", a grade), e com a leitura dentro dele cada
+ * troca contaria de novo.
  */
-export function FanClubsWaitingCard({ round }: { round: number }) {
-  const count = useLoad(
-    useCallback(() => countPendingApplications(), []),
-    round,
-  );
-
+export function FanClubsWaitingCard({ count }: { count: LoadResult<number> }) {
   return (
     <SectionCard id="titulo-aguardando-equipe" title="Aguardando a equipe" meta="Fã-clubes">
       {count.state.status === "error" ? (

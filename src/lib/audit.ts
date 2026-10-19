@@ -381,6 +381,10 @@ const FIELD_LABELS: Record<string, string> = {
   manager: "gestor",
   managerUid: "gestor",
   imageRights: "autorização de imagem",
+  imageRightsConfirmed: "autorização de imagem",
+  // As caixas do fã-clube no `artist.updated` (seção 34, decisão 9).
+  "fanClubs.enabled": "aceita fã-clubes",
+  "fanClubs.photosAllowed": "fotos dos fãs no fã-clube",
   contactEmail: "e-mail de contato",
   contactPhone: "celular de contato",
   text: "texto",

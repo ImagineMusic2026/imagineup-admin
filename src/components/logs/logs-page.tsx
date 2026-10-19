@@ -58,13 +58,15 @@ const GRID = "xl:grid xl:grid-cols-[150px_minmax(0,0.9fr)_110px_minmax(0,1.1fr)_
  * `Suspense` da rota.
  */
 export function LogsPage() {
-  return <SectionGate section="audit">{(member) => <LogsContent member={member} />}</SectionGate>;
+  // A troca só do `?alvo=` (a lateral de volta para `/logs`, o voltar do
+  // navegador) não remonta a página: a `key` recomeça os filtros pelo endereço.
+  const alvo = useSearchParams().get("alvo");
+  return <SectionGate section="audit">{(member) => <LogsContent key={alvo ?? ""} member={member} alvo={alvo} />}</SectionGate>;
 }
 
-function LogsContent({ member }: { member: StaffMember }) {
-  const params = useSearchParams();
+function LogsContent({ member, alvo }: { member: StaffMember; alvo: string | null }) {
   const [now] = useState(() => Date.now());
-  const [filters, setFilters] = useState<AuditFilters>(() => filtersFromLink(params.get("alvo")));
+  const [filters, setFilters] = useState<AuditFilters>(() => filtersFromLink(alvo));
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const loadPage = useCallback(
@@ -335,8 +337,9 @@ function Filters({
 
 /** O filtro por alvo: o tipo e o id (o @ da central, o código do pedido; o fã pelo uid, ou pelo @ com a seção Fãs). */
 function TargetFilter({ value, member, onChange }: { value: string; member: StaffMember; onChange: (target: string) => void }) {
-  const [type, setType] = useState<TargetType>("fan");
-  const [text, setText] = useState("");
+  // Chegando pelo "Abrir nos Logs" (`?alvo=`), o formulário já mostra o alvo aplicado.
+  const [type, setType] = useState<TargetType>(() => (value ? parseTarget(value).type : null) ?? "fan");
+  const [text, setText] = useState(() => (value ? parseTarget(value).id : ""));
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const applied = value ? parseTarget(value) : null;
@@ -421,6 +424,7 @@ function TargetFilter({ value, member, onChange }: { value: string; member: Staf
           variant="ghost"
           className="h-9"
           onClick={() => {
+            setType("fan");
             setText("");
             onChange("");
           }}
