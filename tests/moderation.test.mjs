@@ -73,6 +73,10 @@ test("a suspensão: a nota opcional e as frases", () => {
   assert.equal(moderation.hideAlsoLabel(3), "Ocultar também os 3 comentários visíveis");
   assert.equal(moderation.hiddenSummary(0), "Nenhum comentário visível para ocultar.");
   assert.equal(moderation.hiddenSummary(25), "25 comentários ocultados.");
+  // A suspensão também pausa o fã-clube do fã e apaga os seguimentos dele, sem devolver nada depois (seção 34, decisão 33).
+  assert.match(moderation.SUSPEND_TEXT, /fã-clube fica pausado/);
+  assert.match(moderation.SUSPEND_TEXT, /deixa de seguir os fã-clubes/);
+  assert.match(moderation.SUSPEND_TEXT, /não reativa o fã-clube nem devolve os seguimentos/);
 });
 
 test("a troca do @ pelo motivo: o texto, o aviso depois e o prazo que ainda vale", () => {

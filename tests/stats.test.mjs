@@ -229,6 +229,10 @@ test("o retrato vale o do último dia que tem um, e o closedAt é o mais novo", 
 test("rótulos das origens e das campanhas", () => {
   assert.equal(stats.sourceLabel("invite_signup"), "Cadastro pelo link");
   assert.equal(stats.sourceLabel("adjustment"), "Ajuste da equipe");
+  // O fã-clube (seção 34): os pontos do prêmio no extrato e o link do fã-clube na origem.
+  assert.equal(stats.sourceLabel("fanclub_prize"), "Prêmio do fã-clube");
+  assert.equal(stats.originKindLabel("fanclub"), "Fã-clube");
+  assert.ok(stats.REWARD_KEYS.includes("prizes"));
   assert.equal(stats.sourceLabel("nova_origem"), "nova_origem");
   assert.equal(stats.originKindLabel("code"), "Código digitado");
   assert.equal(stats.utmLabel("_none"), "Sem campanha");

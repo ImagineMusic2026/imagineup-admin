@@ -130,7 +130,7 @@ test("privado lido uma vez em artistPrivate/{id}; sem documento, null", async ()
   assert.equal(await getArtistPrivate("trio"), null);
 });
 
-test("a lixeira pergunta se a central tem post ou show (rascunho inclusive)", async () => {
+test("a lixeira pergunta se a central tem post ou show (rascunho inclusive) ou fã-clube ativo ou pausado", async () => {
   contentQueries.length = 0;
   contentFound.clear();
   assert.equal(await artistHasContent("rocksalles"), false);
@@ -139,8 +139,14 @@ test("a lixeira pergunta se a central tem post ou show (rascunho inclusive)", as
     [
       ["posts", { field: "artistId", op: "==", value: "rocksalles" }],
       ["events", { field: "artistIds", op: "array-contains", value: "rocksalles" }],
+      ["fanClubs", { field: "artistId", op: "==", value: "rocksalles" }],
     ],
   );
+  // O encerrado e a lápide não seguram a exclusão, como no servidor (34.14).
+  assert.deepEqual(contentQueries[2].constraints[1], { field: "status", op: "in", value: ["active", "paused"] });
   contentFound.add("events");
+  assert.equal(await artistHasContent("rocksalles"), true);
+  contentFound.clear();
+  contentFound.add("fanClubs");
   assert.equal(await artistHasContent("rocksalles"), true);
 });

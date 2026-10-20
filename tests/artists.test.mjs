@@ -11,6 +11,11 @@ const {
   RESERVED_HANDLES,
   applyOrder,
   artistChanges,
+  fanClubBoxChanges,
+  fanClubBoxOpen,
+  fanClubBoxShown,
+  fanClubBoxesText,
+  savedFanClubBoxes,
   artistDeletedMessage,
   artistFormFromArtist,
   artistMissingForPublish,
@@ -326,8 +331,15 @@ test("formulário lê os dois documentos; sem o privado, gestor, autorização e
   assert.equal(full.contactPhone, "+5571991842260");
 
   const waiting = artistFormFromArtist(SAMPLE, null);
-  assert.deepEqual(pickPrivateFields(waiting), { managerUid: "", imageRightsConfirmed: false, contactEmail: "", contactPhone: "" });
-  // Quando o privado chega, só esses quatro campos mudam.
+  assert.deepEqual(pickPrivateFields(waiting), {
+    managerUid: "",
+    imageRightsConfirmed: false,
+    contactEmail: "",
+    contactPhone: "",
+    fanClubsEnabled: null,
+    fanClubsPhotos: null,
+  });
+  // Quando o privado chega, só esses campos mudam.
   const arrived = { ...waiting, name: "Editado na tela", ...pickPrivateFields(full) };
   assert.equal(arrived.name, "Editado na tela");
   assert.deepEqual(pickPrivateFields(arrived), pickPrivateFields(full));
@@ -389,6 +401,57 @@ test("editar manda só o que mudou; null limpa; gestor, autorização e contato 
   });
 });
 
+test("as caixas do fã-clube seguem a autorização até a equipe mexer, e vão só quando mudam o que o diálogo mostra", () => {
+  // Sem a caixa gravada, o diálogo mostra a autorização; para o fã, só vale com ela, e só o false gravado desliga.
+  assert.equal(fanClubBoxShown(null, true), true);
+  assert.equal(fanClubBoxShown(null, false), false);
+  assert.equal(fanClubBoxShown(false, true), false);
+  assert.equal(fanClubBoxShown(true, false), true);
+  assert.equal(fanClubBoxOpen(null, true), true);
+  assert.equal(fanClubBoxOpen(true, false), false, "o true gravado não passa por cima da falta da autorização");
+  assert.equal(fanClubBoxOpen(false, true), false);
+
+  const stored = parseArtistPrivate({ imageRightsConfirmed: true, fanClubs: { photosAllowed: false } });
+  assert.deepEqual(stored.fanClubs, { enabled: null, photosAllowed: false });
+  const form = normalizeArtistForm(artistFormFromArtist(SAMPLE, stored));
+  assert.equal(form.fanClubsEnabled, null);
+  assert.equal(form.fanClubsPhotos, false);
+
+  const before = normalizeArtistForm(artistFormFromArtist(SAMPLE, SAMPLE_PRIVATE));
+  // Nada mexido: nada vai, nem quando a autorização muda (as caixas seguem ela).
+  assert.equal(fanClubBoxChanges(before, before), null);
+  assert.equal(fanClubBoxChanges(before, { ...before, imageRightsConfirmed: false }), null);
+  // Desligar a caixa que seguia a autorização ligada vai; marcar de novo o mesmo valor não.
+  assert.deepEqual(fanClubBoxChanges(before, { ...before, fanClubsEnabled: false }), { enabled: false });
+  assert.equal(fanClubBoxChanges(before, { ...before, fanClubsEnabled: true }), null);
+  // A autorização ligada e a caixa desligada no mesmo salvamento (a revisão da etapa 1): a caixa vai.
+  const noRights = { ...before, imageRightsConfirmed: false };
+  assert.deepEqual(fanClubBoxChanges(noRights, { ...noRights, imageRightsConfirmed: true, fanClubsPhotos: false }), { photosAllowed: false });
+  // A caixa mexida com o valor que a autorização nova daria também vai: vale o que a equipe escolheu.
+  assert.deepEqual(fanClubBoxChanges(before, { ...before, imageRightsConfirmed: false, fanClubsEnabled: true }), { enabled: true });
+
+  // O artistChanges leva as caixas no `fanClubs`, só com o privado carregado.
+  assert.deepEqual(artistChanges(before, { ...before, fanClubsPhotos: false }, { includePrivate: true }), { fanClubs: { photosAllowed: false } });
+  assert.deepEqual(artistChanges(before, { ...before, fanClubsPhotos: false }, { includePrivate: false }), {});
+
+  // Depois do envio, fica gravada só a caixa que foi no pedido.
+  assert.deepEqual(savedFanClubBoxes(before, { ...before, fanClubsEnabled: true, fanClubsPhotos: false }, { photosAllowed: false }), {
+    fanClubsEnabled: null,
+    fanClubsPhotos: false,
+  });
+
+  assert.equal(fanClubBoxesText({ imageRightsConfirmed: true, fanClubs: { enabled: null, photosAllowed: null } }), "Aceita fã-clubes, com fotos dos fãs");
+  assert.equal(fanClubBoxesText({ imageRightsConfirmed: true, fanClubs: { enabled: null, photosAllowed: false } }), "Aceita fã-clubes, só com texto");
+  assert.equal(fanClubBoxesText({ imageRightsConfirmed: true, fanClubs: { enabled: false, photosAllowed: null } }), "Não aceita fã-clubes");
+  assert.equal(fanClubBoxesText({ imageRightsConfirmed: false, fanClubs: { enabled: true, photosAllowed: true } }), "Não aceita fã-clubes (falta a autorização de uso de imagem)");
+  for (const internal of [
+    { imageRightsConfirmed: true, fanClubs: { enabled: null, photosAllowed: null } },
+    { imageRightsConfirmed: false, fanClubs: { enabled: null, photosAllowed: null } },
+  ]) {
+    assert.doesNotMatch(fanClubBoxesText(internal), DASHES);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Publicação, contagens e ordem
 // ---------------------------------------------------------------------------
@@ -428,12 +491,13 @@ test("leitura defensiva do documento e ordem de destaque", () => {
 
   // Privado: a autorização só vale com true de verdade; vazios viram null.
   assert.equal(SAMPLE_PRIVATE.managerName, "Iara Costa");
-  assert.deepEqual(parseArtistPrivate({ imageRightsConfirmed: "true", email: "", managerUid: 3 }), {
+  assert.deepEqual(parseArtistPrivate({ imageRightsConfirmed: "true", email: "", managerUid: 3, fanClubs: { enabled: "false" } }), {
     email: null,
     phone: null,
     managerUid: null,
     managerName: null,
     imageRightsConfirmed: false,
+    fanClubs: { enabled: null, photosAllowed: null },
     createdBy: "",
     updatedBy: "",
     updatedAt: null,

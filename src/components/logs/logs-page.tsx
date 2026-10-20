@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { PageHeader } from "@/components/painel/page-header";
@@ -31,6 +32,7 @@ import {
   changeFilters,
   detailLines,
   filterBlocked,
+  filtersFromLink,
   normalizeTargetId,
   parseTarget,
   primaryTarget,
@@ -49,14 +51,22 @@ import { canSeeSection, sectionInfo, type StaffMember } from "@/lib/staff";
 const INFO = sectionInfo("audit");
 const GRID = "xl:grid xl:grid-cols-[150px_minmax(0,0.9fr)_110px_minmax(0,1.1fr)_minmax(0,1fr)_110px] xl:items-center xl:gap-4";
 
-/** Logs e auditoria (`/logs`): quem fez o quê no painel, e quando. Leitura única; ninguém muda nada aqui. */
+/**
+ * Logs e auditoria (`/logs`): quem fez o quê no painel, e quando. Leitura
+ * única; ninguém muda nada aqui. O `?alvo=` do endereço (o "Abrir nos Logs"
+ * de uma ficha) abre já filtrado pelo alvo; o `useSearchParams` pede o
+ * `Suspense` da rota.
+ */
 export function LogsPage() {
-  return <SectionGate section="audit">{(member) => <LogsContent member={member} />}</SectionGate>;
+  // A troca só do `?alvo=` (a lateral de volta para `/logs`, o voltar do
+  // navegador) não remonta a página: a `key` recomeça os filtros pelo endereço.
+  const alvo = useSearchParams().get("alvo");
+  return <SectionGate section="audit">{(member) => <LogsContent key={alvo ?? ""} member={member} alvo={alvo} />}</SectionGate>;
 }
 
-function LogsContent({ member }: { member: StaffMember }) {
+function LogsContent({ member, alvo }: { member: StaffMember; alvo: string | null }) {
   const [now] = useState(() => Date.now());
-  const [filters, setFilters] = useState<AuditFilters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<AuditFilters>(() => filtersFromLink(alvo));
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const loadPage = useCallback(
@@ -210,6 +220,42 @@ function TargetCell({ entry, member, names }: { entry: AuditEntry; member: Staff
     );
   }
   if (!target) return <span className="text-fg/55">Sem alvo</span>;
+  if (target.type === "fanClubPost") {
+    // A publicação não tem página própria: o atalho vai à ficha do fã-clube dela, quando o `clubId` veio junto.
+    const club = entry.targets.map(parseTarget).find((item) => item.type === "fanClub");
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate">
+          {TARGET_LABELS.fanClubPost} <span className="font-mono text-[12px] text-fg/75">{target.id}</span>
+          {extra}
+        </span>
+        {club && canSeeSection(member, "fanClubs") ? (
+          <span className="relative z-10 flex flex-wrap gap-x-3 text-[12.5px]">
+            <Link href={`/fa-clubes/${encodeURIComponent(club.id)}`} className="font-semibold text-cyan underline-offset-2 hover:underline">
+              Ficha do fã-clube
+            </Link>
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+  if (target.type === "fanClub") {
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate">
+          {TARGET_LABELS.fanClub} <span className="font-mono text-[12px] text-fg/75">{target.id}</span>
+          {extra}
+        </span>
+        {canSeeSection(member, "fanClubs") ? (
+          <span className="relative z-10 flex flex-wrap gap-x-3 text-[12.5px]">
+            <Link href={`/fa-clubes/${encodeURIComponent(target.id)}`} className="font-semibold text-cyan underline-offset-2 hover:underline">
+              Ficha<span className="sr-only"> do fã-clube</span>
+            </Link>
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   if (target.type === "fan") {
     const seesFans = canSeeSection(member, "fans");
     const seesModeration = canSeeSection(member, "moderation");
@@ -310,8 +356,9 @@ function Filters({
 
 /** O filtro por alvo: o tipo e o id (o @ da central, o código do pedido; o fã pelo uid, ou pelo @ com a seção Fãs). */
 function TargetFilter({ value, member, onChange }: { value: string; member: StaffMember; onChange: (target: string) => void }) {
-  const [type, setType] = useState<TargetType>("fan");
-  const [text, setText] = useState("");
+  // Chegando pelo "Abrir nos Logs" (`?alvo=`), o formulário já mostra o alvo aplicado.
+  const [type, setType] = useState<TargetType>(() => (value ? parseTarget(value).type : null) ?? "fan");
+  const [text, setText] = useState(() => (value ? parseTarget(value).id : ""));
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const applied = value ? parseTarget(value) : null;
@@ -379,7 +426,7 @@ function TargetFilter({ value, member, onChange }: { value: string; member: Staf
           id="alvo-id"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={type === "fan" ? "uid do fã ou @" : type === "artist" ? "@ da central" : type === "redemption" ? "código do pedido" : "id"}
+          placeholder={type === "fan" ? "uid do fã ou @" : type === "artist" ? "@ da central" : type === "redemption" ? "código do pedido" : type === "fanClub" ? "id do fã-clube" : type === "fanClubPost" ? "id da publicação" : "id"}
           describedBy={problem ? "alvo-problema" : undefined}
           invalid={Boolean(problem)}
           spellCheck={false}
@@ -396,6 +443,7 @@ function TargetFilter({ value, member, onChange }: { value: string; member: Staf
           variant="ghost"
           className="h-9"
           onClick={() => {
+            setType("fan");
             setText("");
             onChange("");
           }}

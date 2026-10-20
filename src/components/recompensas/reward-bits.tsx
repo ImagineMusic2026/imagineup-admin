@@ -3,6 +3,7 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Missing } from "@/components/ui/detail-list";
 import type { StatusStyle } from "@/components/ui/status-chip";
 import { formatDay, formatNumber, formatTime } from "@/lib/format";
@@ -20,7 +21,14 @@ export const REWARD_STYLES: Record<RewardStatus, StatusStyle> = {
   draft: { label: REWARD_STATUS_LABELS.draft, tone: "muted", dot: true },
   published: { label: REWARD_STATUS_LABELS.published, tone: "cyan", dot: true },
   closed: { label: REWARD_STATUS_LABELS.closed, tone: "danger", dot: true },
+  // A recompensa "Só para prêmios de fã-clube" (seção 34): fora da loja, sem status para mudar.
+  prize: { label: "Só para prêmios", tone: "neutral", dot: false },
 };
+
+/** O selo do pedido de prêmio de fã-clube (seção 34, decisão 40), na aba Pedidos. */
+export function PrizeBadge() {
+  return <Badge tone="neutral">Prêmio</Badge>;
+}
 
 export function Points({ value }: { value: number }) {
   return <span className="font-semibold text-lime tabular-nums">{formatNumber(value)} pts</span>;

@@ -94,8 +94,19 @@ test("o level-in-use lista as conquistas que pedem o degrau que sai", () => {
 });
 
 test("os tetos novos na ordem do servidor, com o padrão dele na chave ausente ou fora da regra", () => {
-  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-3), ["photo_upload", "profile_save", "name_change"]);
-  assert.equal(points.ACTION_CAP_KEYS.length, 13);
+  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-7), ["photo_upload", "profile_save", "name_change", "fanclub_apply", "fanclub_post", "fanclub_upload", "fanclub_follow"]);
+  assert.equal(points.ACTION_CAP_KEYS.length, 17);
+  // As candidaturas a fã-clube (seção 34, decisão 11): 3 por dia no servidor.
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_apply, "Candidaturas a fã-clube");
+  assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_apply, 3);
+  assert.equal(CONFIG.actionCaps.fanclub_apply, 3);
+  // As publicações, as fotos e os seguimentos de fã-clube (seção 34, decisões 11 e 34): 5, 10 e 30 por dia.
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_post, "Publicações de fã-clube");
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_upload, "Fotos de fã-clube");
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_follow, "Seguir fã-clubes");
+  assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_post, 5);
+  assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_upload, 10);
+  assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_follow, 30);
   assert.equal(points.ACTION_CAP_LABELS.photo_upload, "Envios de foto");
   assert.equal(points.ACTION_CAP_LABELS.profile_save, "Salvamentos do perfil");
   assert.equal(points.ACTION_CAP_LABELS.name_change, "Trocas de nome");

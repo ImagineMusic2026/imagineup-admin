@@ -3,6 +3,7 @@
 import {
   FileText,
   Gift,
+  HeartHandshake,
   LayoutGrid,
   LogOut,
   Menu,
@@ -34,6 +35,7 @@ const ICONS: Record<NavItem["key"], LucideIcon> = {
   ranking: Trophy,
   fans: Users,
   artists: Music,
+  fanClubs: HeartHandshake,
   missions: Target,
   rewards: Gift,
   moderation: Shield,

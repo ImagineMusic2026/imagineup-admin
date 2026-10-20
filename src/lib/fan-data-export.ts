@@ -41,6 +41,7 @@ export const FAN_DATA_PART_LABELS: Record<string, string> = {
   comentarios: "comentários",
   linksDeConvite: "links de convite",
   pedidosDaLoja: "pedidos da loja",
+  publicacoesDeFaClube: "publicações de fã-clube",
 };
 
 export function partLabel(part: string): string {

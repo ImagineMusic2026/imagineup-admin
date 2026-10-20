@@ -35,10 +35,25 @@ export function newRewardId(): string {
   return doc(collection(db(), "rewards")).id;
 }
 
-/** O catálogo inteiro, na ordem do app. */
+/**
+ * O catálogo da loja, na ordem do app. As recompensas "Só para prêmios de
+ * fã-clube" nascem sem o `order` (34.22, etapa 5) e não entram aqui: o
+ * `getPrizeRewards` lê as delas.
+ */
 export async function getRewards(): Promise<Reward[]> {
   const snapshot = await readQuery(query(collection(db(), "rewards"), orderBy("order")));
   return snapshot.docs.map((item) => parseReward(item.id, item.data()));
+}
+
+/**
+ * As recompensas "Só para prêmios de fã-clube" (o status `prize`, pelo índice
+ * de um campo), pelo título. Só a seção Recompensas lê.
+ */
+export async function getPrizeRewards(): Promise<Reward[]> {
+  const snapshot = await readQuery(query(collection(db(), "rewards"), where("status", "==", "prize")));
+  return snapshot.docs
+    .map((item) => parseReward(item.id, item.data()))
+    .sort((a, b) => a.title.localeCompare(b.title, "pt-BR") || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 export async function getReward(rewardId: string): Promise<Reward | null> {
