@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CloseDialog } from "@/components/fa-clubes/fan-club-dialogs";
 import { FAN_CLUB_STYLES, FanClubsBackLink, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
-import { FeatureDialog, RewardDialog } from "@/components/fa-clubes/fan-club-reward-dialogs";
+import { FeatureDialog, RewardDialog, type RewardAttempt } from "@/components/fa-clubes/fan-club-reward-dialogs";
 import { FollowersSection, MonthsSection, NumbersSection, PostsSection, QualitySection, RewardsSection } from "@/components/fa-clubes/fan-club-sections";
 import { SectionGate } from "@/components/painel/section-gate";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
@@ -93,6 +93,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
   // Uma instância do ConfirmDialog por pedido: o seguinte nunca herda o erro ou o "Tentar de novo" do anterior.
   const [confirmKey, setConfirmKey] = useState(0);
   const [dialog, setDialog] = useState<Dialogs>(null);
+  const [rewardAttempt, setRewardAttempt] = useState<RewardAttempt | null>(null);
   // O pedido que foi ao servidor pede a releitura, que só sai com nenhum
   // diálogo aberto (no molde da página do fã na Moderação).
   const [pendingRefresh, setPendingRefresh] = useState(false);
@@ -128,16 +129,22 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     round,
   );
   const date = read.loadedAt ?? new Date(now);
+  const refreshError = read.refreshError ?? shards.refreshError;
 
   function markStale() {
     setPendingRefresh(true);
   }
 
+  /** O Atualizar lê de novo a ficha inteira: o fã-clube, os números e as seções. */
+  function refresh() {
+    setPendingRefresh(false);
+    setRound((value) => value + 1);
+  }
+
   /** A decisão deu certo: o aviso aparece e a ficha lê de novo uma vez. */
   function changed(message: string) {
-    setPendingRefresh(false);
     setNotice((current) => ({ key: (current?.key ?? 0) + 1, text: message }));
-    setRound((value) => value + 1);
+    refresh();
   }
 
   /** A confirmação de uma decisão sem campo, no molde da `decideFanClub`: o estado da tela vai como `expected`. */
@@ -270,7 +277,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton onClick={read.reload} busy={read.reloading} loadedAt={read.loadedAt} />
+          <RefreshButton onClick={refresh} busy={read.reloading} loadedAt={read.loadedAt} />
           {decisions.includes("pause") ? (
             <Button size="sm" variant="secondary" onClick={() => askPause(club, true)} aria-haspopup="dialog">
               <Pause aria-hidden="true" className="size-3.5" />
@@ -297,7 +304,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
           {notice.text}
         </Notice>
       ) : null}
-      {read.refreshError ? <Notice tone="error">Não deu para atualizar: {read.refreshError}</Notice> : null}
+      {refreshError ? <Notice tone="error">Não deu para atualizar: {refreshError}</Notice> : null}
       {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa, encerra, destaca, recompensa e decide as publicações dele.</Notice> : null}
 
       <SectionCard id="titulo-fa-clube" title="Fã-clube">
@@ -421,6 +428,8 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
           readsFans={seesFans}
           readsModeration={seesModeration}
           rulesVersion={rulesVersion}
+          attempt={rewardAttempt}
+          onAttempt={setRewardAttempt}
           onClose={() => setDialog(null)}
           onSend={markStale}
           onOrphan={markStale}

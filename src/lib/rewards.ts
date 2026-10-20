@@ -78,6 +78,8 @@ export const REWARD_PHOTO = { width: 1200, height: 643 } as const;
 
 /** Frases da loja que a tela mostra antes de chamar o servidor (as mesmas dele). */
 export const WAS_PUBLISHED_TEXT = "Essa recompensa já esteve no ar. Encerre em vez de apagar.";
+/** O `has-redemptions` da de prêmio, que não se encerra (`reward-is-prize`): a saída é o estoque. */
+export const PRIZE_HAS_ORDERS_TEXT = "Essa recompensa já tem pedidos de prêmio e fica no catálogo. Para não dar mais, deixe o Estoque igual ao total de prêmios dados.";
 export const CLOSED_EVENT_WARNING = "Com este show, a recompensa fica esgotada para todos.";
 export const CLOSE_FIRST_TEXT = "Encerre a recompensa antes.";
 export const CONTACTS_AUDIT_TEXT = "Fica registrado em Logs e auditoria que você viu estes contatos.";

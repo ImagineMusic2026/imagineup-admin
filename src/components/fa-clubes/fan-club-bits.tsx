@@ -145,6 +145,7 @@ export function PostCard({
   now,
   showClub = true,
   headingLevel = 3,
+  photosOff = false,
   actions,
 }: {
   post: FanClubPost;
@@ -154,6 +155,8 @@ export function PostCard({
   now: Date;
   showClub?: boolean;
   headingLevel?: 3 | 4;
+  /** A central desligou as fotos dos fãs depois do envio (só com a seção Artistas, na fila de revisão). */
+  photosOff?: boolean;
   actions?: React.ReactNode;
 }) {
   const author = authorLabel(post);
@@ -170,7 +173,8 @@ export function PostCard({
           </span>
         </span>
         <span className="flex flex-wrap items-center gap-1.5">
-          <Badge tone="neutral">{post.kind === "photo" ? "Fotos autorizadas" : "Só texto"}</Badge>
+          <Badge tone="neutral">{post.kind === "photo" ? "Com foto" : "Só texto"}</Badge>
+          {photosOff ? <Badge tone="danger">Fotos não autorizadas</Badge> : null}
           <StatusChip status={post.status} map={POST_STYLES} />
         </span>
       </div>
@@ -199,6 +203,7 @@ export function PostCard({
       </p>
       <p className="m-0 whitespace-pre-line break-words text-[14.5px] leading-relaxed text-fg/90">{post.text || <Missing>Sem texto</Missing>}</p>
       <PostPhotos post={post} />
+      {photosOff ? <p className="m-0 text-[13px] text-danger">A central desligou as fotos dos fãs depois do envio. Aprovar põe a foto no ar mesmo assim.</p> : null}
       {post.status === "rejected" && post.rejectReason ? <p className="m-0 text-[13px] text-fg/70">Motivo da recusa: {POST_REJECT_REASON_LABELS[post.rejectReason]}</p> : null}
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </article>

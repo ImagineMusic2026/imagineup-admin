@@ -175,9 +175,48 @@ test("a denúncia lida, a contagem por motivo e as decisões que cabem", () => {
 
   const editor = { uid: "staff1", canEdit: true };
   assert.deepEqual(model.reportDecisions(item, editor), ["keep", "action"]);
-  assert.deepEqual(model.reportDecisions({ ...item, status: "resolved" }, editor), []);
+  // Na resolvida pela equipe, a decisão contrária da mesma rodada; a encerrada sem decisão da equipe fica sem botões.
+  assert.deepEqual(model.reportDecisions({ ...item, status: "resolved", resolution: "kept" }, editor), ["action"]);
+  assert.deepEqual(model.reportDecisions({ ...item, status: "resolved", resolution: "actioned" }, editor), ["keep"]);
+  assert.deepEqual(model.reportDecisions({ ...item, status: "resolved", resolution: "withdrawn" }, editor), []);
+  assert.deepEqual(model.reportDecisions({ ...item, status: "resolved", resolution: "author_deleted" }, editor), []);
   assert.deepEqual(model.reportDecisions({ ...item, authorUid: "staff1" }, editor), []);
+  assert.deepEqual(model.reportDecisions({ ...item, status: "resolved", resolution: "kept", authorUid: "staff1" }, editor), []);
   assert.deepEqual(model.reportDecisions(item, { uid: "staff1", canEdit: false }), []);
+  assert.equal(model.REPORT_RESOLUTION_LABELS.withdrawn, "Encerrada sem decisão da equipe");
+});
+
+test("a confirmação da denúncia diz o que o servidor vai fazer com a publicação, e nada sem ela lida", () => {
+  const open = { status: "open" };
+  const kept = { status: "resolved" };
+  const live = { status: "published" };
+  const hidden = { status: "hidden" };
+
+  assert.equal(model.reportDecisionText(open, live, "action"), model.ACTION_REPORT_TEXT);
+  assert.match(model.reportDecisionText(open, hidden, "action"), /já não está no ar: a denúncia só sai da fila/);
+  assert.match(model.reportDecisionText(open, null, "action"), /já não está no ar/);
+  // A leitura falhou: o servidor oculta se estiver no ar, então o texto não diz que não está.
+  assert.match(model.reportDecisionText(open, "unknown", "action"), /não carregou: se ainda estiver no ar, ela sai do app/);
+  assert.match(model.reportDecisionText(kept, live, "action"), /passa de Mantida para Ocultada/);
+
+  assert.equal(model.reportDecisionText(open, live, "keep"), model.KEEP_REPORT_TEXT);
+  // Manter nunca reexibe: com a publicação oculta pela ficha, o texto não diz "continua no ar".
+  assert.match(model.reportDecisionText(open, hidden, "keep"), /continua oculta/);
+  assert.doesNotMatch(model.reportDecisionText(open, "unknown", "keep"), /continua no ar/);
+  assert.match(model.reportDecisionText(kept, hidden, "keep"), /não volta ao ar/);
+
+  assert.equal(model.reportDoneText(open, live, "action", "Ana"), "Denúncia resolvida: a publicação de Ana saiu do ar.");
+  assert.equal(model.reportDoneText(open, "unknown", "action", "um gestor"), "Denúncia resolvida: a denúncia ficou como Ocultada.");
+  assert.equal(model.reportDoneText(kept, hidden, "keep", "Ana"), "Decisão trocada: a denúncia ficou como Mantida, e a publicação segue como está.");
+
+  for (const item of [open, kept]) {
+    for (const post of [live, hidden, null, "unknown"]) {
+      for (const decision of ["keep", "action"]) {
+        assert.doesNotMatch(model.reportDecisionText(item, post, decision), DASHES);
+        assert.doesNotMatch(model.reportDoneText(item, post, decision, "Ana"), DASHES);
+      }
+    }
+  }
 });
 
 test("o registro do reconhecimento, sem o código nem o cupom", () => {

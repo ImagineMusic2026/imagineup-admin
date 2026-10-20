@@ -455,10 +455,12 @@ function ClubsTab({ names, now, round }: { names: Names; now: Date; round: numbe
             </>
           )}
         </FilterBar>
-        <div className="flex flex-col gap-1">
-          <Checkbox label="Só os destacados" checked={featuredOnly} onChange={(event) => setFeaturedOnly(event.target.checked)} />
-          {featuredOnly ? <p className="m-0 pl-7 text-[12.5px] text-fg/60">Todos os destacados, do fim mais perto. Este filtro não combina com a situação, a central e a ordem.</p> : null}
-        </div>
+        <Checkbox
+          label="Só os destacados"
+          hint="Todos os destacados, do fim mais perto. Este filtro não combina com a situação, a central e a ordem."
+          checked={featuredOnly}
+          onChange={(event) => setFeaturedOnly(event.target.checked)}
+        />
       </div>
       {list.state.status === "error" ? (
         <LoadError message={list.state.message} headingId="titulo-fa-clubes" onRetry={list.reload} />

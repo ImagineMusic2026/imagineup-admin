@@ -1,5 +1,6 @@
 import { collection, collectionGroup, doc, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
 
+import { fanClubBoxOpen, parseArtistPrivate } from "@/lib/artists";
 import {
   FAN_CLUB_ORDER_FIELDS,
   FAN_CLUBS_PAGE_SIZE,
@@ -162,6 +163,24 @@ export async function getFanClub(clubId: string): Promise<FanClub | null> {
   const snapshot = await readDoc(doc(db(), "fanClubs", clubId));
   const data = snapshot.data();
   return data ? parseFanClub(snapshot.id, data) : null;
+}
+
+/**
+ * A caixa "Fãs podem postar fotos" de cada central (34.10, item 7), com a
+ * autorização de imagem na falta, como o servidor lê. Ela só existe no
+ * `artistPrivate`, que a regra deixa ler com a seção Artistas. Sem o
+ * documento, a caixa vale fechada, como no servidor.
+ */
+export async function getPhotoBoxes(artistIds: readonly string[]): Promise<Map<string, boolean>> {
+  const unique = [...new Set(artistIds.filter(Boolean))];
+  const found = await Promise.all(unique.map((id) => readDoc(doc(db(), "artistPrivate", id))));
+  return new Map(
+    unique.map((id, index) => {
+      const data = found[index]?.data();
+      const row = data ? parseArtistPrivate(data) : null;
+      return [id, row ? fanClubBoxOpen(row.fanClubs.photosAllowed, row.imageRightsConfirmed) : false];
+    }),
+  );
 }
 
 /** Os fã-clubes citados por uma página (as publicações e as denúncias guardam só o id), um `readDoc` de cada. */

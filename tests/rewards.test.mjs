@@ -82,6 +82,9 @@ test("o show aberto como o servidor, o estoque, a esgotada e o apagar", () => {
   assert.equal(rewards.hasClosedEvent(reward({ status: "draft" }), yesterday, NOW), false);
   assert.equal(rewards.isSoldOut(reward(), open, NOW), false);
   assert.equal(rewards.deleteBlocked(reward()), rewards.WAS_PUBLISHED_TEXT);
+  // A de prêmio não se encerra: o texto do pedido recusado aponta o estoque, e não o Encerrar.
+  assert.doesNotMatch(rewards.PRIZE_HAS_ORDERS_TEXT, /Encerre/);
+  assert.match(rewards.PRIZE_HAS_ORDERS_TEXT, /Estoque/);
   assert.equal(rewards.deleteBlocked(reward({ publishedAt: null, status: "draft" })), null);
 });
 

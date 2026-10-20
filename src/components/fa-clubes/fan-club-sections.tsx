@@ -264,7 +264,10 @@ export function RewardsSection({
   const load = useCallback((after: PageCursor | null) => getPrizesPage(club.id, after), [club.id]);
   const list = usePagedList(load, (row: FanClubPrize) => row.grantId, { one: "reconhecimento carregado", many: "reconhecimentos carregados" }, round);
   const grantKey = seesRewards && list.state.status === "ready" ? list.state.data.filter((row) => row.prize).map((row) => row.grantId).join("|") : "";
-  const orders = useLoad(useCallback(() => (grantKey ? getPrizeOrders(grantKey.split("|")) : Promise.resolve(new Map())), [grantKey]));
+  const orders = useLoad(
+    useCallback(() => (grantKey ? getPrizeOrders(grantKey.split("|")) : Promise.resolve(new Map())), [grantKey]),
+    round,
+  );
   const featuring = featuredText(club, now.getTime());
 
   const columns: Column<FanClubPrize>[] = [

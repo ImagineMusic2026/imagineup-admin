@@ -260,6 +260,17 @@ test("as publicações: as do fã-clube em todos os status, a fila de revisão d
   assert.deepEqual([...clubs.keys()], ["c1"]);
 });
 
+test("a caixa das fotos dos fãs de cada central, pelo privado, com a autorização de imagem na falta", async () => {
+  firestore.reset();
+  firestore.set("artistPrivate/aberta", { imageRightsConfirmed: true, fanClubs: { photosAllowed: true } });
+  firestore.set("artistPrivate/nunca-mexida", { imageRightsConfirmed: true });
+  firestore.set("artistPrivate/desligada", { imageRightsConfirmed: true, fanClubs: { photosAllowed: false } });
+  firestore.set("artistPrivate/sem-autorizacao", { imageRightsConfirmed: false, fanClubs: { photosAllowed: true } });
+
+  const boxes = await data.getPhotoBoxes(["aberta", "nunca-mexida", "desligada", "sem-autorizacao", "sumiu", "aberta", ""]);
+  assert.deepEqual(Object.fromEntries(boxes), { aberta: true, "nunca-mexida": true, desligada: false, "sem-autorizacao": false, sumiu: false });
+});
+
 test("as denúncias abertas da mais nova, as resolvidas da decisão mais nova, e as aceitas de um fã-clube", async () => {
   firestore.reset();
   const item = (id, fields) => firestore.set(`fanClubReportQueue/${id}`, { clubId: "c1", artistId: "netto", authorUid: "u1", reportCount: 1, round: 1, status: "open", ...fields });

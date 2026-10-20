@@ -19,12 +19,10 @@ import { usePagedList } from "@/components/ui/use-paged-list";
 import { artistNameOf, type ArtistName } from "@/lib/artist-names-data";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
 import { decidePost, decideReport } from "@/lib/fan-club-api";
-import { getFanClubsByIds, getPendingPostsPage, getPostsByIds, getReportsPage } from "@/lib/fan-club-data";
+import { getFanClubsByIds, getPendingPostsPage, getPhotoBoxes, getPostsByIds, getReportsPage } from "@/lib/fan-club-data";
 import {
-  ACTION_REPORT_TEXT,
   APPROVE_POST_TEXT,
   FAN_CLUB_AUDIT_TEXT,
-  KEEP_REPORT_TEXT,
   REPORT_FILTER_LABELS,
   REPORT_RESOLUTION_LABELS,
   REPORT_STATUSES,
@@ -34,15 +32,20 @@ import {
   openReportsCountText,
   pendingPostsCountText,
   postDecisions,
+  reportDecisionText,
   reportDecisions,
+  reportDoneText,
   reportReasonsText,
+  type FanClub,
   type FanClubPost,
   type FanClubReport,
+  type ReportDecision,
+  type ReportPostState,
   type ReportStatus,
 } from "@/lib/fan-clubs";
 import type { PageCursor } from "@/lib/firestore-page";
 import { formatNumber } from "@/lib/format";
-import type { StaffMember } from "@/lib/staff";
+import { canSeeSection, type StaffMember } from "@/lib/staff";
 
 type Names = ReadonlyMap<string, ArtistName> | null;
 
@@ -149,11 +152,35 @@ function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
   return { round, ask, reject: setRejecting, dialogs, noticeView };
 }
 
-/** Os fã-clubes citados pela página na tela (as publicações e as denúncias guardam só o id). */
-function useClubs(ids: string[]) {
+/**
+ * Os fã-clubes citados pela página na tela (as publicações e as denúncias
+ * guardam só o id), relidos com a lista: o mapa; `null` carregando;
+ * `"failed"` quando a leitura falhou, e a tela mostra o id.
+ */
+function useClubs(ids: string[], refreshKey: string): Map<string, FanClub | null> | "failed" | null {
   const key = [...new Set(ids)].sort().join("|");
-  const clubs = useLoad(useCallback(() => getFanClubsByIds(key ? key.split("|") : []), [key]));
-  return clubs.state.status === "ready" ? clubs.state.data : null;
+  const clubs = useLoad(
+    useCallback(() => getFanClubsByIds(key ? key.split("|") : []), [key]),
+    refreshKey,
+  );
+  if (clubs.state.status === "ready") return clubs.state.data;
+  return clubs.state.status === "error" ? "failed" : null;
+}
+
+/**
+ * A caixa "Fãs podem postar fotos" das centrais das publicações com foto,
+ * só para quem vê a seção Artistas (a regra do `artistPrivate`). O servidor
+ * confere a caixa só no envio; a aprovação não confere de novo. Sem a seção,
+ * ou com a leitura falhada, nada é marcado.
+ */
+function usePhotoBoxes(member: StaffMember, posts: readonly FanClubPost[], refreshKey: string): Map<string, boolean> | null {
+  const seesArtists = canSeeSection(member, "artists");
+  const key = seesArtists ? [...new Set(posts.filter((post) => post.kind === "photo").map((post) => post.artistId))].sort().join("|") : "";
+  const boxes = useLoad(
+    useCallback(() => (key ? getPhotoBoxes(key.split("|")) : Promise.resolve(new Map<string, boolean>())), [key]),
+    refreshKey,
+  );
+  return boxes.state.status === "ready" ? boxes.state.data : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,9 +196,14 @@ function useClubs(ids: string[]) {
 export function PostsTab({ member, canEdit, names, now, round, total, onChanged }: { member: StaffMember; canEdit: boolean; names: Names; now: Date; round: number; total: number | null; onChanged: () => void }) {
   const decisions = useQueueDecisions(canEdit, onChanged);
   const load = useCallback((after: PageCursor | null) => getPendingPostsPage(after), []);
-  const list = usePagedList(load, (post: FanClubPost) => post.id, { one: "publicação carregada", many: "publicações carregadas" }, `${round}-${decisions.round}`);
+  const refreshKey = `${round}-${decisions.round}`;
+  const list = usePagedList(load, (post: FanClubPost) => post.id, { one: "publicação carregada", many: "publicações carregadas" }, refreshKey);
   const posts = list.state.status === "ready" ? list.state.data : [];
-  const clubs = useClubs(posts.map((post) => post.clubId));
+  const clubs = useClubs(
+    posts.map((post) => post.clubId),
+    refreshKey,
+  );
+  const photoBoxes = usePhotoBoxes(member, posts, refreshKey);
 
   function askApprove(post: FanClubPost) {
     const author = authorLabel(post);
@@ -206,9 +238,10 @@ export function PostsTab({ member, canEdit, names, now, round, total, onChanged 
                 <li key={post.id}>
                   <PostCard
                     post={post}
-                    club={clubs ? (clubs.get(post.clubId) ?? null) : undefined}
+                    club={clubs === "failed" ? null : clubs ? (clubs.get(post.clubId) ?? null) : undefined}
                     artist={artistNameOf(names, post.artistId)}
                     now={now}
+                    photosOff={post.kind === "photo" && photoBoxes?.get(post.artistId) === false}
                     actions={
                       allowed.includes("approve") ? (
                         <>
@@ -252,8 +285,8 @@ function ReportCard({
   actions,
 }: {
   item: FanClubReport;
-  /** `undefined` carregando; `null` quando a publicação não existe mais. */
-  post: FanClubPost | null | undefined;
+  /** `undefined` carregando; `null` quando a publicação não existe mais; `"unknown"` quando a leitura falhou. */
+  post: FanClubPost | null | undefined | "unknown";
   clubName: React.ReactNode;
   artist: string;
   now: Date;
@@ -284,6 +317,8 @@ function ReportCard({
         <p className="m-0 px-5 text-[13px] text-fg/60">Carregando a publicação...</p>
       ) : post === null ? (
         <p className="m-0 px-5 text-[13px] text-fg/60">A publicação não existe mais.</p>
+      ) : post === "unknown" ? (
+        <p className="m-0 px-5 text-[13px] text-fg/60">A publicação não carregou.</p>
       ) : (
         <PostCard post={post} artist={artist} now={now} showClub={false} headingLevel={4} />
       )}
@@ -303,24 +338,32 @@ export function ReportsTab({ member, canEdit, names, now, round, total, onChange
   const decisions = useQueueDecisions(canEdit, onChanged);
   const [status, setStatus] = useState<ReportStatus>("open");
   const load = useCallback((after: PageCursor | null) => getReportsPage(status, after), [status]);
-  const list = usePagedList(load, (item: FanClubReport) => item.postId, { one: "denúncia carregada", many: "denúncias carregadas" }, `${round}-${decisions.round}`);
+  const refreshKey = `${round}-${decisions.round}`;
+  const list = usePagedList(load, (item: FanClubReport) => item.postId, { one: "denúncia carregada", many: "denúncias carregadas" }, refreshKey);
   const items = list.state.status === "ready" ? list.state.data : [];
   const postKey = items.map((item) => item.postId).join("|");
-  const postsLoad = useLoad(useCallback(() => getPostsByIds(postKey ? postKey.split("|") : []), [postKey]));
+  const postsLoad = useLoad(
+    useCallback(() => getPostsByIds(postKey ? postKey.split("|") : []), [postKey]),
+    refreshKey,
+  );
   const posts = postsLoad.state.status === "ready" ? postsLoad.state.data : null;
-  const clubs = useClubs(items.map((item) => item.clubId));
+  // Com a releitura falhada, a publicação na tela pode estar velha: a confirmação não promete nada sobre ela.
+  const postsKnown = posts !== null && postsLoad.refreshError === null;
+  const clubs = useClubs(
+    items.map((item) => item.clubId),
+    refreshKey,
+  );
 
-  function ask(item: FanClubReport, post: FanClubPost | null, decision: "keep" | "action") {
-    const author = post ? authorLabel(post) : "um gestor";
-    const live = post?.status === "published";
+  function ask(item: FanClubReport, post: FanClubPost | null | "unknown", state: ReportPostState, decision: ReportDecision) {
+    const author = post && post !== "unknown" ? authorLabel(post) : "um gestor";
     decisions.ask({
       title: decision === "keep" ? `Manter a publicação de ${author}?` : `Ocultar a publicação de ${author}?`,
-      body: decision === "keep" ? KEEP_REPORT_TEXT : live ? ACTION_REPORT_TEXT : "A publicação já não está no ar: a denúncia só sai da fila.",
+      body: reportDecisionText(item, state, decision),
       confirmLabel: decision === "keep" ? "Manter" : "Ocultar",
       busyLabel: decision === "keep" ? "Mantendo..." : "Ocultando...",
       tone: decision === "keep" ? "default" : "danger",
       send: () => decideReport(item.postId, item.round, decision),
-      successMessage: decision === "keep" ? `Denúncia resolvida: a publicação de ${author} ficou.` : `Denúncia resolvida: ${live ? `a publicação de ${author} saiu do ar` : "a publicação já não estava no ar"}.`,
+      successMessage: reportDoneText(item, state, decision, author),
     });
   }
 
@@ -341,12 +384,18 @@ export function ReportsTab({ member, canEdit, names, now, round, total, onChange
       ) : (
         <>
           {list.refreshError ? <p className="m-0 px-5 pt-4 text-[13px] text-danger">Não deu para atualizar: {list.refreshError}</p> : null}
-          {postsLoad.state.status === "error" ? <p className="m-0 px-5 pt-4 text-[13px] text-danger">As publicações não carregaram: {postsLoad.state.message}</p> : null}
+          {postsLoad.state.status === "error" ? (
+            <p className="m-0 px-5 pt-4 text-[13px] text-danger">As publicações não carregaram: {postsLoad.state.message}</p>
+          ) : postsLoad.refreshError ? (
+            <p className="m-0 px-5 pt-4 text-[13px] text-danger">As publicações não atualizaram: {postsLoad.refreshError}</p>
+          ) : null}
           <ul className="m-0 list-none divide-y divide-line p-0">
             {items.map((item) => {
-              const post = posts ? (posts.get(item.postId) ?? null) : postsLoad.state.status === "error" ? null : undefined;
-              const club = clubs?.get(item.clubId);
+              const post = posts ? (posts.get(item.postId) ?? null) : postsLoad.state.status === "error" ? "unknown" : undefined;
+              const state: ReportPostState = postsKnown ? (posts.get(item.postId) ?? null) : "unknown";
+              const club = clubs instanceof Map ? clubs.get(item.clubId) : undefined;
               const allowed = reportDecisions(item, { uid: member.uid, canEdit });
+              const teamDecides = item.status === "open" || item.resolution === "kept" || item.resolution === "actioned";
               return (
                 <li key={item.postId}>
                   <ReportCard
@@ -366,16 +415,20 @@ export function ReportsTab({ member, canEdit, names, now, round, total, onChange
                     actions={
                       allowed.length > 0 && post !== undefined ? (
                         <>
-                          <Button size="sm" variant="danger" onClick={() => ask(item, post, "action")} aria-haspopup="dialog">
-                            <EyeOff aria-hidden="true" className="size-4" />
-                            Ocultar<span className="sr-only"> a publicação denunciada</span>
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={() => ask(item, post, "keep")} aria-haspopup="dialog">
-                            <ShieldCheck aria-hidden="true" className="size-4" />
-                            Manter<span className="sr-only"> a publicação denunciada</span>
-                          </Button>
+                          {allowed.includes("action") ? (
+                            <Button size="sm" variant="danger" onClick={() => ask(item, post, state, "action")} aria-haspopup="dialog">
+                              <EyeOff aria-hidden="true" className="size-4" />
+                              Ocultar<span className="sr-only"> a publicação denunciada</span>
+                            </Button>
+                          ) : null}
+                          {allowed.includes("keep") ? (
+                            <Button size="sm" variant="secondary" onClick={() => ask(item, post, state, "keep")} aria-haspopup="dialog">
+                              <ShieldCheck aria-hidden="true" className="size-4" />
+                              Manter<span className="sr-only"> a publicação denunciada</span>
+                            </Button>
+                          ) : null}
                         </>
-                      ) : canEdit && item.status === "open" && item.authorUid === member.uid ? (
+                      ) : canEdit && teamDecides && item.authorUid === member.uid ? (
                         <span className="text-[12.5px] text-fg/60">A publicação é sua: outra pessoa da equipe decide.</span>
                       ) : null
                     }

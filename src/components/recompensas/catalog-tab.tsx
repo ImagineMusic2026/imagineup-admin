@@ -24,13 +24,14 @@ import { useLoad, type Loadable } from "@/components/ui/use-load";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { positionAnnouncement, moveId } from "@/lib/artists";
 import { runSequential, type BatchProgress as Progress, type BatchSummary } from "@/lib/batch";
-import { actionErrorMessage, callableErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
+import { actionErrorMessage, callableErrorMessage, mayHaveRunOnServer, reasonOf } from "@/lib/errors";
 import { countLabel, formatDay, formatNumber } from "@/lib/format";
 import { deleteReward, reorderRewards, setRedemptionStatus, setRewardStatus, setRewardStock } from "@/lib/reward-api";
 import { getEvents, getOpenRedemptionsOf } from "@/lib/reward-data";
 import {
   CLOSE_FIRST_TEXT,
   KIND_LABELS,
+  PRIZE_HAS_ORDERS_TEXT,
   REFUSAL_REASON_MAX,
   RESTOCK_HINT,
   STOCK_MAX,
@@ -164,12 +165,15 @@ export function CatalogTab({
     }
     ask({
       title: `Apagar ${reward.title}?`,
-      body: isPrizeReward(reward) ? "A recompensa para prêmios e a foto saem de vez. Isso não se desfaz. Com pedido de prêmio, o servidor recusa." : "O rascunho e a foto saem de vez. Isso não se desfaz.",
+      body: isPrizeReward(reward)
+        ? "A recompensa para prêmios e a foto saem de vez. Isso não se desfaz. Com pedido de prêmio, ela não se apaga: deixe o Estoque igual aos prêmios dados."
+        : "O rascunho e a foto saem de vez. Isso não se desfaz.",
       confirmLabel: "Apagar",
       busyLabel: "Apagando...",
       cancelLabel: "Voltar",
       tone: "danger",
       action: () => deleteReward(reward.id),
+      errorText: (failure) => (isPrizeReward(reward) && reasonOf(failure) === "has-redemptions" ? PRIZE_HAS_ORDERS_TEXT : null),
       successMessage: `Recompensa ${reward.title} apagada.`,
     });
   }

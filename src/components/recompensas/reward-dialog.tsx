@@ -302,12 +302,13 @@ function RewardDialogBody({
         className="flex flex-col gap-5"
       >
         {!editing ? (
-          <div className="flex flex-col gap-1">
-            <Checkbox label="Só para prêmios de fã-clube" checked={prize} disabled={busy || wroteSomething} onChange={(event) => setPrize(event.target.checked)} />
-            <p className="m-0 pl-7 text-[12.5px] leading-snug text-fg/60">
-              Para dar ingressos, descontos e outros prêmios aos fã-clubes. Fica fora da loja, sem custo, e o tipo Desconto só vale aqui. Depois de criada, não vira recompensa da loja.
-            </p>
-          </div>
+          <Checkbox
+            label="Só para prêmios de fã-clube"
+            hint="Para dar ingressos, descontos e outros prêmios aos fã-clubes. Fica fora da loja, sem custo, e o tipo Desconto só vale aqui. Depois de criada, não vira recompensa da loja."
+            checked={prize}
+            disabled={busy || wroteSomething}
+            onChange={(event) => setPrize(event.target.checked)}
+          />
         ) : null}
         <div className="grid gap-6 md:grid-cols-[300px_minmax(0,1fr)]">
           <ImageField

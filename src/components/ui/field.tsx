@@ -145,16 +145,38 @@ export function PasswordInput({ id, invalid, describedBy, className, disabled, o
   );
 }
 
+/**
+ * Caixa de seleção. A dica, quando há, fica fora do rótulo, ligada por
+ * `aria-describedby` (no molde do `Radio`); sem ela, o rótulo fica sozinho,
+ * como sempre.
+ */
 export function Checkbox({
   label,
+  hint,
   className,
   ...props
-}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { label: React.ReactNode; ref?: React.Ref<HTMLInputElement> }) {
-  return (
-    <label className={cx("inline-flex cursor-pointer items-center gap-2.5 text-sm text-fg/85", props.disabled && "cursor-not-allowed opacity-60", className)}>
-      <input type="checkbox" {...props} className="size-[18px] shrink-0 cursor-[inherit] accent-pink-strong" />
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { label: React.ReactNode; hint?: React.ReactNode; ref?: React.Ref<HTMLInputElement> }) {
+  const id = useId();
+  const hintId = `${id}-dica`;
+  const box = (
+    <label className={cx("inline-flex cursor-pointer items-center gap-2.5 text-sm text-fg/85", props.disabled && "cursor-not-allowed opacity-60", hint ? null : className)}>
+      <input
+        type="checkbox"
+        {...props}
+        aria-describedby={[props["aria-describedby"], hint ? hintId : null].filter(Boolean).join(" ") || undefined}
+        className="size-[18px] shrink-0 cursor-[inherit] accent-pink-strong"
+      />
       <span>{label}</span>
     </label>
+  );
+  if (!hint) return box;
+  return (
+    <div className={cx("flex flex-col gap-1", className)}>
+      {box}
+      <p id={hintId} className="m-0 pl-[28px] text-[12.5px] leading-snug text-fg/60">
+        {hint}
+      </p>
+    </div>
   );
 }
 

@@ -63,7 +63,7 @@ export function FeatureDialog({ club, now, ...props }: DecisionProps & { club: F
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const checked = checkFeaturedUntil(day, now);
+    const checked = checkFeaturedUntil(day, Date.now());
     if (!checked.ok) {
       setDayError(checked.message);
       requestAnimationFrame(() => dayRef.current?.focus());
@@ -166,6 +166,26 @@ function rewardOption(reward: Reward): string {
 
 type Step = "feature" | "grant";
 
+/** O formulário pela hora do envio, e não pela da leitura da ficha, que pode ser de antes da virada do dia (o intervalo do Destaque). */
+function checkRewardFormNow(form: RewardForm, options: Omit<Parameters<typeof checkRewardForm>[1], "now">) {
+  return checkRewardForm(form, { ...options, now: Date.now() });
+}
+
+/**
+ * O reconhecimento que pode ter gravado, guardado fora do diálogo, por
+ * fã-clube (no molde do Ajuste de pontos): reabrir o Recompensar volta com o
+ * mesmo `grantId` e os mesmos campos travados, e "Tentar de novo" manda o
+ * mesmo pedido, que o servidor não grava duas vezes. Com outro `grantId`, os
+ * pontos e o prêmio sairiam de novo. O sucesso ou uma recusa certa fecha a
+ * tentativa.
+ */
+export interface RewardAttempt {
+  clubId: string;
+  grantId: string;
+  form: RewardForm;
+  featureDone: string | null;
+}
+
 /**
  * O Recompensar (decisões 38 e 44 a 46, 34.10, item 6): o checklist como
  * aviso e três partes, cada uma só com a seção dela (decisão 7): o Destaque
@@ -173,7 +193,8 @@ type Step = "feature" | "grant";
  * quando vão pontos ou prêmio. Confirmar manda o `feature` e o `reward` em
  * chamadas separadas, nesta ordem, e diz o resultado de cada um. O `grantId`
  * é sorteado ao abrir: repetir com os mesmos campos é seguro, e a falha
- * incerta trava os campos até a nova tentativa.
+ * incerta trava os campos até a nova tentativa, também depois de fechar
+ * (`attempt`).
  */
 export function RewardDialog({
   club,
@@ -184,6 +205,8 @@ export function RewardDialog({
   readsFans,
   readsModeration,
   rulesVersion,
+  attempt,
+  onAttempt,
   onClose,
   onDone,
   onSend,
@@ -198,26 +221,33 @@ export function RewardDialog({
   readsModeration: boolean;
   /** A versão do regulamento que o gestor aceitou; `null` sem a candidatura. */
   rulesVersion: string | null;
+  attempt: RewardAttempt | null;
+  onAttempt: (attempt: RewardAttempt | null) => void;
 }) {
   const mounted = useMountedRef();
-  const [grantId] = useState(() => newGrantId());
-  const [form, setForm] = useState<RewardForm>(() => ({
-    feature: false,
-    featuredUntil: defaultFeaturedUntil(club, now),
-    points: "",
-    rewardId: "",
-    coupon: "",
-    message: "",
-    delivered: false,
-    note: "",
-  }));
+  // A tentativa guardada só vale para o mesmo fã-clube; lida uma vez, ao abrir.
+  const [resumed] = useState(() => (attempt?.clubId === club.id ? attempt : null));
+  const [grantId] = useState(() => resumed?.grantId ?? newGrantId());
+  const [form, setForm] = useState<RewardForm>(
+    () =>
+      resumed?.form ?? {
+        feature: false,
+        featuredUntil: defaultFeaturedUntil(club, now),
+        points: "",
+        rewardId: "",
+        coupon: "",
+        message: "",
+        delivered: false,
+        note: "",
+      },
+  );
   const [errors, setErrors] = useState<RewardFormErrors>({});
   const [step, setStep] = useState<Step | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [uncertain, setUncertain] = useState(false);
+  const [error, setError] = useState<string | null>(resumed ? `A última tentativa: ${UNCERTAIN_RETRY_TEXT}` : null);
+  const [uncertain, setUncertain] = useState(resumed !== null);
   const [blocked, setBlocked] = useState(false);
-  /** O que já deu certo nesta abertura: o fim do Destaque e o reconhecimento. */
-  const [featureDone, setFeatureDone] = useState<string | null>(null);
+  /** O que já deu certo nesta abertura (ou na tentativa guardada): o fim do Destaque e o reconhecimento. */
+  const [featureDone, setFeatureDone] = useState<string | null>(resumed?.featureDone ?? null);
   const [grantDone, setGrantDone] = useState<RewardResult | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const footer = useRef<HTMLDivElement>(null);
@@ -253,7 +283,9 @@ export function RewardDialog({
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
   }
 
-  function failed(part: string, failure: unknown) {
+  function failed(part: string, failure: unknown, sent?: { form: RewardForm; featureDone: string | null }) {
+    // Só o reconhecimento depende do `grantId`; o Destaque repetido não muda nada.
+    if (sent) onAttempt(mayHaveRunOnServer(failure) ? { clubId: club.id, grantId, ...sent } : null);
     if (!mounted.current) return onOrphan();
     if (mayHaveRunOnServer(failure)) {
       setUncertain(true);
@@ -269,7 +301,7 @@ export function RewardDialog({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy || blocked) return;
-    const checked = checkRewardForm(form, { now, role, canFeature: true, canPoints, canPrize });
+    const checked = checkRewardFormNow(form, { role, canFeature: true, canPoints, canPrize });
     setErrors(checked.errors);
     if (!checked.plan) {
       requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
@@ -298,8 +330,9 @@ export function RewardDialog({
       try {
         grant = await rewardFanClub(club.id, club.status, { grantId, ...plan.grant });
       } catch (failure) {
-        return failed(plan.grant.prize ? (plan.grant.points !== null ? "Pontos e prêmio" : "Prêmio") : "Pontos", failure);
+        return failed(plan.grant.prize ? (plan.grant.points !== null ? "Pontos e prêmio" : "Prêmio") : "Pontos", failure, { form, featureDone: feature });
       }
+      onAttempt(null);
       if (!mounted.current) return onOrphan();
       setGrantDone(grant);
     }
@@ -433,10 +466,13 @@ export function RewardDialog({
                         <TextArea id={id} describedBy={describedBy} invalid={invalid} rows={2} value={form.message} maxLength={PRIZE_MESSAGE_MAX + 20} disabled={locked} onChange={(event) => set("message", event.target.value)} />
                       )}
                     </Field>
-                    <div className="flex flex-col gap-1">
-                      <Checkbox label="O cupom já é o prêmio" checked={form.delivered} disabled={locked} onChange={(event) => set("delivered", event.target.checked)} />
-                      <p className="m-0 pl-7 text-[12.5px] leading-snug text-fg/60">O pedido nasce Entregue e não se cancela depois. Sem a caixa, ele nasce Aprovado, e a equipe entrega pela aba Pedidos.</p>
-                    </div>
+                    <Checkbox
+                      label="O cupom já é o prêmio"
+                      hint="O pedido nasce Entregue e não se cancela depois. Sem a caixa, ele nasce Aprovado, e a equipe entrega pela aba Pedidos."
+                      checked={form.delivered}
+                      disabled={locked}
+                      onChange={(event) => set("delivered", event.target.checked)}
+                    />
                     {chosen ? <p className="m-0 text-[12.5px] text-fg/60">{chosen.title}: {stockText(chosen)}.</p> : null}
                   </>
                 ) : null}

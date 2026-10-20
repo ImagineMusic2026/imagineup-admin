@@ -784,7 +784,8 @@ export type ReportResolution = (typeof REPORT_RESOLUTIONS)[number];
 export const REPORT_RESOLUTION_LABELS: Record<ReportResolution, string> = {
   kept: "Mantida",
   actioned: "Ocultada",
-  withdrawn: "Retirada pelo gestor",
+  // Também quando todas as denúncias da rodada saem com a conta de quem denunciou.
+  withdrawn: "Encerrada sem decisão da equipe",
   author_deleted: "O gestor excluiu a conta",
 };
 
@@ -840,10 +841,18 @@ export function reportReasonsText(reasons: Record<ReportReason, number>): string
 
 export type ReportDecision = "keep" | "action";
 
-/** Manter e Ocultar só na denúncia aberta; o autor não decide a da própria publicação (`self`), nem o Leitor. */
-export function reportDecisions(item: Pick<FanClubReport, "status" | "authorUid">, viewer: { uid: string; canEdit: boolean }): ReportDecision[] {
-  if (!viewer.canEdit || item.status !== "open" || item.authorUid === viewer.uid) return [];
-  return ["keep", "action"];
+/**
+ * Manter e Ocultar na denúncia aberta; na resolvida pela equipe, a decisão
+ * contrária da mesma rodada, que o servidor aceita (no molde do
+ * `profileDecisions`). A encerrada sem decisão da equipe fica sem botões. O
+ * autor não decide a da própria publicação (`self`), nem o Leitor.
+ */
+export function reportDecisions(item: Pick<FanClubReport, "status" | "resolution" | "authorUid">, viewer: { uid: string; canEdit: boolean }): ReportDecision[] {
+  if (!viewer.canEdit || item.authorUid === viewer.uid) return [];
+  if (item.status === "open") return ["keep", "action"];
+  if (item.resolution === "kept") return ["action"];
+  if (item.resolution === "actioned") return ["keep"];
+  return [];
 }
 
 /** "3 denúncias abertas". */
@@ -853,6 +862,45 @@ export function openReportsCountText(total: number): string {
 
 export const KEEP_REPORT_TEXT = "A publicação continua no ar e sai da fila. Uma denúncia nova abre a rodada seguinte.";
 export const ACTION_REPORT_TEXT = "A publicação sai do app para todos, e as fotos deixam de abrir pelo endereço antigo. A denúncia sai da fila. Dá para reexibir na ficha do fã-clube.";
+
+/** A publicação da denúncia como a tela a leu: `null` quando não existe mais; `"unknown"` quando a leitura falhou. */
+export type ReportPostState = Pick<FanClubPost, "status"> | null | "unknown";
+
+function reportPostStatus(post: ReportPostState): PostStatus | "unknown" | null {
+  return post === "unknown" ? "unknown" : (post?.status ?? null);
+}
+
+/**
+ * O texto da confirmação pelo que o servidor vai fazer: Ocultar só tira do
+ * ar a publicação que está no ar, e Manter nunca reexibe (34.22). Sem a
+ * publicação lida, o texto não promete nada sobre ela.
+ */
+export function reportDecisionText(item: Pick<FanClubReport, "status">, post: ReportPostState, decision: ReportDecision): string {
+  const open = item.status === "open";
+  const status = reportPostStatus(post);
+  if (decision === "action") {
+    if (status === "published") return open ? ACTION_REPORT_TEXT : "A publicação sai do app para todos, e as fotos deixam de abrir pelo endereço antigo. A decisão passa de Mantida para Ocultada. Dá para reexibir na ficha do fã-clube.";
+    if (status === "unknown") return open ? "A publicação não carregou: se ainda estiver no ar, ela sai do app para todos. A denúncia sai da fila." : "A publicação não carregou: se ainda estiver no ar, ela sai do app para todos. A decisão passa de Mantida para Ocultada.";
+    return open ? "A publicação já não está no ar: a denúncia só sai da fila." : "A publicação já não está no ar: só a decisão passa de Mantida para Ocultada.";
+  }
+  if (!open) return status === "published" ? "A publicação segue no ar, e a decisão passa de Ocultada para Mantida." : "A decisão passa de Ocultada para Mantida, mas a publicação não volta ao ar. Para reexibir, use a ficha do fã-clube.";
+  if (status === "published") return KEEP_REPORT_TEXT;
+  if (status === "hidden") return "A publicação continua oculta, porque Manter não reexibe, e a denúncia sai da fila. Para reexibir, use a ficha do fã-clube.";
+  if (status === "unknown") return "A publicação não carregou: ela fica como está, e a denúncia sai da fila. Manter não reexibe uma publicação oculta.";
+  return "A publicação já não está no ar: a denúncia só sai da fila.";
+}
+
+/** O aviso depois da decisão, pelo mesmo estado da publicação que a confirmação mostrou. */
+export function reportDoneText(item: Pick<FanClubReport, "status">, post: ReportPostState, decision: ReportDecision, author: string): string {
+  const status = reportPostStatus(post);
+  const head = item.status === "open" ? "Denúncia resolvida" : "Decisão trocada";
+  if (decision === "action") {
+    if (status === "published") return `${head}: a publicação de ${author} saiu do ar.`;
+    if (status === "unknown") return `${head}: a denúncia ficou como Ocultada.`;
+    return `${head}: a publicação já não estava no ar.`;
+  }
+  return status === "published" ? `${head}: a publicação de ${author} segue no ar.` : `${head}: a denúncia ficou como Mantida, e a publicação segue como está.`;
+}
 
 // ---------------------------------------------------------------------------
 // O registro dos reconhecimentos (decisão 50)
