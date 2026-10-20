@@ -1,19 +1,20 @@
+import { dayKey, shiftDay } from "@/lib/day";
 import { errorDetails, readError } from "@/lib/errors";
 import { socialHref, type FanSocial } from "@/lib/fan-profile";
-import { countLabel, formatDay, formatRelative } from "@/lib/format";
-import { toDate } from "@/lib/staff";
-import { cleanLine, isVisibleLine } from "@/lib/visible-line";
+import { ADJUST_ADMIN_MAX, ADJUST_EDITOR_DAILY_MAX, ADJUST_EDITOR_MAX, newAdjustmentId } from "@/lib/fans";
+import { countLabel, formatDay, formatNumber, formatRelative, joinPt } from "@/lib/format";
+import { toDate, type Role } from "@/lib/staff";
+import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from "@/lib/visible-line";
 import { isWhatsapp } from "@/lib/whatsapp";
 
 /**
  * O fã-clube gerido pelo fã (seção 34 da nota do app, `docs/arquitetura-api.md`),
- * puro: as candidaturas, o fã-clube e o contato do fã como a seção Fã-clubes
- * lê, os rótulos e as frases das decisões. O que vem do servidor da etapa 1
- * (34.14 e 34.22): aprovar e recusar a candidatura, pausar, reativar e
- * encerrar o fã-clube, todas pela `decideFanClub` (`fan-club-api.ts`). O
- * Destaque (`feature` e `unfeature`) o servidor da etapa 1 já tem, e fica para
- * o Painel B; as publicações, as denúncias, os números e o prêmio chegam com
- * as etapas 2 a 5 do servidor.
+ * puro: as candidaturas, o fã-clube, as publicações, as denúncias, os números,
+ * os seguidores e o Recompensar como a seção Fã-clubes lê, os rótulos e as
+ * frases das decisões. Toda decisão passa pela `decideFanClub`
+ * (`fan-club-api.ts`), com os assuntos do servidor das etapas 1 a 5 (34.14 e
+ * 34.22): a candidatura, o fã-clube (com o Destaque e o Recompensar), a
+ * publicação e a denúncia.
  */
 
 /** Tamanho das páginas das listas da seção (o "Carregar mais"). */
@@ -348,7 +349,46 @@ export const CLOSE_REASON_HINTS: Record<CloseReason, string> = {
   owner_request: "O fã pode se candidatar de novo depois de 30 dias, numa rodada 1 nova, para o mesmo ou outro artista.",
 };
 
-/** `fanClubs/{clubId}`, só o que a etapa 1 do servidor grava e a tela usa. */
+/**
+ * A cópia da noite (`counts`, decisão 37): os seguidores e os sinais pelo
+ * `count()`, os trazidos que ficaram e a soma dos shards, com a hora da cópia.
+ * O fã-clube aprovado nasce com tudo em 0 e `at: null`, até a primeira cópia.
+ */
+export interface FanClubCounts {
+  followers: number;
+  followers30d: number;
+  newAccounts: number;
+  automaticUsername: number;
+  byOwnerCode: number;
+  joins: number;
+  retained: number;
+  signups: number;
+  visits: number;
+  links: number;
+  /** A hora da cópia; `null` até a primeira. */
+  at: Date | null;
+}
+
+const COUNT_FIELDS = ["followers", "followers30d", "newAccounts", "automaticUsername", "byOwnerCode", "joins", "retained", "signups", "visits", "links"] as const;
+
+/** Os números do retrato de um mês (`monthStart` e `lastMonth`, 34.4). */
+export const MONTH_FIELDS = ["followers", "joins", "signups", "visits", "links"] as const;
+export type MonthField = (typeof MONTH_FIELDS)[number];
+
+/** O retrato de um mês: o `AAAA-MM` e os números. Os seguidores do mês passado são o saldo e podem sair negativos. */
+export interface FanClubMonth {
+  month: string;
+  numbers: Record<MonthField, number>;
+}
+
+/** O último reconhecimento (`lastReward`): a data, os pontos e se teve prêmio. */
+export interface LastReward {
+  at: Date | null;
+  points: number | null;
+  prize: boolean;
+}
+
+/** `fanClubs/{clubId}`, o que a seção mostra. */
 export interface FanClub {
   id: string;
   artistId: string;
@@ -369,6 +409,47 @@ export interface FanClub {
   pausedAt: Date | null;
   closedAt: Date | null;
   closedBy: { uid: string; name: string } | null;
+  /** As publicações no ar e em análise (o teto de 3), e a data da última aprovada. */
+  postCount: number;
+  pendingPosts: number;
+  lastPostAt: Date | null;
+  /** A cópia da noite; `null` sem o campo (o documento mexido à mão). */
+  counts: FanClubCounts | null;
+  monthStart: FanClubMonth | null;
+  lastMonth: FanClubMonth | null;
+  /** O Destaque marcado e o fim (`AAAA-MM-DD`); vale só com o fim de hoje em diante (`isFeaturedNow`). */
+  featured: boolean;
+  featuredAt: Date | null;
+  featuredUntil: string | null;
+  featuredBy: { uid: string; name: string } | null;
+  lastReward: LastReward | null;
+}
+
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+
+/** Um número da cópia: o inteiro guardado (o saldo do mês pode ser negativo); estranho vale 0. */
+function integerOf(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0;
+}
+
+function countsOf(value: unknown): FanClubCounts | null {
+  if (!isRecord(value)) return null;
+  const counts = { at: toDate(value.at) } as FanClubCounts;
+  for (const field of COUNT_FIELDS) counts[field] = countOf(value[field]);
+  return counts;
+}
+
+function monthOf(value: unknown): FanClubMonth | null {
+  if (!isRecord(value) || typeof value.month !== "string" || !MONTH_PATTERN.test(value.month)) return null;
+  const numbers = {} as Record<MonthField, number>;
+  for (const field of MONTH_FIELDS) numbers[field] = integerOf(value[field]);
+  return { month: value.month, numbers };
+}
+
+function lastRewardOf(value: unknown): LastReward | null {
+  if (!isRecord(value)) return null;
+  return { at: toDate(value.at), points: typeof value.points === "number" && value.points > 0 ? countOf(value.points) : null, prize: value.prize === true };
 }
 
 /** O fã-clube lido. O status estranho vale `closed` (nada a pausar nem reativar), como no servidor. */
@@ -391,6 +472,17 @@ export function parseFanClub(id: string, data: Record<string, unknown>): FanClub
     pausedAt: toDate(data.pausedAt),
     closedAt: toDate(data.closedAt),
     closedBy: personOf(data.closedBy),
+    postCount: countOf(data.postCount),
+    pendingPosts: countOf(data.pendingPosts),
+    lastPostAt: toDate(data.lastPostAt),
+    counts: countsOf(data.counts),
+    monthStart: monthOf(data.monthStart),
+    lastMonth: monthOf(data.lastMonth),
+    featured: data.featured === true,
+    featuredAt: toDate(data.featuredAt),
+    featuredUntil: typeof data.featuredUntil === "string" && DAY_PATTERN.test(data.featuredUntil) ? data.featuredUntil : null,
+    featuredBy: personOf(data.featuredBy),
+    lastReward: lastRewardOf(data.lastReward),
   };
 }
 
@@ -441,6 +533,681 @@ export function closeText(reason: CloseReason): string {
 /** A recusa que outra tentativa repetiria: o estado mudou desde que a tela abriu. */
 export function isStaleDecision(failure: unknown): boolean {
   return readError(failure).reason === "stale-decision";
+}
+
+// ---------------------------------------------------------------------------
+// A lista dos fã-clubes (decisão 36: só colunas que dá para ordenar)
+// ---------------------------------------------------------------------------
+
+/** A ordem da lista, cada uma com um índice de 34.6. */
+export const FAN_CLUB_ORDERS = ["followers", "followers30d", "approved"] as const;
+export type FanClubOrder = (typeof FAN_CLUB_ORDERS)[number];
+
+export const FAN_CLUB_ORDER_LABELS: Record<FanClubOrder, string> = {
+  followers: "Mais seguidores",
+  followers30d: "Mais novos em 30 dias",
+  approved: "Aprovação mais nova",
+};
+
+/** O campo de cada ordem, sempre decrescente. */
+export const FAN_CLUB_ORDER_FIELDS: Record<FanClubOrder, string> = {
+  followers: "counts.followers",
+  followers30d: "counts.followers30d",
+  approved: "approvedAt",
+};
+
+/** "atualizado em 20 out", a hora da cópia da noite; sem ela, "sem cópia ainda". */
+export function countsAtText(counts: Pick<FanClubCounts, "at"> | null, now: Date): string {
+  return counts?.at ? `atualizado em ${formatDay(counts.at, now)}` : "sem cópia ainda";
+}
+
+/** "3 de 5": os trazidos que ficaram na central sobre as entradas trazidas (a cópia da noite). */
+export function retainedText(counts: Pick<FanClubCounts, "retained" | "joins">): string {
+  return `${formatNumber(counts.retained)} de ${formatNumber(counts.joins)}`;
+}
+
+/** "+200 pts e prêmio, 20 out"; sem reconhecimento, `null`. */
+export function lastRewardText(reward: LastReward | null, now: Date): string | null {
+  if (!reward) return null;
+  const parts = [reward.points !== null ? `+${formatNumber(reward.points)} pts` : null, reward.prize ? "prêmio" : null].filter(Boolean);
+  const what = parts.length > 0 ? joinPt(parts as string[]) : "Reconhecimento";
+  const head = what.charAt(0).toUpperCase() + what.slice(1);
+  return reward.at ? `${head}, ${formatDay(reward.at, now)}` : head;
+}
+
+// ---------------------------------------------------------------------------
+// O Destaque (decisão 35)
+// ---------------------------------------------------------------------------
+
+/** O fim do Destaque vai de amanhã a 31 dias, no dia de São Paulo, e cada artista tem até 3 ao mesmo tempo. */
+export const FEATURE_DAYS_MAX = 31;
+export const FEATURED_PER_ARTIST_MAX = 3;
+/** O fim que o diálogo sugere: daqui a 30 dias. */
+export const FEATURE_DEFAULT_DAYS = 30;
+
+/** O Destaque vale hoje: marcado e com o fim de hoje em diante (o `isFeaturedNow` do servidor). */
+export function isFeaturedNow(club: Pick<FanClub, "featured" | "featuredUntil">, now: number): boolean {
+  return club.featured && club.featuredUntil !== null && club.featuredUntil >= dayKey(now);
+}
+
+/** "Destaque até 12 nov"; vencido (a cópia da noite ainda não desligou), "Destaque vencido em 2 out"; sem, `null`. */
+export function featuredText(club: Pick<FanClub, "featured" | "featuredUntil">, now: number): string | null {
+  if (!club.featured || !club.featuredUntil) return null;
+  const until = formatDay(club.featuredUntil, new Date(now));
+  return isFeaturedNow(club, now) ? `Destaque até ${until}` : `Destaque vencido em ${until}`;
+}
+
+/** O primeiro e o último fim que o servidor aceita (`AAAA-MM-DD`), de amanhã a 31 dias. */
+export function featureRange(now: number): { min: string; max: string } {
+  const today = dayKey(now);
+  return { min: shiftDay(today, 1), max: shiftDay(today, FEATURE_DAYS_MAX) };
+}
+
+/** O fim sugerido: o de agora, se ainda cabe no prazo; senão, daqui a 30 dias. */
+export function defaultFeaturedUntil(club: Pick<FanClub, "featured" | "featuredUntil">, now: number): string {
+  const range = featureRange(now);
+  if (club.featured && club.featuredUntil && club.featuredUntil >= range.min && club.featuredUntil <= range.max) return club.featuredUntil;
+  return shiftDay(dayKey(now), FEATURE_DEFAULT_DAYS);
+}
+
+/** O fim escolhido, como o `parseFeaturedUntil` do servidor confere. */
+export function checkFeaturedUntil(value: string, now: number): { ok: true; day: string } | { ok: false; message: string } {
+  const range = featureRange(now);
+  const message = `Escolha um dia de ${formatDay(range.min, new Date(now))} a ${formatDay(range.max, new Date(now))}.`;
+  if (!DAY_PATTERN.test(value) || shiftDay(value, 0) !== value) return { ok: false, message };
+  if (value < range.min || value > range.max) return { ok: false, message };
+  return { ok: true, day: value };
+}
+
+export const UNFEATURE_TEXT = "O selo Destaque sai da página do fã-clube e da lista do artista. Dá para destacar de novo depois.";
+
+// ---------------------------------------------------------------------------
+// Publicações (decisões 15 a 20)
+// ---------------------------------------------------------------------------
+
+export const POST_STATUSES = ["pending", "published", "rejected", "withdrawn", "hidden", "removed"] as const;
+export type PostStatus = (typeof POST_STATUSES)[number];
+
+/** Os nomes de cada status, os mesmos do "Minhas publicações" do app. */
+export const POST_STATUS_LABELS: Record<PostStatus, string> = {
+  pending: "Em análise",
+  published: "No ar",
+  rejected: "Recusada",
+  withdrawn: "Retirada pelo gestor",
+  hidden: "Oculta pela equipe",
+  removed: "Tirada do ar pelo gestor",
+};
+
+/** Os motivos da recusa (34.3), na ordem do servidor. O gestor vê uma frase fixa por motivo no app. */
+export const POST_REJECT_REASONS = ["image_rights", "off_topic", "quality", "rules", "other"] as const;
+export type PostRejectReason = (typeof POST_REJECT_REASONS)[number];
+
+export const POST_REJECT_REASON_LABELS: Record<PostRejectReason, string> = {
+  image_rights: "Uso de imagem sem autorização",
+  off_topic: "Fora do assunto do artista",
+  quality: "A foto ou o texto não estão bons para ir ao ar",
+  rules: "Contra as regras do fã-clube",
+  other: "Outro motivo",
+};
+
+export interface PostImage {
+  url: string;
+  path: string;
+  width: number;
+  height: number;
+}
+
+/** `fanClubPosts/{postId}`: a publicação do gestor, fora do Mural oficial (decisão 17). */
+export interface FanClubPost {
+  id: string;
+  clubId: string;
+  artistId: string;
+  authorUid: string;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorPhotoURL: string | null;
+  kind: "text" | "photo";
+  text: string;
+  /** A foto (1080 por 1350) e a miniatura (480 por 600), que vão ao ar as duas. */
+  media: { photo: PostImage; thumb: PostImage } | null;
+  status: PostStatus;
+  rejectReason: PostRejectReason | null;
+  submittedAt: Date | null;
+  publishedAt: Date | null;
+  reviewedAt: Date | null;
+  reviewedBy: { uid: string; name: string } | null;
+}
+
+function imageOf(value: unknown): PostImage | null {
+  if (!isRecord(value) || typeof value.url !== "string" || typeof value.path !== "string" || !value.path) return null;
+  return { url: value.url, path: value.path, width: countOf(value.width), height: countOf(value.height) };
+}
+
+/** A publicação lida. O status estranho vale `removed` (nada a decidir), como no servidor. */
+export function parsePost(id: string, data: Record<string, unknown>): FanClubPost {
+  const raw = isRecord(data.media) ? data.media : null;
+  const photo = raw ? imageOf(raw.photo) : null;
+  const thumb = raw ? imageOf(raw.thumb) : null;
+  const media = photo && thumb ? { photo, thumb } : null;
+  return {
+    id,
+    clubId: text(data.clubId),
+    artistId: text(data.artistId),
+    authorUid: text(data.authorUid),
+    authorName: textOrNull(data.authorName),
+    authorUsername: textOrNull(data.authorUsername),
+    authorPhotoURL: textOrNull(data.authorPhotoURL),
+    kind: media ? "photo" : "text",
+    text: text(data.text),
+    media,
+    status: oneOf(POST_STATUSES, data.status) ?? "removed",
+    rejectReason: oneOf(POST_REJECT_REASONS, data.rejectReason),
+    submittedAt: toDate(data.submittedAt),
+    publishedAt: toDate(data.publishedAt),
+    reviewedAt: toDate(data.reviewedAt),
+    reviewedBy: personOf(data.reviewedBy),
+  };
+}
+
+/** O autor como a tela mostra: o nome copiado, o @ ou a conta que saiu. */
+export function authorLabel(post: Pick<FanClubPost, "authorName" | "authorUsername">): string {
+  return post.authorName ?? (post.authorUsername ? `@${post.authorUsername}` : "Gestor sem nome");
+}
+
+export type PostDecision = "approve" | "reject" | "hide" | "restore";
+
+/**
+ * As decisões que cabem na publicação agora (34.5): aprovar e recusar a em
+ * análise (a fila de revisão), ocultar a no ar e reexibir a oculta. O autor
+ * não decide a própria (`self`), nem o Leitor.
+ */
+export function postDecisions(post: Pick<FanClubPost, "status" | "authorUid">, viewer: { uid: string; canEdit: boolean }): PostDecision[] {
+  if (!viewer.canEdit || post.authorUid === viewer.uid) return [];
+  if (post.status === "pending") return ["approve", "reject"];
+  if (post.status === "published") return ["hide"];
+  if (post.status === "hidden") return ["restore"];
+  return [];
+}
+
+/**
+ * De onde vêm as fotos agora: a URL guardada vale na em análise e na no ar; a
+ * oculta e a tirada do ar trocaram o token (a URL guardada não abre mais), e o
+ * painel lê pelo caminho, com o SDK do Storage (a regra dá a leitura à seção,
+ * 34.22); a recusada e a retirada perderam os arquivos.
+ */
+export function postMediaSource(post: Pick<FanClubPost, "status" | "media">): "stored" | "path" | "gone" | "none" {
+  if (!post.media) return "none";
+  if (post.status === "pending" || post.status === "published") return "stored";
+  if (post.status === "hidden" || post.status === "removed") return "path";
+  return "gone";
+}
+
+/** Por que a publicação ficou sem as fotos (a recusa e a retirada apagam os arquivos). */
+export function mediaGoneText(post: Pick<FanClubPost, "status">): string {
+  return post.status === "rejected" ? "As fotos saíram na recusa." : "As fotos saíram quando o gestor retirou a publicação.";
+}
+
+/** "3 publicações em análise". */
+export function pendingPostsCountText(total: number): string {
+  return countLabel(total, "publicação em análise", "publicações em análise");
+}
+
+export const APPROVE_POST_TEXT = "A publicação vai ao ar na página do fã-clube e na Início de quem segue.";
+export const HIDE_POST_TEXT = "A publicação sai do app para todos, e as fotos deixam de abrir pelo endereço antigo. A equipe continua vendo as fotos aqui. Dá para reexibir depois.";
+export const RESTORE_POST_TEXT = "A publicação volta ao app, no lugar dela na lista do fã-clube.";
+
+// ---------------------------------------------------------------------------
+// Denúncias (decisão 18)
+// ---------------------------------------------------------------------------
+
+/** Os motivos da denúncia de publicação de fã-clube: os 4 de sempre, o de imagem e a denúncia sem motivo. */
+export const REPORT_REASONS = ["spam", "offensive", "harassment", "image_misuse", "other", "none"] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
+export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
+  spam: "Spam",
+  offensive: "Ofensivo",
+  harassment: "Assédio",
+  image_misuse: "Uso indevido de imagem",
+  other: "Outro",
+  none: "Sem motivo",
+};
+
+export const REPORT_STATUSES = ["open", "resolved"] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+export const REPORT_FILTER_LABELS: Record<ReportStatus, string> = { open: "Abertas", resolved: "Resolvidas" };
+
+export const REPORT_RESOLUTIONS = ["kept", "actioned", "withdrawn", "author_deleted"] as const;
+export type ReportResolution = (typeof REPORT_RESOLUTIONS)[number];
+
+export const REPORT_RESOLUTION_LABELS: Record<ReportResolution, string> = {
+  kept: "Mantida",
+  actioned: "Ocultada",
+  // Também quando todas as denúncias da rodada saem com a conta de quem denunciou.
+  withdrawn: "Encerrada sem decisão da equipe",
+  author_deleted: "O gestor excluiu a conta",
+};
+
+/** `fanClubReportQueue/{postId}`: o item da fila, um por publicação, com a rodada (no molde da `profileReportQueue`). */
+export interface FanClubReport {
+  postId: string;
+  clubId: string;
+  artistId: string;
+  authorUid: string;
+  reportCount: number;
+  reasons: Record<ReportReason, number>;
+  status: ReportStatus;
+  resolution: ReportResolution | null;
+  /** A rodada que a decisão manda como `expected`. */
+  round: number;
+  openedAt: Date | null;
+  firstReportedAt: Date | null;
+  lastReportedAt: Date | null;
+  resolvedAt: Date | null;
+  resolvedBy: { uid: string; name: string } | null;
+}
+
+/** O item da fila lido. O status estranho vale `resolved` (nada a decidir). */
+export function parseReport(id: string, data: Record<string, unknown>): FanClubReport {
+  const raw = isRecord(data.reasons) ? data.reasons : {};
+  const reasons = {} as Record<ReportReason, number>;
+  for (const reason of REPORT_REASONS) reasons[reason] = countOf(raw[reason]);
+  return {
+    postId: id,
+    clubId: text(data.clubId),
+    artistId: text(data.artistId),
+    authorUid: text(data.authorUid),
+    reportCount: countOf(data.reportCount),
+    reasons,
+    status: data.status === "open" ? "open" : "resolved",
+    resolution: oneOf(REPORT_RESOLUTIONS, data.resolution),
+    round: countOf(data.round),
+    openedAt: toDate(data.openedAt),
+    firstReportedAt: toDate(data.firstReportedAt),
+    lastReportedAt: toDate(data.lastReportedAt),
+    resolvedAt: toDate(data.resolvedAt),
+    resolvedBy: personOf(data.resolvedBy),
+  };
+}
+
+/** A contagem por motivo, dos mais citados: "2 Uso indevido de imagem, 1 Spam". */
+export function reportReasonsText(reasons: Record<ReportReason, number>): string {
+  const parts = REPORT_REASONS.filter((reason) => reasons[reason] > 0)
+    .sort((a, b) => reasons[b] - reasons[a])
+    .map((reason) => `${formatNumber(reasons[reason])} ${REPORT_REASON_LABELS[reason]}`);
+  return parts.length > 0 ? parts.join(", ") : "Sem contagem por motivo";
+}
+
+export type ReportDecision = "keep" | "action";
+
+/**
+ * Manter e Ocultar na denúncia aberta; na resolvida pela equipe, a decisão
+ * contrária da mesma rodada, que o servidor aceita (no molde do
+ * `profileDecisions`). A encerrada sem decisão da equipe fica sem botões. O
+ * autor não decide a da própria publicação (`self`), nem o Leitor.
+ */
+export function reportDecisions(item: Pick<FanClubReport, "status" | "resolution" | "authorUid">, viewer: { uid: string; canEdit: boolean }): ReportDecision[] {
+  if (!viewer.canEdit || item.authorUid === viewer.uid) return [];
+  if (item.status === "open") return ["keep", "action"];
+  if (item.resolution === "kept") return ["action"];
+  if (item.resolution === "actioned") return ["keep"];
+  return [];
+}
+
+/** "3 denúncias abertas". */
+export function openReportsCountText(total: number): string {
+  return countLabel(total, "denúncia aberta", "denúncias abertas");
+}
+
+export const KEEP_REPORT_TEXT = "A publicação continua no ar e sai da fila. Uma denúncia nova abre a rodada seguinte.";
+export const ACTION_REPORT_TEXT = "A publicação sai do app para todos, e as fotos deixam de abrir pelo endereço antigo. A denúncia sai da fila. Dá para reexibir na ficha do fã-clube.";
+
+/** A publicação da denúncia como a tela a leu: `null` quando não existe mais; `"unknown"` quando a leitura falhou. */
+export type ReportPostState = Pick<FanClubPost, "status"> | null | "unknown";
+
+function reportPostStatus(post: ReportPostState): PostStatus | "unknown" | null {
+  return post === "unknown" ? "unknown" : (post?.status ?? null);
+}
+
+/**
+ * O texto da confirmação pelo que o servidor vai fazer: Ocultar só tira do
+ * ar a publicação que está no ar, e Manter nunca reexibe (34.22). Sem a
+ * publicação lida, o texto não promete nada sobre ela.
+ */
+export function reportDecisionText(item: Pick<FanClubReport, "status">, post: ReportPostState, decision: ReportDecision): string {
+  const open = item.status === "open";
+  const status = reportPostStatus(post);
+  if (decision === "action") {
+    if (status === "published") return open ? ACTION_REPORT_TEXT : "A publicação sai do app para todos, e as fotos deixam de abrir pelo endereço antigo. A decisão passa de Mantida para Ocultada. Dá para reexibir na ficha do fã-clube.";
+    if (status === "unknown") return open ? "A publicação não carregou: se ainda estiver no ar, ela sai do app para todos. A denúncia sai da fila." : "A publicação não carregou: se ainda estiver no ar, ela sai do app para todos. A decisão passa de Mantida para Ocultada.";
+    return open ? "A publicação já não está no ar: a denúncia só sai da fila." : "A publicação já não está no ar: só a decisão passa de Mantida para Ocultada.";
+  }
+  if (!open) return status === "published" ? "A publicação segue no ar, e a decisão passa de Ocultada para Mantida." : "A decisão passa de Ocultada para Mantida, mas a publicação não volta ao ar. Para reexibir, use a ficha do fã-clube.";
+  if (status === "published") return KEEP_REPORT_TEXT;
+  if (status === "hidden") return "A publicação continua oculta, porque Manter não reexibe, e a denúncia sai da fila. Para reexibir, use a ficha do fã-clube.";
+  if (status === "unknown") return "A publicação não carregou: ela fica como está, e a denúncia sai da fila. Manter não reexibe uma publicação oculta.";
+  return "A publicação já não está no ar: a denúncia só sai da fila.";
+}
+
+/** O aviso depois da decisão, pelo mesmo estado da publicação que a confirmação mostrou. */
+export function reportDoneText(item: Pick<FanClubReport, "status">, post: ReportPostState, decision: ReportDecision, author: string): string {
+  const status = reportPostStatus(post);
+  const head = item.status === "open" ? "Denúncia resolvida" : "Decisão trocada";
+  if (decision === "action") {
+    if (status === "published") return `${head}: a publicação de ${author} saiu do ar.`;
+    if (status === "unknown") return `${head}: a denúncia ficou como Ocultada.`;
+    return `${head}: a publicação já não estava no ar.`;
+  }
+  return status === "published" ? `${head}: a publicação de ${author} segue no ar.` : `${head}: a denúncia ficou como Mantida, e a publicação segue como está.`;
+}
+
+// ---------------------------------------------------------------------------
+// O registro dos reconhecimentos (decisão 50)
+// ---------------------------------------------------------------------------
+
+/** `fanClubs/{clubId}/prizes/{grantId}`: uma concessão, sem o código do pedido nem o cupom. */
+export interface FanClubPrize {
+  grantId: string;
+  points: number | null;
+  prize: { rewardId: string; rewardTitle: string; rewardKind: string; delivered: boolean } | null;
+  /** A nota interna da equipe. */
+  note: string;
+  by: { uid: string; name: string } | null;
+  at: Date | null;
+}
+
+export function parsePrize(id: string, data: Record<string, unknown>): FanClubPrize {
+  const prize = isRecord(data.prize) ? data.prize : null;
+  return {
+    grantId: id,
+    points: typeof data.points === "number" && data.points > 0 ? countOf(data.points) : null,
+    prize: prize
+      ? { rewardId: text(prize.rewardId), rewardTitle: text(prize.rewardTitle), rewardKind: text(prize.rewardKind), delivered: prize.delivered === true }
+      : null,
+    note: text(data.note),
+    by: personOf(data.by),
+    at: toDate(data.at),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// O Recompensar (decisões 38 e 43 a 46)
+// ---------------------------------------------------------------------------
+
+/** O cupom do parceiro, numa linha, e a mensagem da equipe ao gestor (decisão 43); a nota interna (34.3). */
+export const PRIZE_COUPON_MAX = 60;
+export const PRIZE_MESSAGE_MAX = 140;
+export const REWARD_NOTE_MAX = 200;
+
+/**
+ * O `grantId` do Recompensar, sorteado ao abrir o diálogo, no formato do
+ * `adjustmentId` do Ajuste (`^[A-Za-z0-9_-]{8,64}$`): a repetição com os
+ * mesmos campos responde o que já foi feito, sem dar de novo.
+ */
+export function newGrantId(random?: () => string): string {
+  return newAdjustmentId(random);
+}
+
+/** O teto dos pontos por reconhecimento, o mesmo do Ajuste por lançamento (decisão 45). */
+export function rewardPointsMax(role: Role): number {
+  return role === "admin" ? ADJUST_ADMIN_MAX : ADJUST_EDITOR_MAX;
+}
+
+export function rewardPointsHint(role: Role): string {
+  return role === "admin"
+    ? `De 1 a ${formatNumber(ADJUST_ADMIN_MAX)}. Vão só ao saldo do gestor, como "Prêmio do fã-clube" no extrato.`
+    : `De 1 a ${formatNumber(ADJUST_EDITOR_MAX)}. Vão só ao saldo do gestor, como "Prêmio do fã-clube" no extrato, e somam no seu limite de ${formatNumber(ADJUST_EDITOR_DAILY_MAX)} pontos por dia do Ajuste.`;
+}
+
+/** O formulário do Recompensar: cada parte vale só com a seção dela (decisão 7). */
+export interface RewardForm {
+  feature: boolean;
+  featuredUntil: string;
+  points: string;
+  /** A recompensa "Só para prêmios de fã-clube", ou "" sem prêmio. */
+  rewardId: string;
+  coupon: string;
+  message: string;
+  /** "O cupom já é o prêmio": o pedido nasce Entregue, e não se cancela. */
+  delivered: boolean;
+  note: string;
+}
+
+export type RewardFormErrors = Partial<Record<keyof RewardForm | "form", string>>;
+
+/** O que o Confirmar manda: o `feature` (o fim) e o `reward` (os pontos, o prêmio e a nota), cada um numa chamada. */
+export interface RewardPlan {
+  featuredUntil: string | null;
+  grant: {
+    points: number | null;
+    prize: { rewardId: string; delivered: boolean; coupon: string | null; message: string | null } | null;
+    note: string;
+  } | null;
+}
+
+/**
+ * Confere o formulário como o servidor (o `parseFeaturedUntil` e o
+ * `parseRewardGrant`): pelo menos uma parte; o fim de amanhã a 31 dias; os
+ * pontos inteiros até o teto do papel; o cupom numa linha até 60 e a mensagem
+ * até 140; e a nota de 1 a 200, numa linha, quando vão pontos ou prêmio. A
+ * parte sem a seção de quem confirma fica de fora.
+ */
+export function checkRewardForm(
+  form: RewardForm,
+  options: { now: number; role: Role; canFeature: boolean; canPoints: boolean; canPrize: boolean },
+): { errors: RewardFormErrors; plan: RewardPlan | null } {
+  const errors: RewardFormErrors = {};
+  let featuredUntil: string | null = null;
+  if (options.canFeature && form.feature) {
+    const checked = checkFeaturedUntil(form.featuredUntil, options.now);
+    if (checked.ok) featuredUntil = checked.day;
+    else errors.featuredUntil = checked.message;
+  }
+  let points: number | null = null;
+  if (options.canPoints && form.points.trim() !== "") {
+    const max = rewardPointsMax(options.role);
+    const value = Number(form.points);
+    if (!Number.isSafeInteger(value) || value < 1 || value > max) errors.points = `Use um número inteiro de 1 a ${formatNumber(max)}.`;
+    else points = value;
+  }
+  let prize: NonNullable<RewardPlan["grant"]>["prize"] = null;
+  if (options.canPrize && form.rewardId) {
+    const coupon = cleanLine(form.coupon);
+    if (coupon.length > PRIZE_COUPON_MAX || (coupon && !isVisibleLine(coupon))) errors.coupon = `Até ${PRIZE_COUPON_MAX} caracteres, numa linha.`;
+    const message = cleanMultiline(form.message);
+    if (message.length > PRIZE_MESSAGE_MAX || (message && !isVisibleMultiline(message))) errors.message = `Até ${PRIZE_MESSAGE_MAX} caracteres.`;
+    if (form.delivered && !coupon) errors.coupon = "Escreva o cupom: com \"O cupom já é o prêmio\", o pedido nasce entregue.";
+    prize = { rewardId: form.rewardId, delivered: form.delivered, coupon: coupon || null, message: message || null };
+  }
+  const grants = points !== null || prize !== null || Boolean(errors.points);
+  let note = "";
+  if (grants) {
+    note = cleanLine(form.note);
+    if (!note) errors.note = "Escreva a nota interna: por que o fã-clube recebe.";
+    else if (note.length > REWARD_NOTE_MAX || !isVisibleLine(note)) errors.note = `Até ${REWARD_NOTE_MAX} caracteres, numa linha.`;
+  }
+  if (featuredUntil === null && !grants && !errors.featuredUntil) errors.form = "Escolha o Destaque, os pontos ou o prêmio.";
+  if (Object.keys(errors).length > 0) return { errors, plan: null };
+  return { errors, plan: { featuredUntil, grant: points !== null || prize !== null ? { points, prize, note } : null } };
+}
+
+/** A versão do regulamento de agora (`FAN_CLUB_RULES_VERSION` do servidor): até o regulamento, a dos Termos de Uso. */
+export const FAN_CLUB_RULES_VERSION = "termos-2026-10";
+
+/** O fã-clube ativo há 30 dias, no checklist. */
+export const REWARD_ACTIVE_DAYS = 30;
+
+export type CheckState = "ok" | "no" | "unknown";
+
+export interface ChecklistItem {
+  key: "active" | "suspension" | "member" | "rules" | "reports" | "posts";
+  label: string;
+  state: CheckState;
+  /** Por que não deu para conferir, ou o detalhe do que falhou. */
+  detail: string | null;
+}
+
+/**
+ * O checklist do Recompensar (decisão 38): só avisa, sem impedir. O que a
+ * pessoa não pode ler fica "não conferido" com o motivo: o perfil e a central
+ * do gestor pedem a seção Fãs. As travas de verdade (o fã-clube ativo, o 18+
+ * declarado e o gestor sem suspensão) são do servidor (decisão 46).
+ */
+export function rewardChecklist(input: {
+  club: Pick<FanClub, "status" | "approvedAt" | "postCount" | "lastPostAt" | "ownerUid">;
+  now: number;
+  /** `null`: não deu para ler (sem a seção Fãs, ou a leitura falhou). */
+  ownerSuspended: boolean | null;
+  ownerMember: boolean | null;
+  rulesVersion: string | null;
+  /** As denúncias aceitas (Ocultar) nos últimos 30 dias; `null` sem a leitura. */
+  actionedReports: number | null;
+  readsFans: boolean;
+  /** A suspensão também se lê com a Moderação; o vínculo com a central, só com Fãs. */
+  readsModeration?: boolean;
+}): ChecklistItem[] {
+  const { club, now } = input;
+  const since = now - REWARD_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
+  const failed = "Não deu para conferir agora.";
+  const suspensionUnread = input.readsFans || input.readsModeration ? failed : "Só com a seção Fãs ou a Moderação.";
+  const memberUnread = input.readsFans ? failed : "Só com a seção Fãs.";
+  const state = (value: boolean | null): CheckState => (value === null ? "unknown" : value ? "ok" : "no");
+  return [
+    {
+      key: "active",
+      label: "Fã-clube ativo há 30 dias",
+      state: club.status === "active" && club.approvedAt !== null && club.approvedAt.getTime() <= since ? "ok" : "no",
+      detail: club.status !== "active" ? "O fã-clube não está ativo." : null,
+    },
+    { key: "suspension", label: "Gestor sem suspensão", state: state(input.ownerSuspended === null ? null : !input.ownerSuspended), detail: input.ownerSuspended === null ? suspensionUnread : null },
+    { key: "member", label: "Gestor na central do artista", state: state(input.ownerMember), detail: input.ownerMember === null ? memberUnread : null },
+    {
+      key: "rules",
+      label: "Regulamento aceito na versão de agora",
+      state: input.rulesVersion === null ? "unknown" : input.rulesVersion === FAN_CLUB_RULES_VERSION ? "ok" : "no",
+      detail: input.rulesVersion === null ? "Sem a candidatura do gestor." : null,
+    },
+    {
+      key: "reports",
+      label: "Nenhuma denúncia aceita nos últimos 30 dias",
+      state: input.actionedReports === null ? "unknown" : input.actionedReports === 0 ? "ok" : "no",
+      detail: input.actionedReports === null ? "Não deu para conferir agora." : input.actionedReports > 0 ? countLabel(input.actionedReports, "denúncia aceita", "denúncias aceitas") : null,
+    },
+    { key: "posts", label: "Pelo menos uma publicação aprovada", state: club.lastPostAt !== null || club.postCount > 0 ? "ok" : "no", detail: null },
+  ];
+}
+
+/** As travas do servidor (decisão 46), pelo `details.problem` do `prize-not-allowed`. */
+const PRIZE_PROBLEMS: Record<string, string> = {
+  club_not_active: "O fã-clube precisa estar ativo para receber.",
+  not_adult: "O gestor não declarou ter 18 anos ou mais na candidatura.",
+  owner_suspended: "O gestor está suspenso. Tire a suspensão antes de recompensar.",
+};
+
+/** A frase da recusa do Recompensar pela trava que falhou; fora do `prize-not-allowed`, `null` (a frase do servidor). */
+export function rewardRefusalText(failure: unknown): string | null {
+  if (readError(failure).reason !== "prize-not-allowed") return null;
+  const problem = errorDetails(failure).problem;
+  return typeof problem === "string" && PRIZE_PROBLEMS[problem] ? PRIZE_PROBLEMS[problem] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Os números (decisões 24, 37 e 39)
+// ---------------------------------------------------------------------------
+
+/** A proporção acima da qual a ficha avisa (decisão 39): passou da metade. O limite é proposta, fácil de trocar. */
+export const QUALITY_WARNING_SHARE = 0.5;
+
+export const QUALITY_SIGNALS = ["newAccounts", "automaticUsername", "byOwnerCode"] as const;
+export type QualitySignal = (typeof QUALITY_SIGNALS)[number];
+
+export const QUALITY_LABELS: Record<QualitySignal, string> = {
+  newAccounts: "Contas com menos de 7 dias",
+  automaticUsername: "Com o @ automático",
+  byOwnerCode: "Trazidos pelo código do gestor",
+};
+
+/**
+ * A qualidade dos seguidores pela cópia (o `followerQuality` do servidor):
+ * cada sinal sobre os seguidores (0 sem seguidores) e os que passam da metade.
+ */
+export function followerQuality(counts: Pick<FanClubCounts, "followers" | QualitySignal>): { shares: Record<QualitySignal, number>; warnings: QualitySignal[] } {
+  const share = (value: number) => (counts.followers > 0 ? value / counts.followers : 0);
+  const shares = { newAccounts: share(counts.newAccounts), automaticUsername: share(counts.automaticUsername), byOwnerCode: share(counts.byOwnerCode) };
+  return { shares, warnings: QUALITY_SIGNALS.filter((signal) => shares[signal] > QUALITY_WARNING_SHARE) };
+}
+
+export const MONTH_FIELD_LABELS: Record<MonthField, string> = {
+  followers: "Seguidores",
+  joins: "Entradas trazidas",
+  signups: "Cadastros",
+  visits: "Visitas",
+  links: "Links",
+};
+
+const MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/** "outubro de 2026", de um `AAAA-MM`. */
+export function monthLabel(month: string): string {
+  const [year, number] = month.split("-").map(Number);
+  return `${MONTH_NAMES[(number ?? 1) - 1] ?? month} de ${year}`;
+}
+
+/**
+ * Este mês: os números da cópia menos os do `monthStart`, quando a cópia é do
+ * mesmo mês do retrato (a primeira cópia de um mês grava o `monthStart` novo).
+ * Antes dela, `null`.
+ */
+export function thisMonthNumbers(club: Pick<FanClub, "counts" | "monthStart">): FanClubMonth | null {
+  const { counts, monthStart } = club;
+  if (!counts?.at || !monthStart || dayKey(counts.at.getTime()).slice(0, 7) !== monthStart.month) return null;
+  const numbers = {} as Record<MonthField, number>;
+  for (const field of MONTH_FIELDS) numbers[field] = counts[field] - monthStart.numbers[field];
+  return { month: monthStart.month, numbers };
+}
+
+// ---------------------------------------------------------------------------
+// Seguidores (decisões 29 e 39)
+// ---------------------------------------------------------------------------
+
+/** `users/{uid}/fanClubFollows/{clubId}`, lido pela consulta de grupo, só com a seção Fãs. */
+export interface FanClubFollower {
+  uid: string;
+  followedAt: Date | null;
+  newAccount: boolean;
+  chosenUsername: boolean;
+  byOwnerCode: boolean;
+}
+
+export function parseFollower(data: Record<string, unknown>): FanClubFollower {
+  return {
+    uid: text(data.uid),
+    followedAt: toDate(data.followedAt),
+    newAccount: data.newAccount === true,
+    chosenUsername: data.chosenUsername === true,
+    byOwnerCode: data.byOwnerCode === true,
+  };
+}
+
+/** Os sinais que a linha do seguidor mostra (decisão 39). */
+export function followerSignals(follower: Pick<FanClubFollower, "newAccount" | "chosenUsername" | "byOwnerCode">): string[] {
+  return [
+    follower.newAccount ? "Conta nova" : null,
+    follower.chosenUsername ? null : "@ automático",
+    follower.byOwnerCode ? "Trazido pelo gestor" : null,
+  ].filter((item): item is string => item !== null);
+}
+
+// ---------------------------------------------------------------------------
+// O "Aguardando a equipe" (34.10, item 9)
+// ---------------------------------------------------------------------------
+
+/** O que espera a equipe: as candidaturas e as publicações em análise e as denúncias abertas. */
+export interface WaitingCounts {
+  applications: number;
+  posts: number;
+  reports: number;
 }
 
 // ---------------------------------------------------------------------------

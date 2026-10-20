@@ -11,7 +11,8 @@ import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import { actionErrorMessage, mayHaveRunOnServer } from "@/lib/errors";
 import { countLabel, formatNumber } from "@/lib/format";
 import { isDeletedContact, setRedemptionStatus, type RedemptionContact } from "@/lib/reward-api";
-import { CONTACTS_AUDIT_TEXT, REFUSAL_REASON_MAX, RESTOCK_HINT, refundText, validateRefusal, type Redemption } from "@/lib/rewards";
+import { socialHref } from "@/lib/fan-profile";
+import { CONTACTS_AUDIT_TEXT, REFUSAL_REASON_MAX, RESTOCK_HINT, isPrizeRedemption, refundText, validateRefusal, type Redemption } from "@/lib/rewards";
 import { formatWhatsapp, whatsappLink } from "@/lib/whatsapp";
 
 /**
@@ -70,10 +71,14 @@ function RefuseBody({ redemption, onClose, onDone, onUncertain }: { redemption: 
       busy={busy}
       onClose={() => !busy && onClose()}
       title={`Recusar ${redemption.code}?`}
-      description={`${redemption.rewardTitle}. ${redemption.points > 0 ? refundText(redemption.points) : ""}`}
+      description={
+        isPrizeRedemption(redemption)
+          ? `${redemption.rewardTitle}. O prêmio do fã-clube é cancelado. Os pontos do reconhecimento continuam no saldo do gestor: tirar é um Ajuste negativo na ficha do fã.`
+          : `${redemption.rewardTitle}. ${redemption.points > 0 ? refundText(redemption.points) : ""}`
+      }
     >
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-        <Field label="Motivo" optional error={reasonError ?? undefined} hint="O fã vê este texto.">
+        <Field label="Motivo" optional error={reasonError ?? undefined} hint={isPrizeRedemption(redemption) ? "O gestor vê este texto em Seus prêmios, no app." : "O fã vê este texto."}>
           {({ id, describedBy, invalid }) => (
             <TextInput
               id={id}
@@ -115,9 +120,9 @@ export type ContactsState = { status: "loading" } | { status: "ready"; contacts:
  * pelo app de antes), "Sem WhatsApp". A conta que saiu fica só com "Conta
  * excluída", sem esta linha.
  */
-function WhatsappContact({ contact }: { contact: RedemptionContact }) {
+function WhatsappContact({ contact, prize }: { contact: RedemptionContact; prize: boolean }) {
   const number = formatWhatsapp(contact.whatsapp);
-  const href = whatsappLink(contact.whatsapp, contact.redemptionId);
+  const href = whatsappLink(contact.whatsapp, contact.redemptionId, prize);
   if (!number || !href) return <span className="text-[13px] text-fg/55">Sem WhatsApp</span>;
   return (
     <a
@@ -138,12 +143,30 @@ function WhatsappContact({ contact }: { contact: RedemptionContact }) {
 }
 
 /**
- * Os contatos dos pedidos abertos escolhidos: o nome, o @, o e-mail e o
- * WhatsApp com o link da conversa. Vivem só aqui: quem abriu guarda o
- * resultado enquanto o diálogo está aberto e joga fora ao fechar, e nada vai
- * para o armazenamento do navegador.
+ * O Instagram do gestor no pedido de prêmio de fã-clube (seção 34, decisão
+ * 43): a equipe combina a entrega pelo WhatsApp ou pelo Instagram. O link é
+ * montado pelo painel, com o @ conferido de novo.
  */
-export function ContactsDialog({ request, onClose }: { request: { codes: string[]; state: ContactsState } | null; onClose: () => void }) {
+function InstagramContact({ handle }: { handle: string | null }) {
+  const href = socialHref("instagram", handle);
+  if (!handle || !href) return <span className="text-[13px] text-fg/55">Sem Instagram</span>;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex max-w-full items-center gap-1.5 self-start text-[13.5px] text-cyan underline-offset-2 hover:underline">
+      <span className="font-semibold">Instagram:</span> @{handle}
+      <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="sr-only"> (abre em outra aba)</span>
+    </a>
+  );
+}
+
+/**
+ * Os contatos dos pedidos abertos escolhidos: o nome, o @, o e-mail e o
+ * WhatsApp com o link da conversa; nos pedidos de prêmio de fã-clube, também
+ * o Instagram do gestor. Vivem só aqui: quem abriu guarda o resultado
+ * enquanto o diálogo está aberto e joga fora ao fechar, e nada vai para o
+ * armazenamento do navegador.
+ */
+export function ContactsDialog({ request, onClose }: { request: { codes: string[]; prizeCodes?: readonly string[]; state: ContactsState } | null; onClose: () => void }) {
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const contacts = request?.state.status === "ready" ? request.state.contacts : [];
   const emails = contacts.map((contact) => contact.email).filter((email): email is string => Boolean(email));
@@ -196,7 +219,8 @@ export function ContactsDialog({ request, onClose }: { request: { codes: string[
                       ) : (
                         <span className="text-[13px] text-fg/55">Sem e-mail</span>
                       )}
-                      <WhatsappContact contact={contact} />
+                      <WhatsappContact contact={contact} prize={Boolean(request.prizeCodes?.includes(contact.redemptionId))} />
+                      {request.prizeCodes?.includes(contact.redemptionId) ? <InstagramContact handle={contact.instagram} /> : null}
                     </span>
                   )}
                 </li>

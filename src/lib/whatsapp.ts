@@ -62,7 +62,12 @@ export function whatsappChatLink(value: unknown, message: string): string | null
   return `https://wa.me/${value.slice(1)}?text=${encodeURIComponent(message)}`;
 }
 
-/** O link da conversa sobre um pedido da loja, com o código dele. */
-export function whatsappLink(value: unknown, code: string): string | null {
-  return whatsappChatLink(value, whatsappMessage(code));
+/** A mensagem pronta da conversa sobre o prêmio de fã-clube (seção 34, decisão 43), com o código do pedido. */
+export function prizeWhatsappMessage(code: string): string {
+  return `Olá! Aqui é a equipe do ImagineUP, sobre o prêmio do seu fã-clube, pedido ${code}.`;
+}
+
+/** O link da conversa sobre um pedido da loja, com o código dele; no pedido de prêmio, a mensagem do prêmio. */
+export function whatsappLink(value: unknown, code: string, prize = false): string | null {
+  return whatsappChatLink(value, prize ? prizeWhatsappMessage(code) : whatsappMessage(code));
 }

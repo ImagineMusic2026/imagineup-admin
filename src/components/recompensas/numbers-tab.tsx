@@ -16,12 +16,16 @@ import { getRewardStats } from "@/lib/reward-data";
 import { rewardNumbers, rewardTable, type Reward } from "@/lib/rewards";
 import { lastClosedAt, seriesByDay, type RewardDay } from "@/lib/stats";
 
-const GRID = "xl:grid xl:grid-cols-[minmax(0,1.6fr)_repeat(7,minmax(0,0.7fr))] xl:items-center xl:gap-4";
+const GRID = "xl:grid xl:grid-cols-[minmax(0,1.6fr)_repeat(8,minmax(0,0.7fr))] xl:items-center xl:gap-4";
 
 type Row = { rewardId: string; numbers: RewardDay };
 
-/** Números: pedidos, pontos gastos, devolvidos e entregues no período, por dia e por recompensa. */
-export function NumbersTab({ rewards, now, refreshKey }: { rewards: Reward[] | null; now: number; refreshKey: number }) {
+/**
+ * Números: pedidos, pontos gastos, devolvidos e entregues no período, por dia
+ * e por recompensa. A coluna Prêmios conta os prêmios de fã-clube dados (o
+ * `prizes` do `byReward`, seção 34), que não entram nos cartões da loja.
+ */
+export function NumbersTab({ rewards, prizeRewards, now, refreshKey }: { rewards: Reward[] | null; prizeRewards: Reward[] | null; now: number; refreshKey: number }) {
   const [days, setDays] = useState<PeriodDays>(DEFAULT_PERIOD);
   const range = useMemo(() => rangeEndingYesterday(days, now), [days, now]);
   const stats = useLoad(
@@ -33,7 +37,7 @@ export function NumbersTab({ rewards, now, refreshKey }: { rewards: Reward[] | n
   const date = new Date(now);
   const read = stats.state.status === "ready" ? stats.state.data : null;
   const totals = read ? rewardNumbers(read.days) : null;
-  const titles = new Map((rewards ?? []).map((reward) => [reward.id, reward.title]));
+  const titles = new Map([...(rewards ?? []), ...(prizeRewards ?? [])].map((reward) => [reward.id, reward.title]));
 
   const series: BarPoint[] = read
     ? seriesByDay(range, read.days, (day) => day.totals.redeemRequested).map((point) => ({
@@ -55,6 +59,7 @@ export function NumbersTab({ rewards, now, refreshKey }: { rewards: Reward[] | n
     { key: "refused", header: "Recusados", align: "end", cell: (row) => <span className="tabular-nums">{formatNumber(row.numbers.refused)}</span> },
     { key: "canceled", header: "Cancelados", align: "end", cell: (row) => <span className="tabular-nums">{formatNumber(row.numbers.canceled)}</span> },
     { key: "refunded", header: "Devolvidos", align: "end", cell: (row) => <Points value={row.numbers.refunded} /> },
+    { key: "prizes", header: "Prêmios", label: "Prêmios de fã-clube", align: "end", cell: (row) => <span className="tabular-nums">{formatNumber(row.numbers.prizes)}</span> },
   ];
 
   return (

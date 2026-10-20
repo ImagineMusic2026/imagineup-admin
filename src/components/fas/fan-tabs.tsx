@@ -122,7 +122,8 @@ export function LedgerTab({ uid }: { uid: string }) {
           {ledgerContext(entry) ? <span>{ledgerContext(entry)}</span> : entry.actor.type === "staff" ? null : <Missing>Sem contexto</Missing>}
           {entry.actor.type === "staff" ? (
             <span className="text-[12.5px] text-fg/60">
-              Ajuste de {entry.actor.name ?? "alguém da equipe"}
+              {/* O prêmio do fã-clube (seção 34, decisão 45) é um ajuste da equipe com origem própria. */}
+              {entry.source === "fanclub_prize" ? "Prêmio do fã-clube dado por" : "Ajuste de"} {entry.actor.name ?? "alguém da equipe"}
               {entry.note ? `: ${entry.note}` : ""}
             </span>
           ) : null}
@@ -279,7 +280,7 @@ export function CommentsTab({ uid, artists }: { uid: string; artists: ReadonlyMa
 
 const BROUGHT_GRID = "xl:grid xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_120px] xl:items-center xl:gap-4";
 
-const LINK_KIND_LABELS: Record<string, string> = { invite: "Convite", agenda: "Agenda", post: "Post", artist: "Central" };
+const LINK_KIND_LABELS: Record<string, string> = { invite: "Convite", agenda: "Agenda", post: "Post", artist: "Central", fanclub: "Fã-clube" };
 
 export function InvitesTab({ uid, artists }: { uid: string; artists: ReadonlyMap<string, ArtistName> | null }) {
   const now = new Date();

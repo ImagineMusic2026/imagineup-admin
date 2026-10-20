@@ -92,3 +92,25 @@ test("os shows: os citados por getDoc e os de hoje em diante para escolher", asy
   assert.equal(sent.where[0].value.toMillis(), sp("2026-10-08T00:00:00"));
   assert.equal(sent.limit, 50);
 });
+
+test("as recompensas só para prêmios: pelo status, fora da ordem, pelo título", async () => {
+  firestore.reset();
+  firestore.set("rewards/b", { title: "Desconto na loja", status: "prize", kind: "discount", cost: 0 });
+  firestore.set("rewards/a", { title: "Cortesia", status: "prize", kind: "ticket", cost: 0 });
+  firestore.set("rewards/c", { title: "Camisa", status: "published", order: 1 });
+  const list = await data.getPrizeRewards();
+  assert.deepEqual(
+    list.map((item) => [item.id, item.status, item.kind]),
+    [
+      ["a", "prize", "ticket"],
+      ["b", "prize", "discount"],
+    ],
+  );
+  assert.deepEqual(firestore.queries.at(-1).where, [{ field: "status", op: "==", value: "prize" }]);
+  assert.deepEqual(firestore.queries.at(-1).orderBy, []);
+  // O catálogo da loja, pela ordem, não traz as de prêmio (elas nascem sem o `order`).
+  assert.deepEqual(
+    (await data.getRewards()).map((item) => item.id),
+    ["c"],
+  );
+});

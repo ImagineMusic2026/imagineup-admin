@@ -11,7 +11,7 @@ import { Notice } from "@/components/ui/notice";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import { Tabs } from "@/components/ui/tabs";
 import { useLoad } from "@/components/ui/use-load";
-import { getRewards } from "@/lib/reward-data";
+import { getPrizeRewards, getRewards } from "@/lib/reward-data";
 import { canEditSection, sectionInfo, type StaffMember } from "@/lib/staff";
 
 const INFO = sectionInfo("rewards");
@@ -31,11 +31,14 @@ export function RewardsPage() {
 function RewardsContent({ member }: { member: StaffMember }) {
   const canEdit = canEditSection(member, "rewards");
   const catalog = useLoad(getRewards);
+  // As recompensas "Só para prêmios de fã-clube" (seção 34) nascem sem o `order` e ficam fora do catálogo pela ordem.
+  const prizes = useLoad(getPrizeRewards);
   const [tab, setTab] = useState<RewardsTab>("orders");
   const [now, setNow] = useState(() => Date.now());
   const [refreshKey, setRefreshKey] = useState(0);
   const [notice, setNotice] = useState<{ key: number; tone: "success" | "error" | "info"; text: string } | null>(null);
   const rewards = catalog.state.status === "ready" ? catalog.state.data : null;
+  const prizeRewards = prizes.state.status === "ready" ? prizes.state.data : null;
 
   function show(tone: "success" | "error" | "info", text: string) {
     setNotice((current) => ({ key: (current?.key ?? 0) + 1, tone, text }));
@@ -44,12 +47,18 @@ function RewardsContent({ member }: { member: StaffMember }) {
   function refresh() {
     setNow(Date.now());
     catalog.reload();
+    prizes.reload();
     setRefreshKey((value) => value + 1);
+  }
+
+  function reloadCatalog() {
+    catalog.reload();
+    prizes.reload();
   }
 
   function changed(message: string) {
     show("success", message);
-    catalog.reload();
+    reloadCatalog();
   }
 
   return (
@@ -65,19 +74,20 @@ function RewardsContent({ member }: { member: StaffMember }) {
         </Notice>
       ) : null}
       {catalog.refreshError ? <Notice tone="error">Não deu para atualizar: {catalog.refreshError}</Notice> : null}
+      {prizes.refreshError ? <Notice tone="error">Não deu para atualizar as recompensas para prêmios: {prizes.refreshError}</Notice> : null}
 
       <Tabs
         label="Partes de Recompensas e resgates"
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "orders", label: "Pedidos", render: () => <OrdersTab member={member} canEdit={canEdit} rewards={rewards} now={now} refreshKey={refreshKey} onNotice={show} /> },
+          { id: "orders", label: "Pedidos", render: () => <OrdersTab member={member} canEdit={canEdit} rewards={rewards} prizeRewards={prizeRewards} now={now} refreshKey={refreshKey} onNotice={show} /> },
           {
             id: "catalog",
             label: "Catálogo",
-            render: () => <CatalogTab canEdit={canEdit} rewards={catalog.state} now={now} onChanged={changed} onNotice={show} onReload={catalog.reload} />,
+            render: () => <CatalogTab canEdit={canEdit} rewards={catalog.state} prizeRewards={prizes.state} onPrizeRetry={prizes.reload} now={now} onChanged={changed} onNotice={show} onReload={reloadCatalog} />,
           },
-          { id: "numbers", label: "Números", render: () => <NumbersTab rewards={rewards} now={now} refreshKey={refreshKey} /> },
+          { id: "numbers", label: "Números", render: () => <NumbersTab rewards={rewards} prizeRewards={prizeRewards} now={now} refreshKey={refreshKey} /> },
         ]}
       />
     </>

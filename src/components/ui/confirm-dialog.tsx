@@ -26,6 +26,8 @@ export interface ConfirmRequest {
   uncertainText?: string;
   /** Recusa do servidor (com a frase dele no diálogo): a tela pode ler de novo o que mudou por fora. */
   onError?: (failure: unknown) => void;
+  /** A frase da recusa quando a do servidor não serve para esta tela (sem ela, ou com `null`, a do servidor). */
+  errorText?: (failure: unknown) => string | null;
   /** Recusa que outra tentativa repetiria (o item mudou por fora): o botão de confirmar desliga. */
   blocksRetry?: (failure: unknown) => boolean;
   /** A resposta chegou com o diálogo já fora da tela (a permissão caiu no meio do pedido): a tela marca a releitura. */
@@ -95,7 +97,7 @@ export function ConfirmDialog({
         setRetry(Boolean(request.uncertainText));
         request.onUncertain();
       } else {
-        setError(callableErrorMessage(failure));
+        setError(request.errorText?.(failure) ?? callableErrorMessage(failure));
         request.onError?.(failure);
         if (request.blocksRetry?.(failure)) setBlocked(true);
       }

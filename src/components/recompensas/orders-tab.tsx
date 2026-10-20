@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 
 import { ContactsDialog, RefuseDialog, type ContactsState } from "@/components/recompensas/order-dialogs";
-import { CopyCode, Points, REDEMPTION_STYLES, When } from "@/components/recompensas/reward-bits";
+import { CopyCode, Points, PrizeBadge, REDEMPTION_STYLES, When } from "@/components/recompensas/reward-bits";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
 import { ActionsMenu, type MenuAction } from "@/components/ui/actions-menu";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
   STATUS_FILTER_LABELS,
   fanLine,
   isOpenRedemption,
+  isPrizeRedemption,
   normalizeCode,
   redemptionActions,
   type Redemption,
@@ -76,6 +77,7 @@ export function OrdersTab({
   member,
   canEdit,
   rewards,
+  prizeRewards,
   now,
   refreshKey,
   onNotice,
@@ -83,6 +85,8 @@ export function OrdersTab({
   member: StaffMember;
   canEdit: boolean;
   rewards: Reward[] | null;
+  /** As recompensas "Só para prêmios de fã-clube", para o filtro (elas não estão no catálogo da loja). */
+  prizeRewards: Reward[] | null;
   now: number;
   /** O "Atualizar" da página: lê de novo, sem perder os filtros. */
   refreshKey: number;
@@ -95,7 +99,9 @@ export function OrdersTab({
   const [selected, setSelected] = useState<string[]>([]);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [refusing, setRefusing] = useState<Redemption | null>(null);
-  const [contacts, setContacts] = useState<{ codes: string[]; state: ContactsState } | null>(null);
+  const [contacts, setContacts] = useState<{ codes: string[]; prizeCodes: string[]; state: ContactsState } | null>(null);
+  // Os pedidos de prêmio escolhidos, para o "Ver contatos" mostrar o Instagram e a mensagem do prêmio.
+  const [prizeSelected, setPrizeSelected] = useState<string[]>([]);
   const linked = canSeeSection(member, "fans");
   const date = new Date(now);
 
@@ -182,16 +188,24 @@ export function OrdersTab({
     );
   }
 
-  function toggle(code: string, on: boolean) {
-    setSelected((current) => (on ? (current.includes(code) || current.length >= CONTACTS_MAX ? current : [...current, code]) : current.filter((item) => item !== code)));
+  function toggle(item: Redemption, on: boolean) {
+    const code = item.code;
+    setSelected((current) => (on ? (current.includes(code) || current.length >= CONTACTS_MAX ? current : [...current, code]) : current.filter((value) => value !== code)));
+    if (isPrizeRedemption(item)) setPrizeSelected((current) => (on ? (current.includes(code) ? current : [...current, code]) : current.filter((value) => value !== code)));
+  }
+
+  function clearSelection() {
+    setSelected([]);
+    setPrizeSelected([]);
   }
 
   function openContacts() {
     const codes = [...selected];
-    setContacts({ codes, state: { status: "loading" } });
+    const prizeCodes = prizeSelected.filter((code) => codes.includes(code));
+    setContacts({ codes, prizeCodes, state: { status: "loading" } });
     getRedemptionContacts(codes).then(
-      (result) => setContacts((current) => (current && current.codes === codes ? { codes, state: { status: "ready", contacts: result.contacts } } : current)),
-      (failure: unknown) => setContacts((current) => (current && current.codes === codes ? { codes, state: { status: "error", message: errorMessage(failure) } } : current)),
+      (result) => setContacts((current) => (current && current.codes === codes ? { codes, prizeCodes, state: { status: "ready", contacts: result.contacts } } : current)),
+      (failure: unknown) => setContacts((current) => (current && current.codes === codes ? { codes, prizeCodes, state: { status: "error", message: errorMessage(failure) } } : current)),
     );
   }
 
@@ -209,7 +223,7 @@ export function OrdersTab({
                   aria-label={`Escolher ${item.code} para ver o contato`}
                   checked={selected.includes(item.code)}
                   disabled={!selected.includes(item.code) && selected.length >= CONTACTS_MAX}
-                  onChange={(event) => toggle(item.code, event.target.checked)}
+                  onChange={(event) => toggle(item, event.target.checked)}
                   className="relative z-10 size-[18px] cursor-pointer accent-pink-strong"
                 />
               ) : null,
@@ -217,9 +231,29 @@ export function OrdersTab({
         ]
       : []),
     { key: "code", header: "Código", cell: (item) => <CopyCode code={item.code} /> },
-    { key: "reward", header: "Recompensa", cell: (item) => <span className="text-fg/90">{item.rewardTitle || item.rewardId}</span> },
+    {
+      key: "reward",
+      header: "Recompensa",
+      cell: (item) =>
+        isPrizeRedemption(item) ? (
+          <span className="flex min-w-0 flex-col items-start gap-1">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="text-fg/90">{item.rewardTitle || item.rewardId}</span>
+              <PrizeBadge />
+            </span>
+            {item.coupon ? (
+              <span className="text-[12.5px] text-fg/70">
+                Cupom: <span className="font-mono text-fg/90">{item.coupon}</span>
+              </span>
+            ) : null}
+            {item.message ? <span className="whitespace-pre-line break-words text-[12.5px] text-fg/70">Mensagem: {item.message}</span> : null}
+          </span>
+        ) : (
+          <span className="text-fg/90">{item.rewardTitle || item.rewardId}</span>
+        ),
+    },
     { key: "fan", header: "Fã", cell: (item) => <FanCell redemption={item} linked={linked} /> },
-    { key: "points", header: "Pontos", align: "end", cell: (item) => <Points value={item.points} /> },
+    { key: "points", header: "Pontos", align: "end", cell: (item) => (isPrizeRedemption(item) ? <span className="text-fg/60">Sem custo</span> : <Points value={item.points} />) },
     { key: "when", header: "Pedido em", cell: (item) => <When date={item.requestedAt} now={date} /> },
     {
       key: "status",
@@ -245,7 +279,12 @@ export function OrdersTab({
       : []),
   ];
 
-  const rewardOptions = [{ value: "", label: "Todas" }, ...(rewards ?? []).map((reward) => ({ value: reward.id, label: reward.title }))];
+  const rewardOptions = [
+    { value: "", label: "Todas" },
+    ...(rewards ?? []).map((reward) => ({ value: reward.id, label: reward.title })),
+    ...(prizeRewards ?? []).map((reward) => ({ value: reward.id, label: `${reward.title} (prêmio de fã-clube)` })),
+  ];
+  const rewardTitle = (id: string) => rewards?.find((reward) => reward.id === id)?.title ?? prizeRewards?.find((reward) => reward.id === id)?.title ?? id;
   const searchResult =
     search?.state === "found"
       ? `Pedido ${search.code} encontrado.`
@@ -259,7 +298,7 @@ export function OrdersTab({
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard id="titulo-pedidos" title="Pedidos" meta={rewardId ? `Só de ${rewards?.find((reward) => reward.id === rewardId)?.title ?? rewardId}` : undefined}>
+      <SectionCard id="titulo-pedidos" title="Pedidos" meta={rewardId ? `Só de ${rewardTitle(rewardId)}` : undefined}>
         <div className="flex flex-col gap-4 border-b border-line px-5 py-4">
           <SearchField
             label="Buscar pelo código"
@@ -278,7 +317,7 @@ export function OrdersTab({
                 value={status}
                 onChange={(value) => {
                   setStatus(value as StatusFilter);
-                  setSelected([]);
+                  clearSelection();
                 }}
                 options={FILTERS.map((filter) => {
                   const total = countOf(filter);
@@ -291,7 +330,7 @@ export function OrdersTab({
                   value={rewardId}
                   onChange={(value) => {
                     setRewardId(value);
-                    setSelected([]);
+                    clearSelection();
                   }}
                   options={rewardOptions}
                 />
@@ -305,7 +344,7 @@ export function OrdersTab({
                 <Users aria-hidden="true" className="size-4" />
                 Ver contatos ({selected.length})
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
+              <Button size="sm" variant="ghost" onClick={clearSelection}>
                 Limpar seleção
               </Button>
               {selected.length >= CONTACTS_MAX ? <span className="text-[13px] text-fg/65">Até {CONTACTS_MAX} pedidos por vez.</span> : null}

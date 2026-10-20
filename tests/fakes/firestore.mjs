@@ -156,9 +156,11 @@ export function createFirestoreFake() {
   }
 
   function run(target) {
+    // Como o Firestore: a ordem por um campo deixa de fora o documento sem ele
+    // (a recompensa de prêmio, sem o `order`, some do catálogo pela ordem).
     let rows = candidates(target).filter(([path, data]) => {
       const id = path.split("/").pop();
-      return target.where.every((filter) => matches(data, id, filter));
+      return target.where.every((filter) => matches(data, id, filter)) && target.orderBy.every((order) => valueAt(data, id, order.field) !== undefined);
     });
     const orders = target.orderBy.length > 0 ? target.orderBy : [{ field: DOCUMENT_ID, direction: "asc" }];
     rows.sort(([pathA, a], [pathB, b]) => {
