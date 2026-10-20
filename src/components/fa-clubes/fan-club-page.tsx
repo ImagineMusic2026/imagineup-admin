@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CloseDialog } from "@/components/fa-clubes/fan-club-dialogs";
 import { FAN_CLUB_STYLES, FanClubsBackLink, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
+import { FeatureDialog, RewardDialog } from "@/components/fa-clubes/fan-club-reward-dialogs";
+import { FollowersSection, MonthsSection, NumbersSection, PostsSection, QualitySection, RewardsSection } from "@/components/fa-clubes/fan-club-sections";
 import { SectionGate } from "@/components/painel/section-gate";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -18,31 +20,39 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { useLoad } from "@/components/ui/use-load";
 import { logsHref } from "@/lib/audit";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
-import { setFanClubPaused } from "@/lib/fan-club-api";
-import { getApplication, getFanClub } from "@/lib/fan-club-data";
+import { decidePost, setFanClubPaused, unfeatureFanClub } from "@/lib/fan-club-api";
+import { getApplication, getFanClub, getShardNumbers } from "@/lib/fan-club-data";
 import {
   FAN_CLUB_AUDIT_TEXT,
+  HIDE_POST_TEXT,
   PAUSE_TEXT,
+  RESTORE_POST_TEXT,
   RESUME_TEXT,
+  UNFEATURE_TEXT,
+  authorLabel,
   clubDecisions,
   fanClubLabel,
   fanClubStatusText,
   fanClubTarget,
+  featuredText,
   isStaleDecision,
+  lastRewardText,
   ownerLabel,
   type FanClub,
+  type FanClubPost,
 } from "@/lib/fan-clubs";
+import { formatNumber } from "@/lib/format";
 import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/staff";
 
 /**
- * A ficha do fã-clube (`/fa-clubes/[id]`, 34.10, item 5): o status, o gestor,
- * a central, a aprovação e o encerramento, com Pausar, Reativar e Encerrar
- * (Encerrar só para admin), a candidatura de origem (ou a atual, quando o
- * gestor se candidatou de novo) e o "Abrir nos Logs".
- * Os números, os seguidores, as publicações e as recompensas chegam com as
- * etapas 2 a 5 do servidor; o Destaque, que o servidor já tem (34.22), entra
- * com eles no Painel B.
+ * A ficha do fã-clube (`/fa-clubes/[id]`, 34.10, item 5): o status com
+ * Pausar, Reativar e Encerrar (Encerrar só para admin); os números (os 16
+ * shards e a cópia da noite), o mês e o mês passado e a qualidade dos
+ * seguidores; os seguidores recentes (só com a seção Fãs); o Destaque e as
+ * recompensas, com o histórico; as publicações com Ocultar e Reexibir; a
+ * candidatura de origem e o "Abrir nos Logs".
  */
+
 /**
  * A candidatura do gestor diante deste fã-clube: a de origem (o `clubId` dela é
  * este); uma nova, que substituiu a de origem (o encerramento a pedido deixa
@@ -51,22 +61,28 @@ import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/
  */
 type Origin = "same" | "replaced" | "gone" | "unknown";
 
-/** O fã-clube e a candidatura do gestor. A falha da candidatura não derruba a ficha. */
-async function readFanClub(clubId: string): Promise<{ club: FanClub | null; origin: Origin }> {
+/**
+ * O fã-clube, a candidatura do gestor e a versão do regulamento que ele
+ * aceitou (o checklist do Recompensar). A falha da candidatura não derruba a ficha.
+ */
+async function readFanClub(clubId: string): Promise<{ club: FanClub | null; origin: Origin; rulesVersion: string | null }> {
   const club = await getFanClub(clubId);
-  if (!club?.ownerUid) return { club, origin: "gone" };
+  if (!club?.ownerUid) return { club, origin: "gone", rulesVersion: null };
   try {
     const application = await getApplication(club.ownerUid);
-    if (!application) return { club, origin: "gone" };
-    return { club, origin: application.clubId === club.id ? "same" : "replaced" };
+    if (!application) return { club, origin: "gone", rulesVersion: null };
+    const same = application.clubId === club.id;
+    return { club, origin: same ? "same" : "replaced", rulesVersion: same ? application.rulesVersion || null : null };
   } catch {
-    return { club, origin: "unknown" };
+    return { club, origin: "unknown", rulesVersion: null };
   }
 }
 
 export function FanClubPage({ clubId }: { clubId: string }) {
   return <SectionGate section="fanClubs">{(member) => <FanClubContent clubId={clubId} member={member} />}</SectionGate>;
 }
+
+type Dialogs = "close" | "feature" | "reward" | null;
 
 function FanClubContent({ clubId, member }: { clubId: string; member: StaffMember }) {
   const canEdit = canEditSection(member, "fanClubs");
@@ -76,7 +92,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   // Uma instância do ConfirmDialog por pedido: o seguinte nunca herda o erro ou o "Tentar de novo" do anterior.
   const [confirmKey, setConfirmKey] = useState(0);
-  const [closing, setClosing] = useState(false);
+  const [dialog, setDialog] = useState<Dialogs>(null);
   // O pedido que foi ao servidor pede a releitura, que só sai com nenhum
   // diálogo aberto (no molde da página do fã na Moderação).
   const [pendingRefresh, setPendingRefresh] = useState(false);
@@ -88,10 +104,10 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     if (!canEdit) {
       setConfirm(null);
       setConfirmKey((value) => value + 1);
-      setClosing(false);
+      setDialog(null);
     }
   }
-  if (pendingRefresh && confirm === null && !closing) {
+  if (pendingRefresh && confirm === null && dialog === null) {
     setPendingRefresh(false);
     setRound((value) => value + 1);
   }
@@ -107,6 +123,10 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     useCallback(() => readFanClub(clubId), [clubId]),
     round,
   );
+  const shards = useLoad(
+    useCallback(() => getShardNumbers(clubId), [clubId]),
+    round,
+  );
   const date = read.loadedAt ?? new Date(now);
 
   function markStale() {
@@ -120,20 +140,17 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     setRound((value) => value + 1);
   }
 
-  function askPause(club: FanClub, paused: boolean) {
-    const name = fanClubLabel(club);
+  /** A confirmação de uma decisão sem campo, no molde da `decideFanClub`: o estado da tela vai como `expected`. */
+  function ask(request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & { send: () => Promise<unknown> }) {
+    const { send, ...rest } = request;
     setConfirm({
-      title: paused ? `Pausar o fã-clube ${name}?` : `Reativar o fã-clube ${name}?`,
-      body: `${paused ? PAUSE_TEXT : RESUME_TEXT} ${FAN_CLUB_AUDIT_TEXT}`,
-      confirmLabel: paused ? "Pausar" : "Reativar",
-      busyLabel: paused ? "Pausando..." : "Reativando...",
+      ...rest,
+      body: `${request.body} ${FAN_CLUB_AUDIT_TEXT}`,
       cancelLabel: "Voltar",
-      tone: "default",
       action: () => {
         markStale();
-        return setFanClubPaused(club.id, club.status, paused);
+        return send();
       },
-      successMessage: paused ? `Fã-clube ${name} pausado.` : `Fã-clube ${name} reativado.`,
       onUncertain: markStale,
       uncertainText: UNCERTAIN_RETRY_TEXT,
       onError: markStale,
@@ -141,6 +158,45 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       onOrphan: markStale,
     });
     setConfirmKey((value) => value + 1);
+  }
+
+  function askPause(club: FanClub, paused: boolean) {
+    const name = fanClubLabel(club);
+    ask({
+      title: paused ? `Pausar o fã-clube ${name}?` : `Reativar o fã-clube ${name}?`,
+      body: paused ? PAUSE_TEXT : RESUME_TEXT,
+      confirmLabel: paused ? "Pausar" : "Reativar",
+      busyLabel: paused ? "Pausando..." : "Reativando...",
+      tone: "default",
+      send: () => setFanClubPaused(club.id, club.status, paused),
+      successMessage: paused ? `Fã-clube ${name} pausado.` : `Fã-clube ${name} reativado.`,
+    });
+  }
+
+  function askUnfeature(club: FanClub) {
+    const name = fanClubLabel(club);
+    ask({
+      title: `Tirar o Destaque de ${name}?`,
+      body: UNFEATURE_TEXT,
+      confirmLabel: "Tirar destaque",
+      busyLabel: "Tirando...",
+      tone: "default",
+      send: () => unfeatureFanClub(club.id, club.status),
+      successMessage: `O Destaque de ${name} saiu.`,
+    });
+  }
+
+  function askPost(post: FanClubPost, decision: "hide" | "restore") {
+    const author = authorLabel(post);
+    ask({
+      title: decision === "hide" ? `Ocultar a publicação de ${author}?` : `Reexibir a publicação de ${author}?`,
+      body: decision === "hide" ? HIDE_POST_TEXT : RESTORE_POST_TEXT,
+      confirmLabel: decision === "hide" ? "Ocultar" : "Reexibir",
+      busyLabel: decision === "hide" ? "Ocultando..." : "Reexibindo...",
+      tone: decision === "hide" ? "danger" : "default",
+      send: () => decidePost(post.id, post.status, decision),
+      successMessage: decision === "hide" ? `Publicação de ${author} oculta.` : `Publicação de ${author} de volta ao ar.`,
+    });
   }
 
   if (read.state.status === "error") {
@@ -164,7 +220,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     );
   }
 
-  const { club, origin } = read.state.data;
+  const { club, origin, rulesVersion } = read.state.data;
   if (!club) {
     return (
       <>
@@ -180,9 +236,22 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
   const owner = ownerLabel(club);
   const decisions = clubDecisions(club, { uid: member.uid, canEdit, admin: isAdmin(member) });
   const self = club.ownerUid !== null && club.ownerUid === member.uid;
+  const decides = canEdit && !self;
   const seesFans = canSeeSection(member, "fans");
   const seesModeration = canSeeSection(member, "moderation");
   const seesAudit = canSeeSection(member, "audit");
+  const seesRewards = canSeeSection(member, "rewards");
+  const artist = club.artistName || `@${club.artistId}`;
+  const featuring = featuredText(club, date.getTime());
+  const lastReward = lastRewardText(club.lastReward, date);
+  // O Destaque e o Recompensar pedem o fã-clube ativo (34.5); tirar o destaque vale em qualquer status.
+  const rewardActions = decides
+    ? {
+        feature: club.status === "active" ? () => setDialog("feature") : undefined,
+        unfeature: club.featured ? () => askUnfeature(club) : undefined,
+        reward: club.status === "active" && club.ownerUid ? () => setDialog("reward") : undefined,
+      }
+    : null;
 
   return (
     <>
@@ -194,7 +263,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
           </h1>
           <p className="mt-1 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg/65">
             <span>
-              Fã-clube de {club.artistName || `@${club.artistId}`}
+              Fã-clube de {artist}
               {club.ownerUsername ? `, feito por @${club.ownerUsername}` : ""}
             </span>
             <StatusChip status={club.status} map={FAN_CLUB_STYLES} />
@@ -215,7 +284,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
             </Button>
           ) : null}
           {decisions.includes("close") ? (
-            <Button size="sm" variant="danger" onClick={() => setClosing(true)} aria-haspopup="dialog">
+            <Button size="sm" variant="danger" onClick={() => setDialog("close")} aria-haspopup="dialog">
               <Ban aria-hidden="true" className="size-3.5" />
               Encerrar
             </Button>
@@ -229,13 +298,13 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
         </Notice>
       ) : null}
       {read.refreshError ? <Notice tone="error">Não deu para atualizar: {read.refreshError}</Notice> : null}
-      {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa ou encerra.</Notice> : null}
+      {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa, encerra, destaca, recompensa e decide as publicações dele.</Notice> : null}
 
       <SectionCard id="titulo-fa-clube" title="Fã-clube">
         <div className="flex flex-col gap-4 px-5 py-4">
           <DetailList>
             <Detail term="Situação">{fanClubStatusText(club)}</Detail>
-            <Detail term="Central">{club.artistName || `@${club.artistId}`}</Detail>
+            <Detail term="Central">{artist}</Detail>
             <Detail term="Gestor">
               {club.ownerUid ? (
                 <span className="flex flex-col gap-1.5">
@@ -271,6 +340,12 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
                 {club.closedBy?.name ? `, por ${club.closedBy.name}` : ""}
               </Detail>
             ) : null}
+            <Detail term="Publicações">
+              {formatNumber(club.postCount)} no ar, {formatNumber(club.pendingPosts)} em análise
+              {club.lastPostAt ? `; a última aprovada em ${shortWhen(club.lastPostAt, date)}` : ""}
+            </Detail>
+            <Detail term="Destaque">{featuring ?? <Missing>Sem Destaque</Missing>}</Detail>
+            <Detail term="Último reconhecimento">{lastReward ?? <Missing>Nenhum ainda</Missing>}</Detail>
             <Detail term="Identificador">
               <span className="font-mono text-[13px]">{club.id}</span>
             </Detail>
@@ -295,6 +370,13 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
         </div>
       </SectionCard>
 
+      <NumbersSection club={club} shards={shards} now={date} />
+      <MonthsSection club={club} />
+      <QualitySection club={club} />
+      {seesFans ? <FollowersSection clubId={club.id} now={date} round={round} seesModeration={seesModeration} /> : null}
+      <RewardsSection club={club} now={date} round={round} seesRewards={seesRewards} actions={rewardActions} />
+      <PostsSection club={club} artist={artist} viewer={{ uid: member.uid, canEdit }} now={date} round={round} onDecide={askPost} />
+
       <ConfirmDialog
         key={`confirmar-${confirmKey}`}
         request={canEdit ? confirm : null}
@@ -304,14 +386,46 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
           changed(message);
         }}
       />
-      {canEdit && closing ? (
+      {canEdit && dialog === "close" ? (
         <CloseDialog
           club={club}
-          onClose={() => setClosing(false)}
+          onClose={() => setDialog(null)}
           onSend={markStale}
           onOrphan={markStale}
           onDone={(message) => {
-            setClosing(false);
+            setDialog(null);
+            changed(message);
+          }}
+        />
+      ) : null}
+      {canEdit && dialog === "feature" ? (
+        <FeatureDialog
+          club={club}
+          now={date.getTime()}
+          onClose={() => setDialog(null)}
+          onSend={markStale}
+          onOrphan={markStale}
+          onDone={(message) => {
+            setDialog(null);
+            changed(message);
+          }}
+        />
+      ) : null}
+      {canEdit && dialog === "reward" ? (
+        <RewardDialog
+          club={club}
+          now={date.getTime()}
+          role={member.role}
+          canPoints={canEditSection(member, "fans")}
+          canPrize={canEditSection(member, "rewards")}
+          readsFans={seesFans}
+          readsModeration={seesModeration}
+          rulesVersion={rulesVersion}
+          onClose={() => setDialog(null)}
+          onSend={markStale}
+          onOrphan={markStale}
+          onDone={(message) => {
+            setDialog(null);
             changed(message);
           }}
         />

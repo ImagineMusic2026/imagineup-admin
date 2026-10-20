@@ -220,6 +220,25 @@ function TargetCell({ entry, member, names }: { entry: AuditEntry; member: Staff
     );
   }
   if (!target) return <span className="text-fg/55">Sem alvo</span>;
+  if (target.type === "fanClubPost") {
+    // A publicação não tem página própria: o atalho vai à ficha do fã-clube dela, quando o `clubId` veio junto.
+    const club = entry.targets.map(parseTarget).find((item) => item.type === "fanClub");
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate">
+          {TARGET_LABELS.fanClubPost} <span className="font-mono text-[12px] text-fg/75">{target.id}</span>
+          {extra}
+        </span>
+        {club && canSeeSection(member, "fanClubs") ? (
+          <span className="relative z-10 flex flex-wrap gap-x-3 text-[12.5px]">
+            <Link href={`/fa-clubes/${encodeURIComponent(club.id)}`} className="font-semibold text-cyan underline-offset-2 hover:underline">
+              Ficha do fã-clube
+            </Link>
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   if (target.type === "fanClub") {
     return (
       <span className="flex min-w-0 flex-col gap-0.5">
@@ -407,7 +426,7 @@ function TargetFilter({ value, member, onChange }: { value: string; member: Staf
           id="alvo-id"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={type === "fan" ? "uid do fã ou @" : type === "artist" ? "@ da central" : type === "redemption" ? "código do pedido" : type === "fanClub" ? "id do fã-clube" : "id"}
+          placeholder={type === "fan" ? "uid do fã ou @" : type === "artist" ? "@ da central" : type === "redemption" ? "código do pedido" : type === "fanClub" ? "id do fã-clube" : type === "fanClubPost" ? "id da publicação" : "id"}
           describedBy={problem ? "alvo-problema" : undefined}
           invalid={Boolean(problem)}
           spellCheck={false}

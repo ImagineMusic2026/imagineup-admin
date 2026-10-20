@@ -181,6 +181,14 @@ export const REASON_MESSAGES: Record<string, string> = {
   "stale-decision": "Isso mudou desde que a tela abriu. Abra de novo.",
   "artist-not-open": "O artista está fora do ar ou não aceita fã-clubes.",
   "owner-suspended": "O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.",
+  "fan-club-post-not-found": "Essa publicação não existe mais.",
+  "fan-club-report-not-found": "Essa publicação não está na fila de denúncias.",
+  "feature-limit": "Este artista já tem 3 fã-clubes em destaque.",
+  "prize-not-allowed": "O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão.",
+  "grant-id-reused": "Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo.",
+  "reward-not-prize": "Essa recompensa não é só para prêmios de fã-clube.",
+  "sold-out": "Essa recompensa não tem mais vaga. Aumente o estoque antes de dar o prêmio.",
+  "reward-is-prize": "Essa recompensa é só para prêmios de fã-clube: ela não vai ao ar nem sai do ar.",
 };
 
 /** O `details.reason` de um erro, ou `null`. */

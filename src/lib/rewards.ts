@@ -7,11 +7,17 @@ import { cleanMultiline, isVisibleLine, isVisibleMultiline } from "@/lib/visible
 /**
  * Recompensas e resgates (25 e 26.16), puro: a recompensa e o pedido lidos,
  * as situações, o estoque, o show aberto (espelho do `isEventOpen`), o
- * formulário com a validação do servidor e os números por recompensa.
+ * formulário com a validação do servidor e os números por recompensa. Desde
+ * o fã-clube (seção 34, decisões 40 a 43), a recompensa "Só para prêmios de
+ * fã-clube" (o status `prize`, custo 0, fora da loja e da ordem), o tipo
+ * Desconto (só nela) e o pedido de prêmio, com a origem, o cupom e a mensagem.
  */
 
-export const REWARD_KINDS = ["ticket", "videocall", "merch", "screen", "meet"] as const;
+export const REWARD_KINDS = ["ticket", "videocall", "merch", "screen", "meet", "discount"] as const;
 export type RewardKind = (typeof REWARD_KINDS)[number];
+
+/** Os tipos da loja: o Desconto é só das recompensas de prêmio (decisão 42). */
+export const STORE_REWARD_KINDS = ["ticket", "videocall", "merch", "screen", "meet"] as const satisfies readonly RewardKind[];
 
 export const KIND_LABELS: Record<RewardKind, string> = {
   ticket: "Ingresso",
@@ -19,10 +25,21 @@ export const KIND_LABELS: Record<RewardKind, string> = {
   merch: "Produto",
   screen: "Telão",
   meet: "Encontro",
+  discount: "Desconto",
 };
 
-export type RewardStatus = "draft" | "published" | "closed";
-export const REWARD_STATUS_LABELS: Record<RewardStatus, string> = { draft: "Rascunho", published: "No ar", closed: "Encerrada" };
+export type RewardStatus = "draft" | "published" | "closed" | "prize";
+export const REWARD_STATUS_LABELS: Record<RewardStatus, string> = { draft: "Rascunho", published: "No ar", closed: "Encerrada", prize: "Só para prêmios de fã-clube" };
+
+/** A recompensa "Só para prêmios de fã-clube" (decisão 40): nunca vai à loja nem muda de status. */
+export function isPrizeReward(reward: Pick<Reward, "status">): boolean {
+  return reward.status === "prize";
+}
+
+/** Os tipos que o formulário oferece: com o Desconto só na de prêmio. */
+export function kindsFor(prize: boolean): readonly RewardKind[] {
+  return prize ? REWARD_KINDS : STORE_REWARD_KINDS;
+}
 
 export const REDEMPTION_STATUSES = ["requested", "approved", "delivered", "refused", "canceled"] as const;
 export type RedemptionStatus = (typeof REDEMPTION_STATUSES)[number];
@@ -121,7 +138,7 @@ export function parseReward(id: string, data: Record<string, unknown>): Reward {
     perFanLimit: intOrNull(data.perFanLimit) || null,
     eventId: text(data.eventId) || null,
     instructions: text(data.instructions) ?? "",
-    status: data.status === "published" || data.status === "closed" ? data.status : "draft",
+    status: data.status === "published" || data.status === "closed" || data.status === "prize" ? data.status : "draft",
     order: typeof data.order === "number" && Number.isFinite(data.order) ? data.order : 0,
     publishedAt: toDate(data.publishedAt),
   };
@@ -144,6 +161,14 @@ export interface Redemption {
   /** Quem mudou por último, da equipe; `null` sem mudança ou pelo sistema. */
   updatedBy: string | null;
   accountDeleted: boolean;
+  /** O resgate na loja ou o prêmio de fã-clube (34.4); ausente vale `store`. */
+  origin: "store" | "prize";
+  /** Só no prêmio: o fã-clube e a concessão (`fanClubs/{clubId}/prizes/{grantId}`). */
+  fanClubId: string | null;
+  grantId: string | null;
+  /** Só no prêmio: o cupom do parceiro e a mensagem ao gestor (decisão 43), que só a seção Recompensas vê. */
+  coupon: string | null;
+  message: string | null;
 }
 
 export function parseRedemption(code: string, data: Record<string, unknown>): Redemption {
@@ -165,7 +190,17 @@ export function parseRedemption(code: string, data: Record<string, unknown>): Re
     statusAt: toDate(data.statusAt),
     updatedBy: typeof by?.name === "string" && by.name ? by.name : null,
     accountDeleted: data.accountDeleted === true,
+    origin: data.origin === "prize" ? "prize" : "store",
+    fanClubId: text(data.fanClubId) || null,
+    grantId: text(data.grantId) || null,
+    coupon: text(data.coupon) || null,
+    message: text(data.message) || null,
   };
+}
+
+/** O pedido de prêmio de fã-clube: nasce Aprovado (ou Entregue), com 0 ponto, pelo Recompensar (decisão 40). */
+export function isPrizeRedemption(redemption: Pick<Redemption, "origin">): boolean {
+  return redemption.origin === "prize";
 }
 
 // ---------------------------------------------------------------------------
@@ -259,17 +294,21 @@ export function deleteBlocked(reward: Pick<Reward, "publishedAt">): string | nul
   return reward.publishedAt ? WAS_PUBLISHED_TEXT : null;
 }
 
-/** Os ids que o `reorderRewards` pede: rascunhos e no ar, na ordem de agora (as encerradas ficam fora). */
+/**
+ * Os ids que o `reorderRewards` pede: rascunhos e no ar, na ordem de agora. As
+ * encerradas ficam fora, e as de prêmio também (o servidor recusa a lista com
+ * elas, 34.19).
+ */
 export function reorderableIds(rewards: readonly Pick<Reward, "id" | "status">[]): string[] {
-  return rewards.filter((reward) => reward.status !== "closed").map((reward) => reward.id);
+  return rewards.filter((reward) => reward.status === "draft" || reward.status === "published").map((reward) => reward.id);
 }
 
-/** A ordem nova aplicada à lista inteira: as encerradas ficam onde estavam. */
+/** A ordem nova aplicada à lista inteira: as encerradas e as de prêmio ficam onde estavam. */
 export function applyRewardOrder<T extends Pick<Reward, "id" | "status">>(rewards: readonly T[], ids: readonly string[]): T[] {
   const byId = new Map(rewards.map((reward) => [reward.id, reward]));
   const queue = ids.map((id) => byId.get(id)).filter((reward): reward is T => Boolean(reward));
   let next = 0;
-  return rewards.map((reward) => (reward.status === "closed" ? reward : (queue[next++] ?? reward)));
+  return rewards.map((reward) => (reward.status !== "draft" && reward.status !== "published" ? reward : (queue[next++] ?? reward)));
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +316,8 @@ export function applyRewardOrder<T extends Pick<Reward, "id" | "status">>(reward
 // ---------------------------------------------------------------------------
 
 export interface RewardForm {
+  /** "Só para prêmios de fã-clube": vale só na criação (o `prize: true` do `createReward`). */
+  prize: boolean;
   kind: RewardKind;
   title: string;
   subtitle: string;
@@ -293,6 +334,7 @@ export interface RewardForm {
 }
 
 export const EMPTY_REWARD_FORM: RewardForm = {
+  prize: false,
   kind: "ticket",
   title: "",
   subtitle: "",
@@ -310,6 +352,7 @@ export const EMPTY_REWARD_FORM: RewardForm = {
 
 export function rewardFormOf(reward: Reward): RewardForm {
   return {
+    prize: isPrizeReward(reward),
     kind: reward.kind,
     title: reward.title,
     subtitle: reward.subtitle,
@@ -352,7 +395,12 @@ function multiline(value: string, max: number): string | null {
   return cleaned && cleaned.length <= max && isVisibleMultiline(cleaned) ? cleaned : null;
 }
 
-/** Confere como o servidor (25.3); o estoque só vale na criação (depois, pelo `setRewardStock`). */
+/**
+ * Confere como o servidor (25.3); o estoque só vale na criação (depois, pelo
+ * `setRewardStock`). Na de prêmio (34.3), o custo é 0, o tipo aceita o
+ * Desconto, e o destaque, as vagas e o limite por fã não valem (ela nunca vai
+ * à loja nem passa pelo resgate).
+ */
 export function validateReward(form: RewardForm): { errors: RewardErrors; input: RewardInput | null } {
   const errors: RewardErrors = {};
   const title = form.title.trim();
@@ -366,12 +414,13 @@ export function validateReward(form: RewardForm): { errors: RewardErrors; input:
   }
   const instructions = multiline(form.instructions, INSTRUCTIONS_MAX);
   if (!instructions) errors.instructions = `Escreva como retirar, até ${formatNumber(INSTRUCTIONS_MAX)} caracteres.`;
-  const cost = intIn(form.cost, 1, COST_MAX);
+  const cost = form.prize ? 0 : intIn(form.cost, 1, COST_MAX);
   if (cost === null) errors.cost = `De 1 a ${formatNumber(COST_MAX)} pontos.`;
+  if (!(kindsFor(form.prize) as readonly string[]).includes(form.kind)) errors.kind = "O Desconto é só das recompensas para prêmios de fã-clube.";
   const stockTotal = form.stockLimited ? intIn(form.stockTotal, 0, STOCK_MAX) : null;
   if (form.stockLimited && stockTotal === null) errors.stockTotal = `De 0 a ${formatNumber(STOCK_MAX)}, ou sem limite.`;
-  const perFanLimit = form.perFanLimited ? intIn(form.perFanLimit, 1, PER_FAN_LIMIT_MAX) : null;
-  if (form.perFanLimited && perFanLimit === null) errors.perFanLimit = `De 1 a ${PER_FAN_LIMIT_MAX}, ou sem limite.`;
+  const perFanLimit = form.prize ? null : form.perFanLimited ? intIn(form.perFanLimit, 1, PER_FAN_LIMIT_MAX) : null;
+  if (!form.prize && form.perFanLimited && perFanLimit === null) errors.perFanLimit = `De 1 a ${PER_FAN_LIMIT_MAX}, ou sem limite.`;
   if (Object.keys(errors).length > 0 || cost === null || !instructions) return { errors, input: null };
   return {
     errors,
@@ -381,8 +430,8 @@ export function validateReward(form: RewardForm): { errors: RewardErrors; input:
       subtitle,
       description,
       cost,
-      featured: form.featured,
-      scarcity: form.scarcity,
+      featured: form.prize ? false : form.featured,
+      scarcity: form.prize ? false : form.scarcity,
       stockTotal,
       perFanLimit,
       eventId: form.eventId || null,
@@ -460,7 +509,7 @@ export function rewardTable(days: readonly StatsDay[]): { rewardId: string; numb
   for (const day of days) {
     for (const [rewardId, numbers] of Object.entries(day.byReward)) {
       const current = totals.get(rewardId) ?? (Object.fromEntries(REWARD_KEYS.map((key) => [key, 0])) as RewardDay);
-      for (const key of REWARD_KEYS) current[key] += numbers[key];
+      for (const key of REWARD_KEYS) current[key] += numbers[key] ?? 0;
       totals.set(rewardId, current);
     }
   }

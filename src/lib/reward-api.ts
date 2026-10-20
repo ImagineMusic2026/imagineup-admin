@@ -1,4 +1,5 @@
 import { call } from "@/lib/callable";
+import { isSocialHandle } from "@/lib/fan-profile";
 import { CODE_PATTERN, type RewardInput, type RewardPatch } from "@/lib/rewards";
 import { isWhatsapp } from "@/lib/whatsapp";
 
@@ -7,8 +8,12 @@ import { isWhatsapp } from "@/lib/whatsapp";
  * auditoria. Os contatos só vivem no diálogo que os pediu: nada aqui guarda.
  */
 
-/** O rascunho, com o id gerado no painel: o mesmo id de novo (resposta perdida) não cria outro. */
-export function createReward(input: { rewardId: string } & RewardInput): Promise<{ rewardId: string }> {
+/**
+ * O rascunho, com o id gerado no painel: o mesmo id de novo (resposta perdida)
+ * não cria outro. Com o `prize: true` (seção 34, 34.3), a recompensa "Só para
+ * prêmios de fã-clube": nasce com o status `prize`, custo 0 e fora da ordem.
+ */
+export function createReward(input: { rewardId: string; prize?: true } & RewardInput): Promise<{ rewardId: string }> {
   return call("createReward", input);
 }
 
@@ -59,6 +64,12 @@ export interface RedemptionContact {
    * antes da seção 35, que não manda o campo.
    */
   whatsapp: string | null;
+  /**
+   * Só no pedido de prêmio de fã-clube (seção 34, decisão 43): o Instagram do
+   * privado da candidatura do gestor, conferido de novo antes de virar link;
+   * o pedido da loja, o privado que já saiu e o servidor de antes vêm `null`.
+   */
+  instagram: string | null;
 }
 
 const textOrNull = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
@@ -76,6 +87,7 @@ export function parseRedemptionContact(raw: unknown): RedemptionContact {
     username: textOrNull(data.username),
     email: textOrNull(data.email),
     whatsapp: isWhatsapp(data.whatsapp) ? data.whatsapp : null,
+    instagram: isSocialHandle("instagram", data.instagram) ? data.instagram : null,
   };
 }
 
@@ -85,7 +97,7 @@ export function parseRedemptionContact(raw: unknown): RedemptionContact {
  * não é excluída: o diálogo mostra "Sem e-mail" e o WhatsApp dela.
  */
 export function isDeletedContact(contact: RedemptionContact): boolean {
-  return contact.name === null && contact.username === null && contact.email === null && contact.whatsapp === null;
+  return contact.name === null && contact.username === null && contact.email === null && contact.whatsapp === null && contact.instagram === null;
 }
 
 /**

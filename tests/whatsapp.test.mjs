@@ -101,7 +101,30 @@ test("os contatos chegam com o WhatsApp conferido; o servidor de antes (sem o ca
     username: "camilarib",
     email: "camila@teste.imagineup",
     whatsapp: "+5575991234567",
+    instagram: null,
   });
+});
+
+test("no pedido de prêmio, o Instagram do gestor chega conferido de novo, e a mensagem pronta fala do prêmio", async () => {
+  answer = {
+    contacts: [
+      { redemptionId: "UP-4KD9TM", name: "Camila", username: "camilarib", email: "camila@teste.imagineup", whatsapp: "+5575991234567", instagram: "camila.fa" },
+      { redemptionId: "UP-RK2TQX", name: "Alan", username: "alanzin", email: "alan@teste.imagineup", whatsapp: null, instagram: "não é um @" },
+      { redemptionId: "UP-RK3MZB", name: null, username: null, email: null, whatsapp: null, instagram: null },
+    ],
+  };
+  const { contacts } = await getRedemptionContacts(["UP-4KD9TM", "UP-RK2TQX", "UP-RK3MZB"]);
+  assert.deepEqual(
+    contacts.map((contact) => [contact.redemptionId, contact.instagram]),
+    [
+      ["UP-4KD9TM", "camila.fa"],
+      ["UP-RK2TQX", null],
+      ["UP-RK3MZB", null],
+    ],
+  );
+  assert.equal(isDeletedContact(contacts[2]), true);
+  assert.equal(whatsappLink("+5575991234567", "UP-4KD9TM", true), `https://wa.me/5575991234567?text=${encodeURIComponent("Olá! Aqui é a equipe do ImagineUP, sobre o prêmio do seu fã-clube, pedido UP-4KD9TM.")}`);
+  assert.equal(whatsappLink("+5575991234567", "UP-4KD9TM"), `https://wa.me/5575991234567?text=${encodeURIComponent("Olá! Aqui é a equipe do ImagineUP, sobre o seu resgate UP-4KD9TM.")}`);
 });
 
 test("a resposta estranha não quebra o diálogo: sem lista, vazia; sem código ou com o código fora do formato, fora", async () => {
@@ -124,12 +147,14 @@ test("a resposta estranha não quebra o diálogo: sem lista, vazia; sem código 
     username: null,
     email: null,
     whatsapp: null,
+    instagram: null,
   });
 });
 
 test("só a conta com tudo vazio é a excluída; a que não tem e-mail mas tem o WhatsApp, não", () => {
-  const base = { redemptionId: "UP-4KD9TM", name: null, username: null, email: null, whatsapp: null };
+  const base = { redemptionId: "UP-4KD9TM", name: null, username: null, email: null, whatsapp: null, instagram: null };
   assert.equal(isDeletedContact(base), true);
+  assert.equal(isDeletedContact({ ...base, instagram: "camila.fa" }), false);
   assert.equal(isDeletedContact({ ...base, whatsapp: "+5575991234567" }), false);
   assert.equal(isDeletedContact({ ...base, name: "Camila" }), false);
   assert.equal(isDeletedContact({ ...base, email: "camila@teste.imagineup" }), false);

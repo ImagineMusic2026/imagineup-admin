@@ -26,6 +26,8 @@ export interface Column<T> {
   cell: (row: T) => React.ReactNode;
   /** Números à direita na grade larga. */
   align?: "start" | "end";
+  /** O cabeçalho quebra a linha em vez de cortar (colunas estreitas de número com nome longo). */
+  headerWrap?: boolean;
   className?: string;
 }
 
@@ -83,7 +85,7 @@ export function DataTable<T>({
     <>
       <div aria-hidden="true" className={cx("hidden px-5 pt-3 pb-2 group-label text-fg/50", grid)}>
         {columns.map((column) => (
-          <span key={column.key} className={cx("min-w-0 truncate", column.align === "end" && "text-right")}>
+          <span key={column.key} className={cx("min-w-0", column.headerWrap ? "whitespace-normal" : "truncate", column.align === "end" && "text-right")}>
             {column.header}
           </span>
         ))}

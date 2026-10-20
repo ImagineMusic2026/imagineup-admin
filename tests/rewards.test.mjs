@@ -160,3 +160,60 @@ test("os números da loja e a tabela por recompensa", () => {
     ],
   );
 });
+
+test("a recompensa só para prêmios de fã-clube: o status, o Desconto, o custo 0 e fora da ordem", () => {
+  const prize = reward({ status: "prize", kind: "discount", cost: 0, order: undefined, publishedAt: null });
+  assert.equal(prize.status, "prize");
+  assert.equal(prize.kind, "discount");
+  assert.equal(rewards.isPrizeReward(prize), true);
+  assert.equal(rewards.KIND_LABELS.discount, "Desconto");
+  assert.equal(rewards.REWARD_STATUS_LABELS.prize, "Só para prêmios de fã-clube");
+  assert.deepEqual(rewards.kindsFor(false), ["ticket", "videocall", "merch", "screen", "meet"]);
+  assert.ok(rewards.kindsFor(true).includes("discount"));
+  // O status desconhecido continua rascunho, como antes.
+  assert.equal(reward({ status: "outro" }).status, "draft");
+
+  // A de prêmio nunca entra na ordem (o servidor recusaria a lista inteira, 34.19).
+  const list = [reward({ status: "draft" }), prize, reward({ status: "closed" })].map((item, index) => ({ ...item, id: `r${index}` }));
+  assert.deepEqual(rewards.reorderableIds(list), ["r0"]);
+  assert.deepEqual(rewards.applyRewardOrder(list, ["r0"]).map((item) => item.id), ["r0", "r1", "r2"]);
+
+  // O formulário: custo 0, sem destaque, vagas nem limite por fã; o Desconto só na de prêmio.
+  const base = { ...rewards.EMPTY_REWARD_FORM, title: "Cortesia", subtitle: "São João", instructions: "Retire na bilheteria.", featured: true, scarcity: true };
+  const checked = rewards.validateReward({ ...base, prize: true, kind: "discount", cost: "" });
+  assert.deepEqual(checked.errors, {});
+  assert.equal(checked.input.cost, 0);
+  assert.equal(checked.input.perFanLimit, null);
+  assert.equal(checked.input.featured, false);
+  assert.equal(checked.input.scarcity, false);
+  assert.ok(rewards.validateReward({ ...base, prize: false, kind: "discount", cost: "100" }).errors.kind);
+  assert.ok(rewards.validateReward({ ...base, prize: false, cost: "0" }).errors.cost);
+  assert.equal(rewards.rewardFormOf(prize).prize, true);
+});
+
+test("o pedido de prêmio lido: a origem, o fã-clube, a concessão, o cupom e a mensagem", () => {
+  const prize = rewards.parseRedemption("UP-ABC123", {
+    rewardId: "cortesia",
+    rewardTitle: "Ingresso de cortesia",
+    points: 0,
+    status: "approved",
+    origin: "prize",
+    fanClubId: "c1",
+    grantId: "g-12345678",
+    coupon: "CORTESIA-IRARA",
+    message: "Parabéns!",
+  });
+  assert.equal(rewards.isPrizeRedemption(prize), true);
+  assert.deepEqual([prize.fanClubId, prize.grantId, prize.coupon, prize.message], ["c1", "g-12345678", "CORTESIA-IRARA", "Parabéns!"]);
+  // O pedido de antes (sem a origem) é da loja, sem cupom nem mensagem.
+  const store = rewards.parseRedemption("UP-XYZ789", { rewardId: "camisa", status: "requested", points: 900 });
+  assert.equal(rewards.isPrizeRedemption(store), false);
+  assert.deepEqual([store.origin, store.coupon, store.message, store.grantId], ["store", null, null, null]);
+});
+
+test("a tabela por recompensa soma os prêmios de fã-clube dados", () => {
+  const day = (byReward) => ({ totals: { redeemRequested: 0, refunded: 0, redeemDelivered: 0 }, bySource: {}, byReward });
+  const empty = { requested: 0, spent: 0, approved: 0, delivered: 0, refused: 0, canceled: 0, refunded: 0, prizes: 0 };
+  const rows = rewards.rewardTable([day({ cortesia: { ...empty, approved: 1, prizes: 1 } }), day({ cortesia: { ...empty, delivered: 1, prizes: 1 } })]);
+  assert.deepEqual(rows, [{ rewardId: "cortesia", numbers: { ...empty, approved: 1, delivered: 1, prizes: 2 } }]);
+});

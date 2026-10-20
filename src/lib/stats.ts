@@ -109,7 +109,8 @@ export interface SourceCount {
 
 export type ArtistDay = Record<ArtistKey, number> & { bySource: Record<string, SourceCount> };
 
-export const REWARD_KEYS = ["requested", "spent", "approved", "delivered", "refused", "canceled", "refunded"] as const;
+/** Os fluxos por recompensa; o `prizes` conta os prêmios de fã-clube dados (seção 34, 34.4), que não são resgate. */
+export const REWARD_KEYS = ["requested", "spent", "approved", "delivered", "refused", "canceled", "refunded", "prizes"] as const;
 export type RewardKey = (typeof REWARD_KEYS)[number];
 export type RewardDay = Record<RewardKey, number>;
 
@@ -432,6 +433,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   redeem_refund: "Resgate devolvido",
   adjustment: "Ajuste da equipe",
   seed: "Ajuste",
+  fanclub_prize: "Prêmio do fã-clube",
 };
 
 export function sourceLabel(source: string): string {
@@ -444,6 +446,7 @@ export const ORIGIN_KIND_LABELS: Record<string, string> = {
   post: "Post",
   artist: "Central",
   agenda: "Agenda",
+  fanclub: "Fã-clube",
   other: "Outro",
   code: "Código digitado",
 };

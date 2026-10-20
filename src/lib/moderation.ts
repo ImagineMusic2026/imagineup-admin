@@ -37,7 +37,7 @@ export const FAN_NOT_FOUND_TEXT = "Fã não encontrado. A conta pode ter sido ex
 export const HIDE_CONFIRM_TEXT = "O comentário some do app para todos. Dá para reexibir depois.";
 export const KEEP_CONFIRM_TEXT = "O comentário continua no app e sai da fila. Uma denúncia nova traz de volta.";
 export const SUSPEND_TEXT =
-  "O fã continua lendo o app, mas não comenta, não curte, não ganha pontos (nem pelo convite) e não muda o perfil até você tirar a suspensão. Ele ainda consegue desfazer curtidas e presenças, sair de centrais e bloquear quem o incomoda. Se ele gere um fã-clube ativo, o fã-clube fica pausado, e tirar a suspensão não o reativa.";
+  "O fã continua lendo o app, mas não comenta, não curte, não ganha pontos (nem pelo convite) e não muda o perfil até você tirar a suspensão. Ele ainda consegue desfazer curtidas e presenças, sair de centrais e bloquear quem o incomoda. Se ele gere um fã-clube ativo, o fã-clube fica pausado e perde o Destaque. Ele também deixa de seguir os fã-clubes que seguia. Tirar a suspensão não reativa o fã-clube nem devolve os seguimentos.";
 export const CLEAR_PHOTO_TEXT = "A foto some do perfil e dos comentários em alguns minutos.";
 export const CLEAR_BIO_SOCIALS_TEXT = "A bio e as redes somem do perfil do fã. O texto apagado não fica guardado.";
 export const NOTHING_TO_CLEAR_TEXT = "Nada a apagar: a bio e as redes já estavam vazias.";

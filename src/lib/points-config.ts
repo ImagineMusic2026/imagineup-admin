@@ -37,6 +37,9 @@ export const ACTION_CAP_KEYS = [
   "profile_save",
   "name_change",
   "fanclub_apply",
+  "fanclub_post",
+  "fanclub_upload",
+  "fanclub_follow",
 ] as const;
 export type ActionCapKey = (typeof ACTION_CAP_KEYS)[number];
 
@@ -55,11 +58,14 @@ export const ACTION_CAP_LABELS: Record<ActionCapKey, string> = {
   profile_save: "Salvamentos do perfil",
   name_change: "Trocas de nome",
   fanclub_apply: "Candidaturas a fã-clube",
+  fanclub_post: "Publicações de fã-clube",
+  fanclub_upload: "Fotos de fã-clube",
+  fanclub_follow: "Seguir fã-clubes",
 };
 
 /**
  * O padrão de cada teto no servidor (`DEFAULT_ACTION_CAPS`, 22.3, 27.4 e
- * 28.3, e o `fanclub_apply` da 34.1, decisão 11): vale quando o documento
+ * 28.3, e os do fã-clube da 34.1, decisões 11 e 34): vale quando o documento
  * gravado não tem a chave, ou tem um valor fora da regra, como o servidor faz
  * ao ler. Sem isso a chave ausente viraria 0, e o bloco inteiro dos tetos
  * deixaria de salvar.
@@ -79,6 +85,9 @@ export const DEFAULT_ACTION_CAPS: Record<ActionCapKey, number> = {
   profile_save: 20,
   name_change: 5,
   fanclub_apply: 3,
+  fanclub_post: 5,
+  fanclub_upload: 10,
+  fanclub_follow: 30,
 };
 
 export const VALUE_MAX = 10_000;

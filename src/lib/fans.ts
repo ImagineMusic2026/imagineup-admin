@@ -241,6 +241,8 @@ export function referralPath(referral: Pick<Referral, "via" | "link">, names: { 
       return `pelo link da central ${names.artist ?? (referral.link.targetId ? `@${referral.link.targetId}` : "")}`.trim();
     case "agenda":
       return "pelo link da agenda";
+    case "fanclub":
+      return "pelo link de um fã-clube";
     case "invite":
       return "pelo link de convite";
     default:

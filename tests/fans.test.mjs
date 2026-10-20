@@ -69,6 +69,7 @@ test("a origem do cadastro: o caminho, a campanha e o que quem convidou ganhou",
   assert.equal(fans.referralPath(referral, { post: "Saiu o clipe" }), "pelo link do post Saiu o clipe");
   assert.equal(fans.referralPath({ via: "code", link: null }, {}), "pelo código digitado");
   assert.equal(fans.referralPath({ via: "link", link: { kind: "artist", targetId: "nettobrito" } }, { artist: "Netto Brito" }), "pelo link da central Netto Brito");
+  assert.equal(fans.referralPath({ via: "link", link: { kind: "fanclub", targetId: "c1" } }, {}), "pelo link de um fã-clube");
   assert.equal(fans.utmText(referral.utm), "campanha sao-joao, origem instagram e meio story");
   assert.equal(fans.utmText({ source: null, medium: null, campaign: null }), null);
   assert.equal(fans.referralAwardText(referral, { visit: 2, signup: 10 }), "Rendeu: 2 pontos pela visita e 10 pontos pelo cadastro.");

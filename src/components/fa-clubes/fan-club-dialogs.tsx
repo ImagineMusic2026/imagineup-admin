@@ -7,7 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Radio, TextInput } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
-import { approveApplication, closeFanClub, rejectApplication } from "@/lib/fan-club-api";
+import { approveApplication, closeFanClub, rejectApplication, rejectPost } from "@/lib/fan-club-api";
 import {
   APPROVE_SUSPENDED_TEXT,
   CLOSE_REASONS,
@@ -15,9 +15,12 @@ import {
   CLOSE_REASON_LABELS,
   FAN_CLUB_AUDIT_TEXT,
   FAN_CLUB_NAME_MAX,
+  POST_REJECT_REASONS,
+  POST_REJECT_REASON_LABELS,
   REJECT_REASONS,
   REJECT_REASON_LABELS,
   applicantLabel,
+  authorLabel,
   approveNameProblem,
   checkApprovalName,
   closeText,
@@ -26,6 +29,8 @@ import {
   type CloseReason,
   type FanClub,
   type FanClubApplication,
+  type FanClubPost,
+  type PostRejectReason,
   type RejectReason,
 } from "@/lib/fan-clubs";
 import { UNCERTAIN_RETRY_TEXT, callableErrorMessage, mayHaveRunOnServer, reasonOf } from "@/lib/errors";
@@ -45,7 +50,7 @@ import { UNCERTAIN_RETRY_TEXT, callableErrorMessage, mayHaveRunOnServer, reasonO
  *   tela).
  */
 
-interface DecisionProps {
+export interface DecisionProps {
   onClose: () => void;
   onDone: (message: string) => void;
   /** O pedido vai ao servidor: a página marca a releitura. */
@@ -55,7 +60,7 @@ interface DecisionProps {
 }
 
 /** O pedido de uma decisão, com a falha incerta, a recusa que bloqueia e a resposta órfã. */
-function useDecision({ onDone, onSend, onOrphan }: Omit<DecisionProps, "onClose">) {
+export function useDecision({ onDone, onSend, onOrphan }: Omit<DecisionProps, "onClose">) {
   const mounted = useMountedRef();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +101,7 @@ function useDecision({ onDone, onSend, onOrphan }: Omit<DecisionProps, "onClose"
   return { busy, error, uncertain, blocked, footer, run };
 }
 
-function Footer({
+export function Footer({
   footer,
   busy,
   uncertain,
@@ -313,6 +318,71 @@ export function CloseDialog({ club, ...props }: DecisionProps & { club: FanClub 
         </fieldset>
         {error ? <Notice tone="error">{error}</Notice> : null}
         <Footer footer={footer} busy={busy} uncertain={uncertain} blocked={blocked} onClose={props.onClose} confirmLabel="Encerrar" busyLabel="Encerrando..." tone="danger" />
+      </form>
+    </Dialog>
+  );
+}
+
+/**
+ * Recusar a publicação em análise (34.5): o motivo da lista, que o gestor vê
+ * numa frase fixa no app. Os arquivos saem depois da recusa.
+ */
+export function RejectPostDialog({ post, ...props }: DecisionProps & { post: FanClubPost }) {
+  const { busy, error, uncertain, blocked, footer, run } = useDecision(props);
+  const [reason, setReason] = useState<PostRejectReason | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const firstReasonRef = useRef<HTMLInputElement>(null);
+  const errorId = useId();
+  const author = authorLabel(post);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!reason) {
+      setReasonError("Escolha o motivo.");
+      requestAnimationFrame(() => firstReasonRef.current?.focus());
+      return;
+    }
+    await run(() => rejectPost(post.id, post.status, reason), `Publicação de ${author} recusada.`);
+  }
+
+  return (
+    <Dialog
+      open
+      size="sm"
+      tone="danger"
+      busy={busy}
+      onClose={() => !busy && props.onClose()}
+      title={`Recusar a publicação de ${author}?`}
+      description={`O gestor vê o motivo no app, e ${post.kind === "photo" ? "a foto e a miniatura saem" : "a publicação não vai ao ar"}. ${FAN_CLUB_AUDIT_TEXT}`}
+    >
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        <fieldset className="m-0 flex flex-col gap-2.5 border-0 p-0">
+          <legend className="mb-2 p-0 text-[13px] font-semibold text-fg/75">Motivo</legend>
+          {POST_REJECT_REASONS.map((item, index) => (
+            <Radio
+              key={item}
+              ref={index === 0 ? firstReasonRef : undefined}
+              aria-invalid={reasonError ? true : undefined}
+              aria-describedby={reasonError ? errorId : undefined}
+              name="motivo-recusa-publicacao"
+              value={item}
+              label={POST_REJECT_REASON_LABELS[item]}
+              checked={reason === item}
+              disabled={busy || uncertain || blocked}
+              onChange={() => {
+                setReason(item);
+                setReasonError(null);
+              }}
+            />
+          ))}
+          {reasonError ? (
+            <p id={errorId} className="m-0 text-[12.5px] font-medium text-danger">
+              {reasonError}
+            </p>
+          ) : null}
+        </fieldset>
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        <Footer footer={footer} busy={busy} uncertain={uncertain} blocked={blocked} onClose={props.onClose} confirmLabel="Recusar" busyLabel="Recusando..." tone="danger" />
       </form>
     </Dialog>
   );

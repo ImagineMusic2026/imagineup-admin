@@ -23,12 +23,13 @@ import {
   INSTRUCTIONS_MAX,
   KIND_LABELS,
   PER_FAN_LIMIT_MAX,
-  REWARD_KINDS,
   REWARD_PHOTO,
   STOCK_MAX,
   SUBTITLE_MAX,
   TITLE_MAX,
   isEventOpen,
+  isPrizeReward,
+  kindsFor,
   rewardChanges,
   rewardFieldOf,
   rewardFormOf,
@@ -57,6 +58,8 @@ const STEP_LABELS: Record<Step, string> = {
 export interface RewardDialogRequest {
   /** A recompensa do catálogo, ou `null` para criar. */
   reward: Reward | null;
+  /** Criar já com a caixa "Só para prêmios de fã-clube" marcada (o botão da lista das de prêmio). */
+  prize?: boolean;
 }
 
 export function RewardDialog({
@@ -78,8 +81,8 @@ export function RewardDialog({
 }
 
 /** A recompensa como o servidor gravou no `createReward` (para comparar as mudanças seguintes). */
-function draftOf(id: string, input: RewardInput): Reward {
-  return { id, ...input, photo: null, redeemedCount: 0, status: "draft", order: 0, publishedAt: null };
+function draftOf(id: string, input: RewardInput, prize: boolean): Reward {
+  return { id, ...input, photo: null, redeemedCount: 0, status: prize ? "prize" : "draft", order: 0, publishedAt: null };
 }
 
 function RewardDialogBody({
@@ -98,7 +101,7 @@ function RewardDialogBody({
   const mounted = useMountedRef();
   const editing = Boolean(request.reward);
   const [rewardId] = useState(() => request.reward?.id ?? newRewardId());
-  const [form, setForm] = useState<RewardForm>(() => (request.reward ? rewardFormOf(request.reward) : EMPTY_REWARD_FORM));
+  const [form, setForm] = useState<RewardForm>(() => (request.reward ? rewardFormOf(request.reward) : { ...EMPTY_REWARD_FORM, prize: request.prize === true }));
   const [errors, setErrors] = useState<RewardErrors>({});
   const [photo, setPhoto] = useState<ImageValue>(() => (request.reward?.photo ? { kind: "current", url: request.reward.photo.url } : { kind: "none" }));
   const [processing, setProcessing] = useState(false);
@@ -135,6 +138,12 @@ function RewardDialogBody({
   function set<K extends keyof RewardForm>(field: K, value: RewardForm[K]) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
+  /** A caixa "Só para prêmios de fã-clube", só na criação: sem ela, o Desconto volta ao Ingresso. */
+  function setPrize(prize: boolean) {
+    setForm((current) => ({ ...current, prize, kind: !prize && current.kind === "discount" ? "ticket" : current.kind }));
+    setErrors((current) => ({ ...current, kind: undefined, cost: undefined, perFanLimit: undefined }));
   }
 
   async function choosePhoto(file: File) {
@@ -183,14 +192,14 @@ function RewardDialogBody({
     if (!server.current.reward) {
       setStep("create");
       try {
-        await createReward({ rewardId, ...input });
+        await createReward({ rewardId, ...input, ...(form.prize ? { prize: true as const } : {}) });
       } catch (failure) {
         const field = reasonOf(failure) === "invalid-request" ? rewardFieldOf(errorDetails(failure).field) : null;
         if (field) setErrors((current) => ({ ...current, [field]: callableErrorMessage(failure) }));
         fail(mayHaveRunOnServer(failure) ? "Não deu para confirmar se a recompensa foi criada. Salve de novo: a nova tentativa não cria outra." : `A recompensa não foi criada. ${callableErrorMessage(failure)}`);
         return;
       }
-      server.current.reward = draftOf(rewardId, input);
+      server.current.reward = draftOf(rewardId, input, form.prize);
       wrote = true;
     }
 
@@ -255,13 +264,15 @@ function RewardDialogBody({
     if (!mounted.current) return;
     setStep(null);
     const title = input.title;
-    if (createdHere) onSaved(intent === "publish" ? `Recompensa ${title} criada e publicada.` : `Recompensa ${title} criada como rascunho.`);
+    if (createdHere && form.prize) onSaved(`Recompensa ${title} criada só para prêmios de fã-clube.`);
+    else if (createdHere) onSaved(intent === "publish" ? `Recompensa ${title} criada e publicada.` : `Recompensa ${title} criada como rascunho.`);
     else if (intent === "publish") onSaved(`Recompensa ${title} publicada.`);
     else if (wrote) onSaved(`Alterações em ${title} salvas.`);
     else onClose();
   }
 
-  const showPublish = !editing || status === "draft";
+  const prize = form.prize;
+  const showPublish = !prize && (!editing || status === "draft");
   // Trocar o show de uma recompensa no ar por um fechado: o servidor aceita, e ela fica esgotada para todos.
   const closedWarning = status === "published" && Boolean(form.eventId) && !isEventOpen(chosenEvent, now);
 
@@ -271,8 +282,14 @@ function RewardDialogBody({
       size="xl"
       busy={busy}
       onClose={close}
-      title={editing ? `Editar ${request.reward?.title}` : "Nova recompensa"}
-      description={editing ? undefined : "Nasce como rascunho: o app só mostra depois de publicar."}
+      title={editing ? `Editar ${request.reward?.title}` : prize ? "Nova recompensa para prêmios" : "Nova recompensa"}
+      description={
+        prize
+          ? "Só para prêmios de fã-clube: fica fora da loja, sem custo, e vira pedido só pelo Recompensar de um fã-clube. Não vai ao ar nem muda de status."
+          : editing
+            ? undefined
+            : "Nasce como rascunho: o app só mostra depois de publicar."
+      }
     >
       <form
         ref={formRef}
@@ -284,6 +301,14 @@ function RewardDialogBody({
         }}
         className="flex flex-col gap-5"
       >
+        {!editing ? (
+          <div className="flex flex-col gap-1">
+            <Checkbox label="Só para prêmios de fã-clube" checked={prize} disabled={busy || wroteSomething} onChange={(event) => setPrize(event.target.checked)} />
+            <p className="m-0 pl-7 text-[12.5px] leading-snug text-fg/60">
+              Para dar ingressos, descontos e outros prêmios aos fã-clubes. Fica fora da loja, sem custo, e o tipo Desconto só vale aqui. Depois de criada, não vira recompensa da loja.
+            </p>
+          </div>
+        ) : null}
         <div className="grid gap-6 md:grid-cols-[300px_minmax(0,1fr)]">
           <ImageField
             label="Foto"
@@ -304,7 +329,7 @@ function RewardDialogBody({
             <Field label="Tipo" error={errors.kind}>
               {({ id, describedBy, invalid }) => (
                 <SelectInput id={id} describedBy={describedBy} invalid={invalid} value={form.kind} disabled={busy} onChange={(event) => set("kind", event.target.value as RewardKind)}>
-                  {REWARD_KINDS.map((kind) => (
+                  {kindsFor(prize || (request.reward ? isPrizeReward(request.reward) : false)).map((kind) => (
                     <option key={kind} value={kind}>
                       {KIND_LABELS[kind]}
                     </option>
@@ -312,11 +337,18 @@ function RewardDialogBody({
                 </SelectInput>
               )}
             </Field>
-            <Field label="Custo" error={errors.cost} hint={`De 1 a ${COST_MAX.toLocaleString("pt-BR")} pontos do saldo.`}>
-              {({ id, describedBy, invalid }) => (
-                <TextInput id={id} describedBy={describedBy} invalid={invalid} type="number" min={1} max={COST_MAX} value={form.cost} disabled={busy} onChange={(event) => set("cost", event.target.value)} />
-              )}
-            </Field>
+            {prize ? (
+              <div className="flex flex-col gap-1">
+                <p className="m-0 text-[13px] font-semibold text-fg/85">Custo</p>
+                <p className="m-0 text-sm text-fg/80">Sem custo: o prêmio não sai do saldo do gestor.</p>
+              </div>
+            ) : (
+              <Field label="Custo" error={errors.cost} hint={`De 1 a ${COST_MAX.toLocaleString("pt-BR")} pontos do saldo.`}>
+                {({ id, describedBy, invalid }) => (
+                  <TextInput id={id} describedBy={describedBy} invalid={invalid} type="number" min={1} max={COST_MAX} value={form.cost} disabled={busy} onChange={(event) => set("cost", event.target.value)} />
+                )}
+              </Field>
+            )}
             <Field label="Título" error={errors.title} hint={`Até ${TITLE_MAX} caracteres.`}>
               {({ id, describedBy, invalid }) => (
                 <TextInput id={id} describedBy={describedBy} invalid={invalid} value={form.title} maxLength={TITLE_MAX} disabled={busy} onChange={(event) => set("title", event.target.value)} />
@@ -335,7 +367,7 @@ function RewardDialogBody({
             <TextArea id={id} describedBy={describedBy} invalid={invalid} rows={3} value={form.description} maxLength={DESCRIPTION_MAX} disabled={busy} onChange={(event) => set("description", event.target.value)} />
           )}
         </Field>
-        <Field label="Como retirar" error={errors.instructions} hint="O fã lê depois de resgatar: onde, quando e como a entrega acontece.">
+        <Field label="Como retirar" error={errors.instructions} hint={prize ? "O gestor lê no prêmio, no app: onde, quando e como a entrega acontece." : "O fã lê depois de resgatar: onde, quando e como a entrega acontece."}>
           {({ id, describedBy, invalid }) => (
             <TextArea id={id} describedBy={describedBy} invalid={invalid} rows={3} value={form.instructions} maxLength={INSTRUCTIONS_MAX} disabled={busy} onChange={(event) => set("instructions", event.target.value)} />
           )}
@@ -350,7 +382,7 @@ function RewardDialogBody({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <Field label="Estoque" error={errors.stockTotal} hint={form.stockLimited ? `De 0 a ${STOCK_MAX.toLocaleString("pt-BR")} vagas.` : "Sem limite de vagas."}>
+              <Field label={prize ? "Cota de cortesias" : "Estoque"} error={errors.stockTotal} hint={form.stockLimited ? `De 0 a ${STOCK_MAX.toLocaleString("pt-BR")} vagas.` : "Sem limite de vagas."}>
                 {({ id, describedBy, invalid }) => (
                   <TextInput
                     id={id}
@@ -368,6 +400,7 @@ function RewardDialogBody({
               <Checkbox label="Sem limite" checked={!form.stockLimited} disabled={busy} onChange={(event) => set("stockLimited", !event.target.checked)} />
             </div>
           )}
+          {prize ? null : (
           <div className="flex flex-col gap-2">
             <Field label="Limite por fã" error={errors.perFanLimit} hint={form.perFanLimited ? `De 1 a ${PER_FAN_LIMIT_MAX} pedidos por fã.` : "Cada fã pede quantas vezes quiser."}>
               {({ id, describedBy, invalid }) => (
@@ -386,6 +419,7 @@ function RewardDialogBody({
             </Field>
             <Checkbox label="Sem limite" checked={!form.perFanLimited} disabled={busy} onChange={(event) => set("perFanLimited", !event.target.checked)} />
           </div>
+          )}
           <Field label="Show" optional error={errors.eventId} hint={choices.state.status === "error" ? choices.state.message : "Com show, a recompensa só vale enquanto ele não passou e está no ar."}>
             {({ id, describedBy, invalid }) => (
               <SelectInput id={id} describedBy={describedBy} invalid={invalid} value={form.eventId} disabled={busy} onChange={(event) => set("eventId", event.target.value)}>
@@ -400,10 +434,12 @@ function RewardDialogBody({
               </SelectInput>
             )}
           </Field>
-          <div className="flex flex-col gap-4 pt-1">
-            <Switch label="Destaque" description="Aparece em destaque na loja." checked={form.featured} disabled={busy} onChange={(checked) => set("featured", checked)} />
-            <Switch label="Mostrar as vagas" description={`O selo "Só N vagas" no app, quando há estoque.`} checked={form.scarcity} disabled={busy} onChange={(checked) => set("scarcity", checked)} />
-          </div>
+          {prize ? null : (
+            <div className="flex flex-col gap-4 pt-1">
+              <Switch label="Destaque" description="Aparece em destaque na loja." checked={form.featured} disabled={busy} onChange={(checked) => set("featured", checked)} />
+              <Switch label="Mostrar as vagas" description={`O selo "Só N vagas" no app, quando há estoque.`} checked={form.scarcity} disabled={busy} onChange={(checked) => set("scarcity", checked)} />
+            </div>
+          )}
         </div>
 
         {closedWarning ? <Notice tone="info">{CLOSED_EVENT_WARNING}</Notice> : null}
@@ -417,7 +453,7 @@ function RewardDialogBody({
             {wroteSomething ? "Fechar" : "Cancelar"}
           </Button>
           <Button type="submit" variant={showPublish ? "secondary" : "primary"} busy={busy && step !== "publish"} disabled={processing}>
-            {editing ? "Salvar" : "Salvar rascunho"}
+            {editing ? "Salvar" : prize ? "Criar" : "Salvar rascunho"}
           </Button>
           {showPublish ? (
             <Button variant="primary" busy={step === "publish"} disabled={processing || busy} onClick={() => void submit("publish")}>

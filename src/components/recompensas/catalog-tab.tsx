@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Boxes, Eye, ImageOff, Pencil, Plus, RotateCcw, Send, Square, Trash2 } from "lucide-react";
+import { Award, Ban, Boxes, Eye, ImageOff, Pencil, Plus, RotateCcw, Send, Square, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useMemo, useRef, useState } from "react";
 
@@ -37,6 +37,7 @@ import {
   applyRewardOrder,
   deleteBlocked,
   hasClosedEvent,
+  isPrizeReward,
   isSoldOut,
   reorderableIds,
   stockText,
@@ -49,6 +50,7 @@ import {
 
 const GRID =
   "xl:grid xl:grid-cols-[84px_minmax(0,2.4fr)_88px_92px_minmax(0,1fr)_76px_minmax(0,1.1fr)_104px_96px_44px] xl:items-center xl:gap-4";
+const PRIZE_GRID = "xl:grid xl:grid-cols-[minmax(0,2.4fr)_96px_minmax(0,1fr)_minmax(0,1.1fr)_104px_44px] xl:items-center xl:gap-4";
 
 type Notify = (tone: "success" | "error" | "info", text: string) => void;
 
@@ -86,11 +88,16 @@ function EventCell({ reward, event, now }: { reward: Reward; event: EventInfo | 
 /**
  * Catálogo: as recompensas na ordem do app, com o estoque, o show e a
  * situação; criar, editar, publicar, encerrar, reabrir, estoque, ordem,
- * apagar o rascunho e recusar os pedidos abertos de um show cancelado.
+ * apagar o rascunho e recusar os pedidos abertos de um show cancelado. Embaixo,
+ * as recompensas "Só para prêmios de fã-clube" (seção 34, decisões 40 a 42):
+ * fora da loja e da ordem, com custo 0 e o tipo Desconto, só com Editar,
+ * Estoque (a cota de cortesias) e Apagar (a que não tem pedido).
  */
 export function CatalogTab({
   canEdit,
   rewards,
+  prizeRewards,
+  onPrizeRetry,
   now,
   onChanged,
   onNotice,
@@ -98,6 +105,8 @@ export function CatalogTab({
 }: {
   canEdit: boolean;
   rewards: Loadable<Reward[]>;
+  prizeRewards: Loadable<Reward[]>;
+  onPrizeRetry: () => void;
   now: number;
   /** Uma mudança deu certo: a página avisa e lê o catálogo de novo. */
   onChanged: (message: string) => void;
@@ -105,6 +114,7 @@ export function CatalogTab({
   onReload: () => void;
 }) {
   const list = rewards.status === "ready" ? rewards.data : null;
+  const prizeList = prizeRewards.status === "ready" ? prizeRewards.data : null;
   const [dialog, setDialog] = useState<RewardDialogRequest | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [stock, setStock] = useState<Reward | null>(null);
@@ -118,7 +128,7 @@ export function CatalogTab({
   const focusOrder = useOrderFocus();
 
   const shown = useMemo(() => (list && order && order.base === list ? applyRewardOrder(list, order.ids) : list), [list, order]);
-  const eventKey = list ? [...new Set(list.map((reward) => reward.eventId).filter((id): id is string => Boolean(id)))].sort().join("|") : "";
+  const eventKey = list ? [...new Set([...list, ...(prizeList ?? [])].map((reward) => reward.eventId).filter((id): id is string => Boolean(id)))].sort().join("|") : "";
   const events = useLoad(useCallback(() => getEvents(eventKey ? eventKey.split("|") : []), [eventKey]));
   const eventMap = events.state.status === "ready" ? events.state.data : null;
   const movable = shown ? reorderableIds(shown) : [];
@@ -147,14 +157,14 @@ export function CatalogTab({
   }
 
   function askDelete(reward: Reward) {
-    const blocked = deleteBlocked(reward);
+    const blocked = isPrizeReward(reward) ? null : deleteBlocked(reward);
     if (blocked) {
       setRowNotice((current) => ({ id: reward.id, text: blocked, key: (current?.key ?? 0) + 1 }));
       return;
     }
     ask({
       title: `Apagar ${reward.title}?`,
-      body: "O rascunho e a foto saem de vez. Isso não se desfaz.",
+      body: isPrizeReward(reward) ? "A recompensa para prêmios e a foto saem de vez. Isso não se desfaz. Com pedido de prêmio, o servidor recusa." : "O rascunho e a foto saem de vez. Isso não se desfaz.",
       confirmLabel: "Apagar",
       busyLabel: "Apagando...",
       cancelLabel: "Voltar",
@@ -187,6 +197,12 @@ export function CatalogTab({
 
   function actionsOf(reward: Reward): MenuAction[] {
     const items: MenuAction[] = [{ label: "Editar", icon: Pencil, onSelect: () => setDialog({ reward }) }];
+    // A de prêmio não vai ao ar nem sai do ar (`reward-is-prize`), e os pedidos dela se recusam um a um, na aba Pedidos.
+    if (isPrizeReward(reward)) {
+      items.push({ label: "Estoque", icon: Boxes, onSelect: () => setStock(reward) });
+      items.push({ label: "Apagar", icon: Trash2, onSelect: () => askDelete(reward), tone: "danger" });
+      return items;
+    }
     if (reward.status === "draft") items.push({ label: "Publicar", icon: Send, onSelect: () => askStatus(reward, "published") });
     if (reward.status === "closed") items.push({ label: "Reabrir", icon: RotateCcw, onSelect: () => askStatus(reward, "published") });
     if (reward.status === "published") items.push({ label: "Encerrar", icon: Square, onSelect: () => askStatus(reward, "closed"), tone: "danger" });
@@ -271,6 +287,40 @@ export function CatalogTab({
     },
   ];
 
+  const prizeColumns: Column<Reward>[] = [
+    {
+      key: "title",
+      header: "Recompensa",
+      cell: (reward) => (
+        <span className="flex min-w-0 items-center gap-3">
+          <Thumb reward={reward} />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-fg">{reward.title}</span>
+            <span className="block truncate text-[12.5px] text-fg/60">{reward.subtitle}</span>
+          </span>
+        </span>
+      ),
+    },
+    { key: "kind", header: "Tipo", cell: (reward) => KIND_LABELS[reward.kind] },
+    { key: "stock", header: "Cota", label: "Estoque", cell: (reward) => <span className="tabular-nums">{stockText(reward)}</span> },
+    { key: "event", header: "Show", cell: (reward) => <EventCell reward={reward} event={reward.eventId ? (eventMap ? (eventMap.get(reward.eventId) ?? null) : undefined) : null} now={now} /> },
+    { key: "given", header: "Dados", label: "Prêmios dados", align: "end", cell: (reward) => <span className="tabular-nums">{formatNumber(reward.redeemedCount)}</span> },
+    {
+      key: "actions",
+      header: "",
+      label: "",
+      align: "end",
+      cell: (reward) =>
+        canEdit ? (
+          <ActionsMenu label={`Ações de ${reward.title}`} actions={actionsOf(reward)} />
+        ) : (
+          <Button size="sm" variant="ghost" onClick={() => setViewing(reward)} aria-label={`Ver ${reward.title}`}>
+            <Eye aria-hidden="true" className="size-4" />
+          </Button>
+        ),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
       <SectionCard id="titulo-catalogo" title="Catálogo" meta={list ? countLabel(list.length, "recompensa", "recompensas") : undefined}>
@@ -317,6 +367,42 @@ export function CatalogTab({
                 Nenhuma recompensa cadastrada.
               </EmptyState>
             }
+          />
+        )}
+      </SectionCard>
+
+      <SectionCard
+        id="titulo-premios"
+        title="Só para prêmios de fã-clube"
+        meta={prizeList ? `${countLabel(prizeList.length, "recompensa", "recompensas")}. Fora da loja: viram pedido só pelo Recompensar de um fã-clube.` : "Fora da loja: viram pedido só pelo Recompensar de um fã-clube."}
+      >
+        {canEdit ? (
+          <div className="flex flex-wrap gap-2 border-b border-line px-5 py-4">
+            <Button size="sm" variant="secondary" onClick={() => setDialog({ reward: null, prize: true })}>
+              <Award aria-hidden="true" className="size-4" />
+              Nova recompensa para prêmios
+            </Button>
+          </div>
+        ) : null}
+        {prizeRewards.status === "error" ? (
+          <LoadError message={prizeRewards.message} headingId="titulo-premios" onRetry={onPrizeRetry} />
+        ) : !prizeList ? (
+          <LoadingRow label="Carregando as recompensas para prêmios..." />
+        ) : (
+          <DataTable
+            caption="Recompensas só para prêmios de fã-clube"
+            columns={prizeColumns}
+            rows={prizeList}
+            rowKey={(reward) => reward.id}
+            grid={PRIZE_GRID}
+            rowNotice={(reward) =>
+              rowNotice?.id === reward.id ? (
+                <Notice key={rowNotice.key} tone="info">
+                  {rowNotice.text}
+                </Notice>
+              ) : null
+            }
+            empty={<EmptyState className="p-0">Nenhuma recompensa só para prêmios. Crie uma para dar ingressos, descontos e outros prêmios aos fã-clubes.</EmptyState>}
           />
         )}
       </SectionCard>
@@ -550,13 +636,11 @@ function RewardView({ reward, event, now, onClose }: { reward: Reward | null; ev
         <div className="flex flex-col gap-5">
           <DetailList>
             <Detail term="Tipo">{KIND_LABELS[reward.kind]}</Detail>
-            <Detail term="Custo">
-              <Points value={reward.cost} />
-            </Detail>
+            <Detail term="Custo">{isPrizeReward(reward) ? "Sem custo: só para prêmios de fã-clube" : <Points value={reward.cost} />}</Detail>
             <Detail term="Estoque">{stockText(reward)}</Detail>
-            <Detail term="Limite por fã">{reward.perFanLimit === null ? "Sem limite" : reward.perFanLimit}</Detail>
+            {isPrizeReward(reward) ? null : <Detail term="Limite por fã">{reward.perFanLimit === null ? "Sem limite" : reward.perFanLimit}</Detail>}
             <Detail term="Show">{reward.eventId ? (event ? `${event.title}${event.startsAt ? `, ${formatDay(event.startsAt, new Date(now))}` : ""}` : "Show apagado") : <Missing>Sem show</Missing>}</Detail>
-            <Detail term="Resgatados">{formatNumber(reward.redeemedCount)}</Detail>
+            <Detail term={isPrizeReward(reward) ? "Prêmios dados" : "Resgatados"}>{formatNumber(reward.redeemedCount)}</Detail>
             <Detail term="Descrição" wide>
               {reward.description ? <span className="whitespace-pre-line">{reward.description}</span> : <Missing>Sem descrição</Missing>}
             </Detail>
