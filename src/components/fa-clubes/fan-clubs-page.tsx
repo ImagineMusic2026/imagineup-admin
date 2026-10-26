@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
-import { APPLICATION_STYLES, FAN_CLUB_STYLES, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
+import { APPLICATION_STYLES, FAN_CLUB_STYLES, FanClubName, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
 import { PostsTab, ReportsTab } from "@/components/fa-clubes/fan-club-queues";
 import { PageHeader } from "@/components/painel/page-header";
 import { SectionGate } from "@/components/painel/section-gate";
@@ -374,7 +374,9 @@ function CopyNumber({ club, value }: { club: FanClub; value: number | undefined 
  * Os fã-clubes (34.10, item 4): o status, a central e a ordem (pelos
  * seguidores, pelos novos em 30 dias ou pela aprovação), ou só os destacados,
  * pelo fim do Destaque (o índice dele não combina com os outros filtros). Os
- * números são da cópia da noite, com a data dela em cada linha.
+ * números são da cópia da noite, com a data dela em cada linha. O selo de
+ * oficial vai ao lado do nome, sem coluna nem filtro: filtrar por ele pediria
+ * um índice que o servidor não tem (34.23).
  */
 function ClubsTab({ names, now, round }: { names: Names; now: Date; round: number }) {
   const [status, setStatus] = useState<FanClubStatus>("active");
@@ -388,7 +390,15 @@ function ClubsTab({ names, now, round }: { names: Names; now: Date; round: numbe
   const nowMs = now.getTime();
 
   const columns: Column<FanClub>[] = [
-    { key: "club", header: "Fã-clube", cell: (club) => <span className="font-semibold text-fg">{fanClubLabel(club)}</span> },
+    {
+      key: "club",
+      header: "Fã-clube",
+      cell: (club) => (
+        <span className="font-semibold break-words text-fg">
+          <FanClubName name={fanClubLabel(club)} official={club.official} />
+        </span>
+      ),
+    },
     { key: "owner", header: "Gestor", cell: (club) => <PersonCell name={ownerLabel(club)} username={club.ownerUsername} photoURL={club.ownerPhotoURL} /> },
     { key: "artist", header: "Central", cell: (club) => artistOf(names, club.artistId, club.artistName) },
     {

@@ -147,6 +147,11 @@ test("o nome da aprovação: de 3 a 40 numa linha visível; o resto é com o ser
   assert.equal(model.approveNameProblem({ code: "functions/failed-precondition", details: { reason: "stale-decision" } }), null);
   assert.equal(model.isStaleDecision({ code: "functions/failed-precondition", details: { reason: "stale-decision" } }), true);
   assert.equal(model.isStaleDecision({ code: "functions/internal" }), false);
+  // O botão de confirmar sai com o `stale-decision` e com o `admin-only` (quem deixou de ser admin com o Encerrar ou o selo aberto).
+  assert.equal(model.blocksDecisionRetry({ code: "functions/failed-precondition", details: { reason: "stale-decision" } }), true);
+  assert.equal(model.blocksDecisionRetry({ code: "functions/permission-denied", message: "Só um admin do painel pode fazer isso.", details: { reason: "admin-only" } }), true);
+  assert.equal(model.blocksDecisionRetry({ code: "functions/permission-denied", details: { reason: "self" } }), false);
+  assert.equal(model.blocksDecisionRetry({ code: "functions/internal" }), false);
 });
 
 test("o fã-clube lido: o status estranho vale encerrado, e a lápide fica sem nome nem gestor", () => {
@@ -186,19 +191,87 @@ test("o fã-clube lido: o status estranho vale encerrado, e a lápide fica sem n
   assert.equal(model.fanClubCountText(2, "closed"), "2 fã-clubes encerrados");
 });
 
-test("as decisões que cabem: o editor pausa e reativa, só o admin encerra, e ninguém decide o próprio fã-clube", () => {
+test("o selo de oficial lido: o documento de antes vale sem selo, e o oficial traz quando e quem deu", () => {
+  const now = sp("2026-10-26T15:00:00");
+  const before = model.parseFanClub("club1", { name: "Turma do Nenho", status: "active" });
+  assert.equal(before.official, false);
+  assert.equal(before.officialAt, null);
+  assert.equal(before.officialBy, null);
+  assert.equal(model.officialText(before, now), null);
+
+  const official = model.parseFanClub("club2", {
+    name: "Netto de Coração",
+    status: "active",
+    official: true,
+    officialAt: ts(sp("2026-10-26T10:00:00")),
+    officialBy: { uid: "staff1", name: "Iara" },
+  });
+  assert.equal(official.official, true);
+  assert.deepEqual(official.officialAt, sp("2026-10-26T10:00:00"));
+  assert.deepEqual(official.officialBy, { uid: "staff1", name: "Iara" });
+  assert.equal(model.officialText(official, now), "Oficial desde 26 out, por Iara");
+  assert.equal(model.officialText({ official: true, officialAt: null, officialBy: null }, now), "Oficial");
+
+  // Só o `true` vale selo; o tirado grava `false` e os dois nulos (o `OFFICIAL_OFF` do servidor).
+  assert.equal(model.parseFanClub("club3", { official: "sim" }).official, false);
+  const off = model.parseFanClub("club4", { official: false, officialAt: null, officialBy: null });
+  assert.equal(off.official, false);
+  assert.equal(off.officialBy, null);
+  assert.equal(model.parseFanClub("club5", { official: true, officialBy: { name: "Sem uid" } }).officialBy, null);
+});
+
+test("o selo fica preso ao último caractere do nome, com o emoji inteiro, e o resto do nome quebra", () => {
+  const split = (name) => {
+    const cut = model.lastCharStart(name);
+    return [name.slice(0, cut), name.slice(cut)];
+  };
+  assert.deepEqual(split("Nettomaníacos-da-Bahia-e-Sergipe"), ["Nettomaníacos-da-Bahia-e-Sergip", "e"]);
+  assert.deepEqual(split("Netto de Coração"), ["Netto de Coraçã", "o"]);
+  // A letra com o acento combinante, a cantora (ZWJ), a bandeira e o coração com o VS16 vão inteiros.
+  assert.deepEqual(split("Fãs do José"), ["Fãs do Jos", "é"]);
+  assert.deepEqual(split("Netto 👩‍🎤"), ["Netto ", "👩‍🎤"]);
+  assert.deepEqual(split("🇧🇷"), ["", "🇧🇷"]);
+  assert.deepEqual(split("Netto ❤️"), ["Netto ", "❤️"]);
+  assert.deepEqual(split(""), ["", ""]);
+});
+
+test("as decisões que cabem: o editor pausa e reativa, só o admin encerra e mexe no selo, e ninguém decide o próprio fã-clube", () => {
   const editor = { uid: "e1", canEdit: true, admin: false };
   const admin = { uid: "a1", canEdit: true, admin: true };
   const viewer = { uid: "v1", canEdit: false, admin: false };
-  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "f1" }, editor), ["pause"]);
-  assert.deepEqual(model.clubDecisions({ status: "paused", ownerUid: "f1" }, editor), ["resume"]);
-  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "f1" }, admin), ["pause", "close"]);
-  assert.deepEqual(model.clubDecisions({ status: "paused", ownerUid: "f1" }, admin), ["resume", "close"]);
-  assert.deepEqual(model.clubDecisions({ status: "closed", ownerUid: "f1" }, admin), []);
-  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "f1" }, viewer), []);
-  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1" }, admin), [], "o gestor da equipe: self");
+  const rows = [
+    // [status, oficial, quem, decisões]
+    ["active", false, editor, ["pause"]],
+    ["active", true, editor, ["pause"]],
+    ["paused", false, editor, ["resume"]],
+    ["paused", true, editor, ["resume"]],
+    ["closed", false, editor, []],
+    ["active", false, admin, ["pause", "close", "officialize"]],
+    ["active", true, admin, ["pause", "close", "unofficialize"]],
+    ["paused", false, admin, ["resume", "close"]],
+    ["paused", true, admin, ["resume", "close", "unofficialize"]],
+    ["closed", false, admin, []],
+    ["closed", true, admin, ["unofficialize"]],
+    ["active", false, viewer, []],
+    ["active", true, viewer, []],
+    ["paused", true, viewer, []],
+  ];
+  for (const [status, official, who, expected] of rows) {
+    assert.deepEqual(model.clubDecisions({ status, ownerUid: "f1", official }, who), expected, `${status}, ${official ? "oficial" : "sem selo"}, ${who.uid}`);
+  }
+  // O gestor da equipe: `self`, também no selo.
+  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: false }, admin), []);
+  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: true }, admin), []);
   // A lápide pausada (sem gestor) não reativa: o servidor não acha o perfil.
-  assert.deepEqual(model.clubDecisions({ status: "paused", ownerUid: null }, admin), ["close"]);
+  assert.deepEqual(model.clubDecisions({ status: "paused", ownerUid: null, official: false }, admin), ["close"]);
+});
+
+test("as confirmações do selo: oficializar pede combinar com o artista, e tirar fala do status", () => {
+  assert.match(model.OFFICIALIZE_TEXT, /^O fã-clube ganha o selo de oficial ao lado do nome/);
+  assert.match(model.OFFICIALIZE_TEXT, /Combine com o artista antes/);
+  assert.equal(model.unofficializeText("active"), "O selo sai do app na hora. O fã-clube continua no ar.");
+  assert.equal(model.unofficializeText("paused"), "O fã-clube fica sem o selo e, quando for reativado, volta ao app sem ele.");
+  assert.equal(model.unofficializeText("closed"), "O fã-clube fica sem o selo.");
 });
 
 test("os textos não têm travessão nem meia-risca", () => {
@@ -206,6 +279,8 @@ test("os textos não têm travessão nem meia-risca", () => {
     model.FAN_CLUB_AUDIT_TEXT,
     model.PAUSE_TEXT,
     model.RESUME_TEXT,
+    model.OFFICIALIZE_TEXT,
+    ...model.FAN_CLUB_STATUSES.map(model.unofficializeText),
     ...Object.values(model.REJECT_REASON_LABELS),
     ...Object.values(model.CLOSE_REASON_LABELS),
     ...Object.values(model.CLOSE_REASON_HINTS),
@@ -229,6 +304,8 @@ test("a decideFanClub recebe o assunto, a decisão e o estado que a tela mostrou
   await api.setFanClubPaused("club1", "active", true);
   await api.setFanClubPaused("club1", "paused", false);
   await api.closeFanClub("club1", "paused", "owner_request");
+  await api.officializeFanClub("club1", "active");
+  await api.unofficializeFanClub("club1", "paused");
   assert.deepEqual(calls, [
     ["decideFanClub", { subject: "application", id: "uidCamila", decision: "approve", expected: 2, submittedAt: 1_760_878_800_250, name: null }],
     ["decideFanClub", { subject: "application", id: "uidCamila", decision: "approve", expected: 2, submittedAt: 1_760_878_800_250, name: "Netto Sempre" }],
@@ -236,5 +313,8 @@ test("a decideFanClub recebe o assunto, a decisão e o estado que a tela mostrou
     ["decideFanClub", { subject: "club", id: "club1", decision: "pause", expected: "active" }],
     ["decideFanClub", { subject: "club", id: "club1", decision: "resume", expected: "paused" }],
     ["decideFanClub", { subject: "club", id: "club1", decision: "close", expected: "paused", reason: "owner_request" }],
+    // O selo (34.23): sem campo, só o status que a tela mostrou.
+    ["decideFanClub", { subject: "club", id: "club1", decision: "officialize", expected: "active" }],
+    ["decideFanClub", { subject: "club", id: "club1", decision: "unofficialize", expected: "paused" }],
   ]);
 });

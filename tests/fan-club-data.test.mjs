@@ -166,8 +166,24 @@ test("os fã-clubes de um status, da aprovação mais nova, com a central opcion
 
   const found = await data.getFanClub("c4");
   assert.equal(found.statusReason, "staff");
+  assert.equal(found.official, false, "o documento sem o selo");
   assert.equal(await data.getFanClub("nenhum"), null);
   assert.equal(firestore.reads.at(-1), "fanClubs/nenhum");
+
+  // O selo (34.23) pelo dublê, com o Timestamp do SDK, num pausado: o servidor não tira o selo na pausa, e a ficha e a lista o leem.
+  club("c5", { approvedAt: ts("2026-10-15T10:00:00"), status: "paused", statusReason: "staff", official: true, officialAt: ts("2026-10-26T10:00:00"), officialBy: { uid: "admin1", name: "Iara" } });
+  const official = await data.getFanClub("c5");
+  assert.equal(official.official, true);
+  assert.equal(official.officialAt.getTime(), Date.parse("2026-10-26T10:00:00-03:00"));
+  assert.deepEqual(official.officialBy, { uid: "admin1", name: "Iara" });
+  const page = await data.getFanClubsPage({ featured: false, status: "paused", artistId: "", order: "approved" }, null);
+  assert.deepEqual(
+    page.items.map((item) => [item.id, item.official]),
+    [
+      ["c4", false],
+      ["c5", true],
+    ],
+  );
 });
 
 // ---------------------------------------------------------------------------

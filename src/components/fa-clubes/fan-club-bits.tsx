@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback } from "react";
 
 import { FanAvatar } from "@/components/painel/fan-avatar";
 import { Badge } from "@/components/ui/badge";
+import { cx } from "@/components/ui/cx";
 import { Missing } from "@/components/ui/detail-list";
 import type { StatusStyle } from "@/components/ui/status-chip";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -19,6 +20,7 @@ import {
   POST_STATUS_LABELS,
   authorLabel,
   fanClubLabel,
+  lastCharStart,
   mediaGoneText,
   postMediaSource,
   type ApplicationStatus,
@@ -64,6 +66,32 @@ export function PersonCell({ name, username, photoURL }: { name: string; usernam
         {username ? <span className="block truncate text-[12.5px] text-fg/60">@{username}</span> : null}
       </span>
     </span>
+  );
+}
+
+/**
+ * O nome do fã-clube com o selo de oficial (34.23) logo depois: o escudo com o
+ * check, branco e preenchido, como o do app. O nome quebra nos espaços e nos
+ * hífens, e o selo fica preso ao último caractere (nunca desce sozinho de
+ * linha). O ícone fica fora do leitor, que ouve "Nome, fã-clube oficial"
+ * (também dentro do link da linha da lista); o vão é margem, e não espaço de
+ * texto, para o leitor não ouvir um espaço antes da vírgula. O `title` explica
+ * o escudo a quem passa o mouse, por cima do link.
+ */
+export function FanClubName({ name, official, size = "sm" }: { name: string; official: boolean; size?: "sm" | "lg" }) {
+  if (!official) return name;
+  const cut = lastCharStart(name);
+  return (
+    <>
+      {name.slice(0, cut)}
+      <span className="whitespace-nowrap">
+        {name.slice(cut)}
+        <span aria-hidden="true" title="Fã-clube oficial" className={cx("relative z-10 inline-flex align-[-0.125em]", size === "lg" ? "ml-2" : "ml-1.5")}>
+          <ShieldCheck className={cx("fill-fg text-ink", size === "lg" ? "size-[22px]" : "size-3.5")} />
+        </span>
+        <span className="sr-only">, fã-clube oficial</span>
+      </span>
+    </>
   );
 }
 

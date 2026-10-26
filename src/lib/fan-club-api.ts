@@ -12,7 +12,8 @@ import type { CloseReason, FanClubStatus, PostRejectReason, PostStatus, RejectRe
  *
  * Os motivos da recusa (`details.reason`) que a seção trata, com a frase do
  * servidor (`REASON_MESSAGES` de `errors.ts`, de reserva): `self`,
- * `admin-only`, `not-staff`, `no-section`, `invalid-request` (com o `field`),
+ * `admin-only` (o Encerrar e o selo de oficial, só do admin), `not-staff`,
+ * `no-section`, `invalid-request` (com o `field`),
  * `stale-decision`, `application-not-found`, `fan-club-not-found`,
  * `fan-club-post-not-found`, `fan-club-report-not-found`, `artist-not-open`,
  * `owner-suspended`, `feature-limit`; e, no Recompensar, `prize-not-allowed`
@@ -88,6 +89,20 @@ export function featureFanClub(clubId: string, expected: FanClubStatus, featured
 /** Tira o Destaque; sem destaque, `ok` sem gravar. */
 export function unfeatureFanClub(clubId: string, expected: FanClubStatus): Promise<DecisionResult> {
   return call("decideFanClub", { subject: "club", id: clubId, decision: "unfeature", expected });
+}
+
+/**
+ * Oficializa o fã-clube ativo (só admin, 34.23): o selo ao lado do nome em
+ * todas as telas do app. Já oficial, `ok` sem gravar; o pausado e o
+ * encerrado recusam `invalid-request` com `field: 'decision'`.
+ */
+export function officializeFanClub(clubId: string, expected: FanClubStatus): Promise<DecisionResult> {
+  return call("decideFanClub", { subject: "club", id: clubId, decision: "officialize", expected });
+}
+
+/** Tira o selo de oficial (só admin), em qualquer status; sem o selo, `ok` sem gravar. */
+export function unofficializeFanClub(clubId: string, expected: FanClubStatus): Promise<DecisionResult> {
+  return call("decideFanClub", { subject: "club", id: clubId, decision: "unofficialize", expected });
 }
 
 export interface RewardGrant {

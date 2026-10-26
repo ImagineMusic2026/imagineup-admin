@@ -423,6 +423,10 @@ export interface FanClub {
   featuredUntil: string | null;
   featuredBy: { uid: string; name: string } | null;
   lastReward: LastReward | null;
+  /** O selo do fã-clube oficial (34.23), que só o admin dá e tira; a pausa mantém, e o encerramento tira. */
+  official: boolean;
+  officialAt: Date | null;
+  officialBy: { uid: string; name: string } | null;
 }
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -452,7 +456,10 @@ function lastRewardOf(value: unknown): LastReward | null {
   return { at: toDate(value.at), points: typeof value.points === "number" && value.points > 0 ? countOf(value.points) : null, prize: value.prize === true };
 }
 
-/** O fã-clube lido. O status estranho vale `closed` (nada a pausar nem reativar), como no servidor. */
+/**
+ * O fã-clube lido. O status estranho vale `closed` (nada a pausar nem
+ * reativar), e o documento sem o `official` vale sem o selo, como no servidor.
+ */
 export function parseFanClub(id: string, data: Record<string, unknown>): FanClub {
   return {
     id,
@@ -483,6 +490,9 @@ export function parseFanClub(id: string, data: Record<string, unknown>): FanClub
     featuredUntil: typeof data.featuredUntil === "string" && DAY_PATTERN.test(data.featuredUntil) ? data.featuredUntil : null,
     featuredBy: personOf(data.featuredBy),
     lastReward: lastRewardOf(data.lastReward),
+    official: data.official === true,
+    officialAt: toDate(data.officialAt),
+    officialBy: personOf(data.officialBy),
   };
 }
 
@@ -505,25 +515,60 @@ export function fanClubStatusText(club: Pick<FanClub, "status" | "statusReason">
   return `${label} ${STATUS_REASON_LABELS[club.statusReason]}`;
 }
 
-export type ClubDecision = "pause" | "resume" | "close";
+export type ClubDecision = "pause" | "resume" | "close" | "officialize" | "unofficialize";
 
 /**
- * As decisões que cabem no fã-clube agora (34.5): pausar o ativo, reativar o
- * pausado (o servidor recusa o gestor suspenso e o artista fechado) e
- * encerrar o ativo ou o pausado, só o admin. O gestor da equipe não decide o
- * próprio fã-clube (`self`), nem o Leitor.
+ * As decisões que cabem no fã-clube agora (34.5 e 34.23): pausar o ativo,
+ * reativar o pausado (o servidor recusa o gestor suspenso e o artista
+ * fechado), encerrar o ativo ou o pausado, oficializar o ativo sem o selo e
+ * tirar o selo em qualquer status; as três últimas, só o admin
+ * (`admin-only`). O gestor da equipe não decide o próprio fã-clube (`self`),
+ * nem o Leitor.
  */
-export function clubDecisions(club: Pick<FanClub, "status" | "ownerUid">, viewer: { uid: string; canEdit: boolean; admin: boolean }): ClubDecision[] {
+export function clubDecisions(club: Pick<FanClub, "status" | "ownerUid" | "official">, viewer: { uid: string; canEdit: boolean; admin: boolean }): ClubDecision[] {
   if (!viewer.canEdit || (club.ownerUid !== null && club.ownerUid === viewer.uid)) return [];
   const decisions: ClubDecision[] = [];
   if (club.status === "active") decisions.push("pause");
   if (club.status === "paused" && club.ownerUid !== null) decisions.push("resume");
   if (club.status !== "closed" && viewer.admin) decisions.push("close");
+  if (club.status === "active" && !club.official && viewer.admin) decisions.push("officialize");
+  if (club.official && viewer.admin) decisions.push("unofficialize");
   return decisions;
 }
 
 export const PAUSE_TEXT = "O fã-clube sai do app para os fãs, e o gestor não publica até a equipe reativar.";
 export const RESUME_TEXT = "O fã-clube volta ao app para os fãs. O servidor recusa se o gestor estiver suspenso ou o artista não aceitar fã-clubes.";
+
+export const OFFICIALIZE_TEXT = "O fã-clube ganha o selo de oficial ao lado do nome em todas as telas do app. Combine com o artista antes: o selo fala em nome dele e da Imagine.";
+
+/** O texto da confirmação de tirar o selo, pelo status: só o ativo está no ar para os fãs. */
+export function unofficializeText(status: FanClubStatus): string {
+  if (status === "active") return "O selo sai do app na hora. O fã-clube continua no ar.";
+  if (status === "paused") return "O fã-clube fica sem o selo e, quando for reativado, volta ao app sem ele.";
+  return "O fã-clube fica sem o selo.";
+}
+
+const GRAPHEMES = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("pt-BR", { granularity: "grapheme" }) : null;
+
+/**
+ * Onde começa o último caractere visível do nome (o emoji com ZWJ, a bandeira
+ * e a letra com acento contam como um): o selo de oficial fica preso a ele
+ * sem tirar as quebras do resto do nome, nos espaços e nos hífens. Sem o
+ * `Intl.Segmenter` (o Firefox antes do 125), o último code point.
+ */
+export function lastCharStart(text: string): number {
+  if (!GRAPHEMES) return text.length - (Array.from(text).at(-1)?.length ?? 0);
+  let start = 0;
+  for (const { index } of GRAPHEMES.segment(text)) start = index;
+  return start;
+}
+
+/** "Oficial desde 26 out, por Iara" (34.23); sem o selo, `null`. */
+export function officialText(club: Pick<FanClub, "official" | "officialAt" | "officialBy">, now: Date): string | null {
+  if (!club.official) return null;
+  const since = club.officialAt ? ` desde ${formatDay(club.officialAt, now)}` : "";
+  return `Oficial${since}${club.officialBy?.name ? `, por ${club.officialBy.name}` : ""}`;
+}
 
 /** O texto da confirmação de encerrar, pelo motivo escolhido. */
 export function closeText(reason: CloseReason): string {
@@ -533,6 +578,17 @@ export function closeText(reason: CloseReason): string {
 /** A recusa que outra tentativa repetiria: o estado mudou desde que a tela abriu. */
 export function isStaleDecision(failure: unknown): boolean {
   return readError(failure).reason === "stale-decision";
+}
+
+/**
+ * As recusas da ficha que tiram o botão de confirmar: o `stale-decision` e o
+ * `admin-only`, quando a pessoa deixa de ser admin com o Encerrar ou o selo
+ * aberto (o papel chega em tempo real, e só essas três decisões recebem essa
+ * recusa). Outra tentativa repetiria a mesma frase.
+ */
+export function blocksDecisionRetry(failure: unknown): boolean {
+  const reason = readError(failure).reason;
+  return reason === "stale-decision" || reason === "admin-only";
 }
 
 // ---------------------------------------------------------------------------

@@ -1,11 +1,11 @@
 "use client";
 
-import { Ban, Pause, Play } from "lucide-react";
+import { Ban, Pause, Play, ShieldCheck, ShieldOff } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CloseDialog } from "@/components/fa-clubes/fan-club-dialogs";
-import { FAN_CLUB_STYLES, FanClubsBackLink, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
+import { FAN_CLUB_STYLES, FanClubName, FanClubsBackLink, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
 import { FeatureDialog, RewardDialog, type RewardAttempt } from "@/components/fa-clubes/fan-club-reward-dialogs";
 import { FollowersSection, MonthsSection, NumbersSection, PostsSection, QualitySection, RewardsSection } from "@/components/fa-clubes/fan-club-sections";
 import { SectionGate } from "@/components/painel/section-gate";
@@ -20,24 +20,27 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { useLoad } from "@/components/ui/use-load";
 import { logsHref } from "@/lib/audit";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
-import { decidePost, setFanClubPaused, unfeatureFanClub } from "@/lib/fan-club-api";
+import { decidePost, officializeFanClub, setFanClubPaused, unfeatureFanClub, unofficializeFanClub } from "@/lib/fan-club-api";
 import { getApplication, getFanClub, getShardNumbers } from "@/lib/fan-club-data";
 import {
   FAN_CLUB_AUDIT_TEXT,
   HIDE_POST_TEXT,
+  OFFICIALIZE_TEXT,
   PAUSE_TEXT,
   RESTORE_POST_TEXT,
   RESUME_TEXT,
   UNFEATURE_TEXT,
   authorLabel,
+  blocksDecisionRetry,
   clubDecisions,
   fanClubLabel,
   fanClubStatusText,
   fanClubTarget,
   featuredText,
-  isStaleDecision,
   lastRewardText,
+  officialText,
   ownerLabel,
+  unofficializeText,
   type FanClub,
   type FanClubPost,
 } from "@/lib/fan-clubs";
@@ -46,7 +49,8 @@ import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/
 
 /**
  * A ficha do fã-clube (`/fa-clubes/[id]`, 34.10, item 5): o status com
- * Pausar, Reativar e Encerrar (Encerrar só para admin); os números (os 16
+ * Pausar, Reativar e Encerrar e o selo de oficial com Oficializar e Tirar a
+ * oficialização (34.23; Encerrar e o selo só para admin); os números (os 16
  * shards e a cópia da noite), o mês e o mês passado e a qualidade dos
  * seguidores; os seguidores recentes (só com a seção Fãs); o Destaque e as
  * recompensas, com o histórico; as publicações com Ocultar e Reexibir; a
@@ -161,7 +165,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       onUncertain: markStale,
       uncertainText: UNCERTAIN_RETRY_TEXT,
       onError: markStale,
-      blocksRetry: isStaleDecision,
+      blocksRetry: blocksDecisionRetry,
       onOrphan: markStale,
     });
     setConfirmKey((value) => value + 1);
@@ -190,6 +194,19 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       tone: "default",
       send: () => unfeatureFanClub(club.id, club.status),
       successMessage: `O Destaque de ${name} saiu.`,
+    });
+  }
+
+  function askOfficial(club: FanClub, official: boolean) {
+    const name = fanClubLabel(club);
+    ask({
+      title: official ? `Oficializar o fã-clube ${name}?` : `Tirar a oficialização do fã-clube ${name}?`,
+      body: official ? OFFICIALIZE_TEXT : unofficializeText(club.status),
+      confirmLabel: official ? "Oficializar" : "Tirar a oficialização",
+      busyLabel: official ? "Oficializando..." : "Tirando...",
+      tone: "default",
+      send: () => (official ? officializeFanClub(club.id, club.status) : unofficializeFanClub(club.id, club.status)),
+      successMessage: official ? `Fã-clube ${name} oficializado.` : `Oficialização de ${name} tirada.`,
     });
   }
 
@@ -265,8 +282,8 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       <FanClubsBackLink />
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 id="titulo-da-pagina" tabIndex={-1} className="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.02em] outline-none">
-            {name}
+          <h1 id="titulo-da-pagina" tabIndex={-1} className="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.02em] break-words outline-none">
+            <FanClubName name={name} official={club.official} size="lg" />
           </h1>
           <p className="mt-1 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg/65">
             <span>
@@ -290,6 +307,18 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
               Reativar
             </Button>
           ) : null}
+          {decisions.includes("officialize") ? (
+            <Button size="sm" variant="secondary" onClick={() => askOfficial(club, true)} aria-haspopup="dialog">
+              <ShieldCheck aria-hidden="true" className="size-3.5" />
+              Oficializar
+            </Button>
+          ) : null}
+          {decisions.includes("unofficialize") ? (
+            <Button size="sm" variant="secondary" onClick={() => askOfficial(club, false)} aria-haspopup="dialog">
+              <ShieldOff aria-hidden="true" className="size-3.5" />
+              Tirar a oficialização
+            </Button>
+          ) : null}
           {decisions.includes("close") ? (
             <Button size="sm" variant="danger" onClick={() => setDialog("close")} aria-haspopup="dialog">
               <Ban aria-hidden="true" className="size-3.5" />
@@ -305,7 +334,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
         </Notice>
       ) : null}
       {refreshError ? <Notice tone="error">Não deu para atualizar: {refreshError}</Notice> : null}
-      {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa, encerra, destaca, recompensa e decide as publicações dele.</Notice> : null}
+      {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa, encerra, oficializa, destaca, recompensa e decide as publicações dele.</Notice> : null}
 
       <SectionCard id="titulo-fa-clube" title="Fã-clube">
         <div className="flex flex-col gap-4 px-5 py-4">
@@ -351,6 +380,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
               {formatNumber(club.postCount)} no ar, {formatNumber(club.pendingPosts)} em análise
               {club.lastPostAt ? `; a última aprovada em ${shortWhen(club.lastPostAt, date)}` : ""}
             </Detail>
+            <Detail term="Oficialização">{officialText(club, date) ?? <Missing>Não oficializado</Missing>}</Detail>
             <Detail term="Destaque">{featuring ?? <Missing>Sem Destaque</Missing>}</Detail>
             <Detail term="Último reconhecimento">{lastReward ?? <Missing>Nenhum ainda</Missing>}</Detail>
             <Detail term="Identificador">

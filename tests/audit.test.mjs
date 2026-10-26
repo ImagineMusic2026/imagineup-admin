@@ -14,7 +14,7 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 80);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 82);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
@@ -23,8 +23,8 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
   assert.equal(audit.AUDIT_ACTIONS["fan.account.deleted"].label, "Conta do fã excluída (LGPD)");
 });
 
-test("o fã-clube nos Logs: as 13 ações, os alvos, os detalhes e o endereço já filtrado", () => {
-  // As 13 ações que o servidor grava (34.8 e 34.22), na seção Fã-clubes.
+test("o fã-clube nos Logs: as 15 ações, os alvos, os detalhes e o endereço já filtrado", () => {
+  // As 15 ações que o servidor grava (34.8, 34.22 e 34.23), na seção Fã-clubes, na ordem do `AuditAction`.
   assert.deepEqual(audit.actionsOfSection("fanClubs"), [
     "fanClub.application.approved",
     "fanClub.application.rejected",
@@ -33,6 +33,8 @@ test("o fã-clube nos Logs: as 13 ações, os alvos, os detalhes e o endereço j
     "fanClub.closed",
     "fanClub.featured",
     "fanClub.unfeatured",
+    "fanClub.officialized",
+    "fanClub.unofficialized",
     "fanClub.rewarded",
     "fanClub.post.approved",
     "fanClub.post.rejected",
@@ -61,6 +63,14 @@ test("o fã-clube nos Logs: as 13 ações, os alvos, os detalhes e o endereço j
   ]);
   assert.deepEqual(audit.detailLines({ action: "fanClub.closed", details: { clubId: "club1", artistId: "netto", fanUid: "u1", reason: "owner_request" } }), ["Motivo: A pedido do gestor"]);
   assert.deepEqual(audit.detailLines({ action: "fanClub.paused", details: { clubId: "club1", artistId: "netto", fanUid: null } }), []);
+  // O selo (34.23): os rótulos, e os `details` de sempre viram só alvos, sem linha.
+  assert.equal(audit.AUDIT_ACTIONS["fanClub.officialized"].label, "Fã-clube oficializado");
+  assert.equal(audit.AUDIT_ACTIONS["fanClub.unofficialized"].label, "Oficialização do fã-clube tirada");
+  for (const action of ["fanClub.officialized", "fanClub.unofficialized"]) {
+    assert.deepEqual(audit.detailLines({ action, details: { clubId: "club1", artistId: "netto", fanUid: "uidCamila" } }), [], action);
+    const entry = { action, targetEmail: "", targetUid: null, targets: ["fanClub:club1", "artist:netto", "fan:uidCamila"] };
+    assert.deepEqual(audit.primaryTarget(entry), { target: { type: "fanClub", id: "club1" }, email: null, more: 2 }, action);
+  }
   assert.deepEqual(audit.detailLines({ action: "fanClub.featured", details: { clubId: "club1", featuredUntil: "2026-11-02" } }), ["Destaque até 2 nov"]);
   // A suspensão leva o `clubId` do fã-clube que pausou: vira alvo, e não linha.
   assert.deepEqual(audit.detailLines({ action: "fan.suspended", details: { reason: "spam", clubId: "club1" } }), ["Motivo: Spam"]);

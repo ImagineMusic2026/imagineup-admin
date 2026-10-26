@@ -22,10 +22,10 @@ import {
   applicantLabel,
   authorLabel,
   approveNameProblem,
+  blocksDecisionRetry,
   checkApprovalName,
   closeText,
   fanClubLabel,
-  isStaleDecision,
   type CloseReason,
   type FanClub,
   type FanClubApplication,
@@ -92,7 +92,7 @@ export function useDecision({ onDone, onSend, onOrphan }: Omit<DecisionProps, "o
         // não (a mesma decisão já gravada responderia ok): os campos destravam.
         setUncertain(false);
         setError(explain?.(failure) ?? callableErrorMessage(failure));
-        if (isStaleDecision(failure)) setBlocked(true);
+        if (blocksDecisionRetry(failure)) setBlocked(true);
       }
       setBusy(false);
     }
