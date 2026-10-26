@@ -95,9 +95,10 @@ imagineup-admin/
     fas/                       lista e busca, a ficha com as abas e o ajuste de pontos
     missoes/                   missões e meta, conquistas, régua de pontos
     fa-clubes/                 candidaturas, fã-clubes, publicações para revisar e denúncias; as
-                               duas fichas (a do fã-clube com os números, os seguidores, o Destaque,
-                               as recompensas e as publicações); os diálogos das decisões e do
-                               Recompensar; e o cartão "Aguardando a equipe" da Visão geral
+                               duas fichas (a do fã-clube com os números, os seguidores, o selo de
+                               oficial, o Destaque, as recompensas e as publicações); os diálogos
+                               das decisões e do Recompensar; e o cartão "Aguardando a equipe" da
+                               Visão geral
     recompensas/               pedidos (com os contatos), catálogo e números
     moderacao/                 fila, resolvidos, ocultos, suspensos e a página do fã
     logs/                      auditoria com os filtros e os detalhes

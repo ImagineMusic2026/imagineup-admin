@@ -100,6 +100,8 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "fanClub.closed": { label: "Fã-clube encerrado", section: "fanClubs" },
   "fanClub.featured": { label: "Fã-clube em destaque", section: "fanClubs" },
   "fanClub.unfeatured": { label: "Destaque do fã-clube tirado", section: "fanClubs" },
+  "fanClub.officialized": { label: "Fã-clube oficializado", section: "fanClubs" },
+  "fanClub.unofficialized": { label: "Oficialização do fã-clube tirada", section: "fanClubs" },
   "fanClub.rewarded": { label: "Fã-clube recompensado", section: "fanClubs" },
   "fanClub.post.approved": { label: "Publicação de fã-clube aprovada", section: "fanClubs" },
   "fanClub.post.rejected": { label: "Publicação de fã-clube recusada", section: "fanClubs" },
