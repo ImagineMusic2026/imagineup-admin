@@ -31,12 +31,12 @@ import {
   RESUME_TEXT,
   UNFEATURE_TEXT,
   authorLabel,
+  blocksDecisionRetry,
   clubDecisions,
   fanClubLabel,
   fanClubStatusText,
   fanClubTarget,
   featuredText,
-  isStaleDecision,
   lastRewardText,
   officialText,
   ownerLabel,
@@ -165,7 +165,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       onUncertain: markStale,
       uncertainText: UNCERTAIN_RETRY_TEXT,
       onError: markStale,
-      blocksRetry: isStaleDecision,
+      blocksRetry: blocksDecisionRetry,
       onOrphan: markStale,
     });
     setConfirmKey((value) => value + 1);
@@ -282,7 +282,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       <FanClubsBackLink />
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 id="titulo-da-pagina" tabIndex={-1} className="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.02em] outline-none">
+          <h1 id="titulo-da-pagina" tabIndex={-1} className="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.02em] break-words outline-none">
             <FanClubName name={name} official={club.official} size="lg" />
           </h1>
           <p className="mt-1 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg/65">

@@ -394,7 +394,7 @@ function ClubsTab({ names, now, round }: { names: Names; now: Date; round: numbe
       key: "club",
       header: "Fã-clube",
       cell: (club) => (
-        <span className="font-semibold text-fg">
+        <span className="font-semibold break-words text-fg">
           <FanClubName name={fanClubLabel(club)} official={club.official} />
         </span>
       ),

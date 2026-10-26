@@ -20,6 +20,7 @@ import {
   POST_STATUS_LABELS,
   authorLabel,
   fanClubLabel,
+  lastCharStart,
   mediaGoneText,
   postMediaSource,
   type ApplicationStatus,
@@ -70,16 +71,16 @@ export function PersonCell({ name, username, photoURL }: { name: string; usernam
 
 /**
  * O nome do fã-clube com o selo de oficial (34.23) logo depois: o escudo com o
- * check, branco e preenchido, como o do app. O nome quebra, e o selo fica
- * preso à última palavra (nunca desce sozinho de linha). O ícone fica fora do
- * leitor, que ouve "Nome, fã-clube oficial" (também dentro do link da linha da
- * lista); o vão é margem, e não espaço de texto, para o leitor não ouvir um
- * espaço antes da vírgula. O `title` explica o escudo a quem passa o mouse,
- * por cima do link.
+ * check, branco e preenchido, como o do app. O nome quebra nos espaços e nos
+ * hífens, e o selo fica preso ao último caractere (nunca desce sozinho de
+ * linha). O ícone fica fora do leitor, que ouve "Nome, fã-clube oficial"
+ * (também dentro do link da linha da lista); o vão é margem, e não espaço de
+ * texto, para o leitor não ouvir um espaço antes da vírgula. O `title` explica
+ * o escudo a quem passa o mouse, por cima do link.
  */
 export function FanClubName({ name, official, size = "sm" }: { name: string; official: boolean; size?: "sm" | "lg" }) {
   if (!official) return name;
-  const cut = name.lastIndexOf(" ") + 1;
+  const cut = lastCharStart(name);
   return (
     <>
       {name.slice(0, cut)}

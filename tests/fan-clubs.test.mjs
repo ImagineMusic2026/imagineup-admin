@@ -147,6 +147,11 @@ test("o nome da aprovação: de 3 a 40 numa linha visível; o resto é com o ser
   assert.equal(model.approveNameProblem({ code: "functions/failed-precondition", details: { reason: "stale-decision" } }), null);
   assert.equal(model.isStaleDecision({ code: "functions/failed-precondition", details: { reason: "stale-decision" } }), true);
   assert.equal(model.isStaleDecision({ code: "functions/internal" }), false);
+  // O botão de confirmar sai com o `stale-decision` e com o `admin-only` (quem deixou de ser admin com o Encerrar ou o selo aberto).
+  assert.equal(model.blocksDecisionRetry({ code: "functions/failed-precondition", details: { reason: "stale-decision" } }), true);
+  assert.equal(model.blocksDecisionRetry({ code: "functions/permission-denied", message: "Só um admin do painel pode fazer isso.", details: { reason: "admin-only" } }), true);
+  assert.equal(model.blocksDecisionRetry({ code: "functions/permission-denied", details: { reason: "self" } }), false);
+  assert.equal(model.blocksDecisionRetry({ code: "functions/internal" }), false);
 });
 
 test("o fã-clube lido: o status estranho vale encerrado, e a lápide fica sem nome nem gestor", () => {
@@ -215,6 +220,21 @@ test("o selo de oficial lido: o documento de antes vale sem selo, e o oficial tr
   assert.equal(model.parseFanClub("club5", { official: true, officialBy: { name: "Sem uid" } }).officialBy, null);
 });
 
+test("o selo fica preso ao último caractere do nome, com o emoji inteiro, e o resto do nome quebra", () => {
+  const split = (name) => {
+    const cut = model.lastCharStart(name);
+    return [name.slice(0, cut), name.slice(cut)];
+  };
+  assert.deepEqual(split("Nettomaníacos-da-Bahia-e-Sergipe"), ["Nettomaníacos-da-Bahia-e-Sergip", "e"]);
+  assert.deepEqual(split("Netto de Coração"), ["Netto de Coraçã", "o"]);
+  // A letra com o acento combinante, a cantora (ZWJ), a bandeira e o coração com o VS16 vão inteiros.
+  assert.deepEqual(split("Fãs do José"), ["Fãs do Jos", "é"]);
+  assert.deepEqual(split("Netto 👩‍🎤"), ["Netto ", "👩‍🎤"]);
+  assert.deepEqual(split("🇧🇷"), ["", "🇧🇷"]);
+  assert.deepEqual(split("Netto ❤️"), ["Netto ", "❤️"]);
+  assert.deepEqual(split(""), ["", ""]);
+});
+
 test("as decisões que cabem: o editor pausa e reativa, só o admin encerra e mexe no selo, e ninguém decide o próprio fã-clube", () => {
   const editor = { uid: "e1", canEdit: true, admin: false };
   const admin = { uid: "a1", canEdit: true, admin: true };
@@ -250,8 +270,8 @@ test("as confirmações do selo: oficializar pede combinar com o artista, e tira
   assert.match(model.OFFICIALIZE_TEXT, /^O fã-clube ganha o selo de oficial ao lado do nome/);
   assert.match(model.OFFICIALIZE_TEXT, /Combine com o artista antes/);
   assert.equal(model.unofficializeText("active"), "O selo sai do app na hora. O fã-clube continua no ar.");
-  assert.doesNotMatch(model.unofficializeText("paused"), /continua no ar/);
-  assert.doesNotMatch(model.unofficializeText("closed"), /continua no ar/);
+  assert.equal(model.unofficializeText("paused"), "O fã-clube fica sem o selo e, quando for reativado, volta ao app sem ele.");
+  assert.equal(model.unofficializeText("closed"), "O fã-clube fica sem o selo.");
 });
 
 test("os textos não têm travessão nem meia-risca", () => {

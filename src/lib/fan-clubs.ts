@@ -548,6 +548,21 @@ export function unofficializeText(status: FanClubStatus): string {
   return "O fã-clube fica sem o selo.";
 }
 
+const GRAPHEMES = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("pt-BR", { granularity: "grapheme" }) : null;
+
+/**
+ * Onde começa o último caractere visível do nome (o emoji com ZWJ, a bandeira
+ * e a letra com acento contam como um): o selo de oficial fica preso a ele
+ * sem tirar as quebras do resto do nome, nos espaços e nos hífens. Sem o
+ * `Intl.Segmenter` (o Firefox antes do 125), o último code point.
+ */
+export function lastCharStart(text: string): number {
+  if (!GRAPHEMES) return text.length - (Array.from(text).at(-1)?.length ?? 0);
+  let start = 0;
+  for (const { index } of GRAPHEMES.segment(text)) start = index;
+  return start;
+}
+
 /** "Oficial desde 26 out, por Iara" (34.23); sem o selo, `null`. */
 export function officialText(club: Pick<FanClub, "official" | "officialAt" | "officialBy">, now: Date): string | null {
   if (!club.official) return null;
@@ -563,6 +578,17 @@ export function closeText(reason: CloseReason): string {
 /** A recusa que outra tentativa repetiria: o estado mudou desde que a tela abriu. */
 export function isStaleDecision(failure: unknown): boolean {
   return readError(failure).reason === "stale-decision";
+}
+
+/**
+ * As recusas da ficha que tiram o botão de confirmar: o `stale-decision` e o
+ * `admin-only`, quando a pessoa deixa de ser admin com o Encerrar ou o selo
+ * aberto (o papel chega em tempo real, e só essas três decisões recebem essa
+ * recusa). Outra tentativa repetiria a mesma frase.
+ */
+export function blocksDecisionRetry(failure: unknown): boolean {
+  const reason = readError(failure).reason;
+  return reason === "stale-decision" || reason === "admin-only";
 }
 
 // ---------------------------------------------------------------------------

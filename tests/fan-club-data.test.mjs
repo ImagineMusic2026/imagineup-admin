@@ -170,7 +170,7 @@ test("os fã-clubes de um status, da aprovação mais nova, com a central opcion
   assert.equal(await data.getFanClub("nenhum"), null);
   assert.equal(firestore.reads.at(-1), "fanClubs/nenhum");
 
-  // O selo (34.23) pelo dublê, com o Timestamp do SDK; a pausa mantém o selo.
+  // O selo (34.23) pelo dublê, com o Timestamp do SDK, num pausado: o servidor não tira o selo na pausa, e a ficha e a lista o leem.
   club("c5", { approvedAt: ts("2026-10-15T10:00:00"), status: "paused", statusReason: "staff", official: true, officialAt: ts("2026-10-26T10:00:00"), officialBy: { uid: "admin1", name: "Iara" } });
   const official = await data.getFanClub("c5");
   assert.equal(official.official, true);
