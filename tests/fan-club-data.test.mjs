@@ -220,9 +220,9 @@ test("os números de agora somam os 16 shards, campo a campo e nunca negativos",
   firestore.set("fanClubStats/c1/fanClubShards/7", { links: 2, visits: "x", signups: 1.9, joins: 0 });
   firestore.set("fanClubStats/c1/fanClubShards/15", { visits: 3, joins: -5 });
   firestore.set("fanClubStats/c2/fanClubShards/0", { links: 99 });
-  assert.deepEqual(await data.getShardNumbers("c1"), { links: 3, visits: 5, signups: 2, joins: 0 });
+  assert.deepEqual(await data.getShardNumbers("c1"), { links: 3, visits: 5, signups: 2, joins: 0, days: {} });
   assert.deepEqual(firestore.queries.at(-1).source, { collection: "fanClubStats/c1/fanClubShards" });
-  assert.deepEqual(await data.getShardNumbers("vazio"), { links: 0, visits: 0, signups: 0, joins: 0 });
+  assert.deepEqual(await data.getShardNumbers("vazio"), { links: 0, visits: 0, signups: 0, joins: 0, days: {} });
 });
 
 test("os seguidores recentes, pela consulta de grupo, do mais novo", async () => {
@@ -315,7 +315,7 @@ test("as denúncias abertas da mais nova, as resolvidas da decisão mais nova, e
 
   application("a1", { submittedAt: ts("2026-10-19T10:00:00") });
   firestore.set("fanClubPosts/x1", { status: "pending" });
-  assert.deepEqual(await data.countWaiting(), { applications: 1, posts: 1, reports: 2 });
+  assert.deepEqual(await data.countWaiting(), { applications: 1, posts: 1, reports: 2, commentReports: 0, commentReviews: 0 });
 });
 
 test("o registro dos reconhecimentos pela data e os pedidos de prêmio pelo grantId, 30 por consulta", async () => {

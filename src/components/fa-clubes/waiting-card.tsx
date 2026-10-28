@@ -11,12 +11,17 @@ const ROWS: { key: keyof WaitingCounts; label: string; href: string }[] = [
   { key: "applications", label: "Candidaturas em análise", href: "/fa-clubes" },
   { key: "posts", label: "Publicações em análise", href: "/fa-clubes?aba=publicacoes" },
   { key: "reports", label: "Denúncias abertas", href: "/fa-clubes?aba=denuncias" },
+  { key: "commentReports", label: "Comentários denunciados", href: "/fa-clubes?aba=comentarios" },
+  { key: "commentReviews", label: "Pedidos de revisão", href: "/fa-clubes?aba=comentarios" },
 ];
 
 /**
  * O cartão "Aguardando a equipe" da Visão geral (34.10, item 9), só para quem
- * vê a seção Fã-clubes: as candidaturas e as publicações em análise e as
- * denúncias abertas, cada uma por `count()`. É o alarme possível sem
+ * vê a seção Fã-clubes: as candidaturas e as publicações em análise, as
+ * denúncias abertas e, desde a Fase 2 (37.10), os comentários denunciados e
+ * os pedidos de revisão da fila dos comentários, cada um por `count()`. O
+ * item aberto por denúncia que recebeu depois o pedido conta como
+ * denunciado. É o alarme possível sem
  * notificação, para o prazo de até 24 horas úteis (decisão 7). A contagem vem
  * da Visão geral, que a lê uma vez e no "Atualizar": o cartão muda de lugar na
  * árvore conforme o estado dos números (o erro, o "ainda não começaram", a

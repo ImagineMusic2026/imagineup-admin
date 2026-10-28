@@ -316,6 +316,13 @@ export function validateSuspensionNote(note: string): { error: string | null; va
   return { error: null, value };
 }
 
+/**
+ * O ocultar em lote também leva os comentários do fã nos fã-clubes (37.6),
+ * contados junto no "N comentários visíveis": os visíveis e os ocultos pelo
+ * gestor, que o autor ainda vê.
+ */
+export const FAN_CLUB_COMMENTS_TOO_TEXT = "Entram também os comentários dele nos fã-clubes, inclusive os ocultos pelo gestor, que o autor ainda vê.";
+
 /** "Ocultar também os 3 comentários visíveis". */
 export function hideAlsoLabel(visible: number): string {
   return visible === 1 ? "Ocultar também o comentário visível" : `Ocultar também os ${formatNumber(visible)} comentários visíveis`;

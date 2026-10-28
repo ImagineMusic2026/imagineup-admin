@@ -10,7 +10,7 @@ import { toDate } from "@/lib/staff";
  * a régua ainda não foi gravada (decisão 15).
  */
 
-export const VALUE_SOURCES = ["like", "comment", "rsvp", "central_join", "invite_visit", "invite_signup"] as const;
+export const VALUE_SOURCES = ["like", "comment", "rsvp", "central_join", "invite_visit", "invite_signup", "fanclub_like", "fanclub_comment"] as const;
 export type ValueSource = (typeof VALUE_SOURCES)[number];
 
 export const VALUE_LABELS: Record<ValueSource, string> = {
@@ -20,6 +20,28 @@ export const VALUE_LABELS: Record<ValueSource, string> = {
   central_join: "Entrada na central",
   invite_visit: "Visita pelo link",
   invite_signup: "Cadastro pelo link",
+  fanclub_like: "Reação no fã-clube",
+  fanclub_comment: "Comentário no fã-clube",
+};
+
+/**
+ * A dica embaixo da origem (37.5): as do fã-clube nascem em 0, valem só no
+ * fã-clube (o saldo, o XP e a temporada do fã) e não contam nas missões.
+ */
+export const VALUE_HINTS: Partial<Record<ValueSource, string>> = {
+  fanclub_like: "Nasce em 0. Vale só no fã-clube, uma vez por publicação, e não conta nas missões.",
+  fanclub_comment: "Nasce em 0. Vale só no fã-clube e não conta nas missões.",
+};
+
+/**
+ * O limite do dia que o servidor usa quando a chave nunca foi gravada (o
+ * `DEFAULT_POINTS_CONFIG.dailyLimits` de 37.5), só das origens que chegaram
+ * depois da régua de produção: sem ele, o limite ausente apareceria como "Sem
+ * limite", e o servidor usa 50 e 20. O `null` gravado continua sem limite.
+ */
+export const DEFAULT_DAILY_LIMITS: Partial<Record<ValueSource, number>> = {
+  fanclub_like: 50,
+  fanclub_comment: 20,
 };
 
 export const ACTION_CAP_KEYS = [
@@ -40,6 +62,8 @@ export const ACTION_CAP_KEYS = [
   "fanclub_post",
   "fanclub_upload",
   "fanclub_follow",
+  "fanclub_reaction_set",
+  "fanclub_comment_sent",
 ] as const;
 export type ActionCapKey = (typeof ACTION_CAP_KEYS)[number];
 
@@ -61,11 +85,14 @@ export const ACTION_CAP_LABELS: Record<ActionCapKey, string> = {
   fanclub_post: "Publicações de fã-clube",
   fanclub_upload: "Fotos de fã-clube",
   fanclub_follow: "Seguir fã-clubes",
+  fanclub_reaction_set: "Reações no fã-clube",
+  fanclub_comment_sent: "Comentários no fã-clube",
 };
 
 /**
  * O padrão de cada teto no servidor (`DEFAULT_ACTION_CAPS`, 22.3, 27.4 e
- * 28.3, e os do fã-clube da 34.1, decisões 11 e 34): vale quando o documento
+ * 28.3, os do fã-clube da 34.1, decisões 11 e 34, e os da Fase 2, 37.5: dar e
+ * trocar de reação e comentar no fã-clube): vale quando o documento
  * gravado não tem a chave, ou tem um valor fora da regra, como o servidor faz
  * ao ler. Sem isso a chave ausente viraria 0, e o bloco inteiro dos tetos
  * deixaria de salvar.
@@ -88,6 +115,8 @@ export const DEFAULT_ACTION_CAPS: Record<ActionCapKey, number> = {
   fanclub_post: 5,
   fanclub_upload: 10,
   fanclub_follow: 30,
+  fanclub_reaction_set: 300,
+  fanclub_comment_sent: 100,
 };
 
 export const VALUE_MAX = 10_000;
@@ -118,6 +147,14 @@ function capOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= CAP_MAX ? value : fallback;
 }
 
+/** O limite gravado; a chave nunca gravada de uma origem nova vale o padrão do servidor, e o resto ausente, sem limite. */
+function limitOf(limits: Record<string, unknown>, source: ValueSource): number | null {
+  const value = limits[source];
+  if (typeof value === "number") return value;
+  if (value === undefined && DEFAULT_DAILY_LIMITS[source] !== undefined) return DEFAULT_DAILY_LIMITS[source];
+  return null;
+}
+
 /** O documento gravado, ou `null` sem documento ou na versão 0 (as ações ficam desligadas). */
 export function parsePointsConfig(data: Record<string, unknown> | undefined): PointsConfig | null {
   if (!data || intOr(data.version, 0) < 1) return null;
@@ -131,9 +168,7 @@ export function parsePointsConfig(data: Record<string, unknown> | undefined): Po
   return {
     version: data.version as number,
     values: Object.fromEntries(VALUE_SOURCES.map((source) => [source, intOr(values[source], 0)])) as Record<ValueSource, number>,
-    dailyLimits: Object.fromEntries(
-      VALUE_SOURCES.map((source) => [source, typeof limits[source] === "number" ? (limits[source] as number) : null]),
-    ) as Record<ValueSource, number | null>,
+    dailyLimits: Object.fromEntries(VALUE_SOURCES.map((source) => [source, limitOf(limits, source)])) as Record<ValueSource, number | null>,
     actionCaps: Object.fromEntries(ACTION_CAP_KEYS.map((key) => [key, capOr(caps[key], DEFAULT_ACTION_CAPS[key])])) as Record<ActionCapKey, number>,
     levels,
     updatedAt: toDate(data.updatedAt),
