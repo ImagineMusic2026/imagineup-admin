@@ -94,8 +94,8 @@ test("o level-in-use lista as conquistas que pedem o degrau que sai", () => {
 });
 
 test("os tetos novos na ordem do servidor, com o padrão dele na chave ausente ou fora da regra", () => {
-  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-7), ["photo_upload", "profile_save", "name_change", "fanclub_apply", "fanclub_post", "fanclub_upload", "fanclub_follow"]);
-  assert.equal(points.ACTION_CAP_KEYS.length, 17);
+  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-9), ["photo_upload", "profile_save", "name_change", "fanclub_apply", "fanclub_post", "fanclub_upload", "fanclub_follow", "fanclub_reaction_set", "fanclub_comment_sent"]);
+  assert.equal(points.ACTION_CAP_KEYS.length, 19);
   // As candidaturas a fã-clube (seção 34, decisão 11): 3 por dia no servidor.
   assert.equal(points.ACTION_CAP_LABELS.fanclub_apply, "Candidaturas a fã-clube");
   assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_apply, 3);
@@ -127,4 +127,38 @@ test("os tetos novos na ordem do servidor, com o padrão dele na chave ausente o
   assert.deepEqual(points.validateCaps({ ...form, like_set: "250" }, CONFIG).changes, { like_set: 250 });
   assert.deepEqual(points.validateCaps({ ...form, name_change: "3" }, CONFIG).changes, { name_change: 3 });
   assert.equal(points.validateCaps({ ...form, profile_save: "0" }, CONFIG).errors.profile_save, "De 1 a 10.000.");
+});
+
+test("as origens e os tetos do fã-clube (37.5): o padrão do servidor na chave nunca gravada, e não Sem limite", () => {
+  assert.deepEqual(points.VALUE_SOURCES.slice(-2), ["fanclub_like", "fanclub_comment"]);
+  assert.equal(points.VALUE_LABELS.fanclub_like, "Reação no fã-clube");
+  assert.equal(points.VALUE_LABELS.fanclub_comment, "Comentário no fã-clube");
+  assert.match(points.VALUE_HINTS.fanclub_like, /Nasce em 0/);
+  assert.match(points.VALUE_HINTS.fanclub_comment, /não conta nas missões/);
+  assert.deepEqual(points.DEFAULT_DAILY_LIMITS, { fanclub_like: 50, fanclub_comment: 20 });
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_reaction_set, "Reações no fã-clube");
+  assert.equal(points.ACTION_CAP_LABELS.fanclub_comment_sent, "Comentários no fã-clube");
+
+  // O `config/points` de produção (o DOC) não tem as chaves novas: 0, 50 e 20, 300 e 100.
+  assert.equal(CONFIG.values.fanclub_like, 0);
+  assert.equal(CONFIG.values.fanclub_comment, 0);
+  assert.equal(CONFIG.dailyLimits.fanclub_like, 50);
+  assert.equal(CONFIG.dailyLimits.fanclub_comment, 20);
+  assert.equal(CONFIG.actionCaps.fanclub_reaction_set, 300);
+  assert.equal(CONFIG.actionCaps.fanclub_comment_sent, 100);
+  // As origens de antes continuam: o limite ausente é sem limite.
+  assert.equal(CONFIG.dailyLimits.invite_visit, null);
+
+  // O sem limite gravado continua sem limite, e o gravado vale.
+  const gravado = points.parsePointsConfig({ ...DOC, values: { ...DOC.values, fanclub_like: 5 }, dailyLimits: { ...DOC.dailyLimits, fanclub_like: null, fanclub_comment: 7 } });
+  assert.equal(gravado.values.fanclub_like, 5);
+  assert.equal(gravado.dailyLimits.fanclub_like, null);
+  assert.equal(gravado.dailyLimits.fanclub_comment, 7);
+
+  // Sem mexer, nada vai; com o valor novo, só ele vai (o servidor mantém o resto).
+  const form = points.valuesFormOf(CONFIG);
+  assert.deepEqual(form.fanclub_like, { points: "0", limited: true, limit: "50" });
+  assert.deepEqual(points.validateValues(form, CONFIG).changes, {});
+  assert.deepEqual(points.validateValues({ ...form, fanclub_comment: { points: "2", limited: true, limit: "20" } }, CONFIG).changes, { values: { fanclub_comment: 2 } });
+  assert.deepEqual(points.validateCaps({ ...points.capsFormOf(CONFIG), fanclub_comment_sent: "80" }, CONFIG).changes, { fanclub_comment_sent: 80 });
 });

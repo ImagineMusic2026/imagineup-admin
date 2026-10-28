@@ -1,9 +1,10 @@
 import { call } from "@/lib/callable";
-import type { CloseReason, FanClubStatus, PostRejectReason, PostStatus, RejectReason } from "@/lib/fan-clubs";
+import type { CloseReason, CommentDecision, CommentStatus, FanClubStatus, PostRejectReason, PostStatus, RejectReason } from "@/lib/fan-clubs";
 
 /**
  * A callable da seção Fã-clubes (34.3): `decideFanClub`, uma só para todos os
- * assuntos (a candidatura, o fã-clube, a publicação e a denúncia), com a
+ * assuntos (a candidatura, o fã-clube, a publicação, a denúncia e, desde a
+ * Fase 2, o comentário), com a
  * seção `fanClubs` e edição (o Leitor não decide), e a auditoria na mesma
  * transação. Cada decisão manda o estado que a tela mostrou (`expected`):
  * diferente do de agora, `stale-decision`, e a tela lê de novo. A mesma
@@ -15,7 +16,8 @@ import type { CloseReason, FanClubStatus, PostRejectReason, PostStatus, RejectRe
  * `admin-only` (o Encerrar e o selo de oficial, só do admin), `not-staff`,
  * `no-section`, `invalid-request` (com o `field`),
  * `stale-decision`, `application-not-found`, `fan-club-not-found`,
- * `fan-club-post-not-found`, `fan-club-report-not-found`, `artist-not-open`,
+ * `fan-club-post-not-found`, `fan-club-report-not-found`,
+ * `fan-club-comment-not-found`, `artist-not-open`,
  * `owner-suspended`, `feature-limit`; e, no Recompensar, `prize-not-allowed`
  * (com a trava em `details.problem`), `grant-id-reused`, `reward-not-prize`,
  * `reward-not-found`, `sold-out`, `fan-not-found`, `adjust-above-limit` e
@@ -24,9 +26,9 @@ import type { CloseReason, FanClubStatus, PostRejectReason, PostStatus, RejectRe
 
 export interface DecisionResult {
   ok: true;
-  subject: "application" | "club" | "post" | "report";
+  subject: "application" | "club" | "post" | "report" | "comment";
   id: string;
-  /** O status do assunto depois da decisão (da candidatura, do fã-clube, da publicação ou do item da fila). */
+  /** O status do assunto depois da decisão (da candidatura, do fã-clube, da publicação, do item da fila ou do comentário). */
   status: string;
 }
 
@@ -147,4 +149,17 @@ export function rejectPost(postId: string, expected: PostStatus, reason: PostRej
 /** Mantém (`keep`) ou oculta (`action`) a publicação denunciada, com a rodada que a tela mostrou. */
 export function decideReport(postId: string, round: number, decision: "keep" | "action"): Promise<DecisionResult> {
   return call("decideFanClub", { subject: "report", id: postId, decision, expected: round });
+}
+
+/**
+ * Mantém, oculta pela equipe ou reexibe o comentário (37.3 e 37.6), com o
+ * status que a tela mostrou (`expected`) e a rodada do item da fila. A aba
+ * Comentários manda sempre a rodada, obrigatória no `keep`; o diálogo da ficha
+ * e o registro do ocultar não mostram o item e mandam `null`, e aí só o item
+ * aberto é resolvido. Com a rodada, o Ocultar e o Reexibir também trocam a
+ * resolução do item já resolvido naquela rodada. O `hide` de um oculto pela
+ * equipe e o `restore` de um visível respondem `ok` sem gravar.
+ */
+export function decideFanClubComment(commentId: string, expected: CommentStatus, decision: CommentDecision, round: number | null = null): Promise<DecisionResult> {
+  return call("decideFanClub", { subject: "comment", id: commentId, decision, expected, round });
 }

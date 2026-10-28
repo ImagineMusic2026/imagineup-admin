@@ -22,6 +22,7 @@ import { createGameNamesReader } from "@/lib/game-names-data";
 import { engagementOf, overviewNumbers, overviewSpan, previousLabel, type Comparison, type OverviewNumbers } from "@/lib/overview";
 import { lastClosedAt, seriesByDay, sourceLabel, type StatsDay } from "@/lib/stats";
 import { countWaiting } from "@/lib/fan-club-data";
+import { NO_WAITING } from "@/lib/fan-clubs";
 import { canSeeSection } from "@/lib/staff";
 import { useStaffMember } from "@/lib/staff-context";
 import { getStatsDays, type StatsRead } from "@/lib/stats-data";
@@ -62,7 +63,7 @@ export function OverviewPage() {
   const seesFanClubs = canSeeSection(useStaffMember(), "fanClubs");
   const [waitingRound, setWaitingRound] = useState(0);
   const waitingCount = useLoad(
-    useCallback(() => (seesFanClubs ? countWaiting() : Promise.resolve({ applications: 0, posts: 0, reports: 0 })), [seesFanClubs]),
+    useCallback(() => (seesFanClubs ? countWaiting() : Promise.resolve(NO_WAITING)), [seesFanClubs]),
     waitingRound,
   );
   const waiting = seesFanClubs ? <FanClubsWaitingCard count={waitingCount} /> : null;

@@ -15,7 +15,9 @@ import { useLoad } from "@/components/ui/use-load";
 import { getPostMediaUrls } from "@/lib/fan-club-media";
 import {
   APPLICATION_STATUS_LABELS,
+  COMMENT_STATUS_LABELS,
   FAN_CLUB_STATUS_LABELS,
+  MENTION_KIND_LABELS,
   POST_REJECT_REASON_LABELS,
   POST_STATUS_LABELS,
   authorLabel,
@@ -23,11 +25,16 @@ import {
   lastCharStart,
   mediaGoneText,
   postMediaSource,
+  reactionBreakdown,
+  reactionCountText,
   type ApplicationStatus,
+  type CommentStatus,
   type FanClub,
   type FanClubPost,
   type FanClubStatus,
+  type Mention,
   type PostStatus,
+  type Reaction,
 } from "@/lib/fan-clubs";
 import { formatDay, formatNumber, formatTime } from "@/lib/format";
 
@@ -54,6 +61,13 @@ export const POST_STYLES: Record<PostStatus, StatusStyle> = {
   withdrawn: { label: POST_STATUS_LABELS.withdrawn, tone: "muted", dot: true },
   hidden: { label: POST_STATUS_LABELS.hidden, tone: "danger", dot: true },
   removed: { label: POST_STATUS_LABELS.removed, tone: "muted", dot: true },
+};
+
+/** O comentário de fã-clube: ciano no visível; o oculto pelo gestor, muted (o autor ainda vê); o oculto pela equipe, `danger`. */
+export const COMMENT_STYLES: Record<CommentStatus, StatusStyle> = {
+  visible: { label: COMMENT_STATUS_LABELS.visible, tone: "cyan", dot: true },
+  manager_hidden: { label: COMMENT_STATUS_LABELS.manager_hidden, tone: "muted", dot: true },
+  staff_hidden: { label: COMMENT_STATUS_LABELS.staff_hidden, tone: "danger", dot: true },
 };
 
 /** O fã das listas: a foto (ou as iniciais), o nome e o @, das cópias do documento. */
@@ -162,9 +176,62 @@ export function PostPhotos({ post }: { post: FanClubPost }) {
 }
 
 /**
- * Uma publicação: o autor, o fã-clube, a central, a situação, o texto, as
- * fotos e as datas, com as ações de quem decide no fim. O texto e as fotos
- * são do fã: nunca vão aos Logs.
+ * Os marcados do texto do gestor (37.10, item 3): o @ e se é fã ou central,
+ * sem repetir. O link para a ficha do fã só para quem tem a seção Fãs; a
+ * central não tem página própria no painel.
+ */
+export function PostMentions({ mentions, seesFans }: { mentions: readonly Mention[]; seesFans: boolean }) {
+  if (mentions.length === 0) return null;
+  return (
+    <p className="m-0 text-[13px] text-fg/75">
+      Marcados:{" "}
+      {mentions.map((mention, index) => (
+        <span key={`${mention.kind}:${mention.id}`}>
+          {index > 0 ? ", " : ""}
+          {mention.kind === "fan" && seesFans ? (
+            <Link href={`/fas/${encodeURIComponent(mention.id)}`} className="font-semibold text-cyan underline-offset-2 hover:underline">
+              @{mention.handle}
+            </Link>
+          ) : (
+            <span className="font-semibold text-fg/90">@{mention.handle}</span>
+          )}{" "}
+          ({MENTION_KIND_LABELS[mention.kind]})
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * Os totais de reações, com cada emoji e o nome dele por escrito (o emoji
+ * fica fora do leitor de tela, que ouve "2 coração"). Quem reagiu nunca
+ * aparece, nem para a equipe (R8 de 37.1).
+ */
+export function ReactionTotals({ total, counts }: { total: number; counts: Record<Reaction, number> }) {
+  const parts = reactionBreakdown(counts);
+  return (
+    <span>
+      {reactionCountText(total)}
+      {parts.length > 0 ? (
+        <>
+          {" ("}
+          {parts.map((part, index) => (
+            <span key={part.reaction}>
+              {index > 0 ? ", " : ""}
+              {part.count} <span aria-hidden="true">{part.emoji}</span> {part.label}
+            </span>
+          ))}
+          {")"}
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * Uma publicação: o autor, o fã-clube, a central, a situação, o texto, os
+ * marcados, as fotos e as datas, com as ações de quem decide no fim. O texto
+ * e as fotos são do fã: nunca vão aos Logs.
  */
 export function PostCard({
   post,
@@ -174,6 +241,8 @@ export function PostCard({
   showClub = true,
   headingLevel = 3,
   photosOff = false,
+  seesFans = false,
+  extra,
   actions,
 }: {
   post: FanClubPost;
@@ -185,6 +254,10 @@ export function PostCard({
   headingLevel?: 3 | 4;
   /** A central desligou as fotos dos fãs depois do envio (só com a seção Artistas, na fila de revisão). */
   photosOff?: boolean;
+  /** Os marcados que são fãs viram link para a ficha (só com a seção Fãs). */
+  seesFans?: boolean;
+  /** O que vem antes das ações (na ficha, os totais de reações e de comentários). */
+  extra?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
   const author = authorLabel(post);
@@ -230,9 +303,11 @@ export function PostCard({
         {post.reviewedBy?.name && post.status !== "pending" ? <span>Decidida por {post.reviewedBy.name}</span> : null}
       </p>
       <p className="m-0 whitespace-pre-line break-words text-[14.5px] leading-relaxed text-fg/90">{post.text || <Missing>Sem texto</Missing>}</p>
+      <PostMentions mentions={post.mentions} seesFans={seesFans} />
       <PostPhotos post={post} />
       {photosOff ? <p className="m-0 text-[13px] text-danger">A central desligou as fotos dos fãs depois do envio. Aprovar põe a foto no ar mesmo assim.</p> : null}
       {post.status === "rejected" && post.rejectReason ? <p className="m-0 text-[13px] text-fg/70">Motivo da recusa: {POST_REJECT_REASON_LABELS[post.rejectReason]}</p> : null}
+      {extra}
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </article>
   );

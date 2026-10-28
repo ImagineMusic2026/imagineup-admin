@@ -4,7 +4,8 @@ import { Award, Eye, EyeOff, Sparkles, StarOff } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import { PostCard, shortWhen } from "@/components/fa-clubes/fan-club-bits";
+import { PostCard, ReactionTotals, shortWhen } from "@/components/fa-clubes/fan-club-bits";
+import { CommentsButton } from "@/components/fa-clubes/fan-club-comments";
 import { REDEMPTION_STYLES } from "@/components/recompensas/reward-bits";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
 import { Badge } from "@/components/ui/badge";
@@ -21,16 +22,20 @@ import { getClubPostsPage, getPrizeOrders, getPrizesPage, getRecentFollowersPage
 import { createFanProfileReader, type FanProfileReader } from "@/lib/fan-profile-data";
 import { fanDisplayName, type FanProfile } from "@/lib/fan-profile";
 import {
+  ENGAGEMENT_NOTE,
   MONTH_FIELDS,
   MONTH_FIELD_LABELS,
   QUALITY_LABELS,
   QUALITY_SIGNALS,
+  commentCountText,
   countsAtText,
+  engagementView,
   featuredText,
   followerQuality,
   followerSignals,
   monthLabel,
   postDecisions,
+  postWasPublished,
   retainedText,
   thisMonthNumbers,
   type FanClub,
@@ -52,7 +57,9 @@ import { KIND_LABELS, type RewardKind } from "@/lib/rewards";
  * hora (links, visitas, cadastros e entradas trazidas), e a cópia da noite
  * (os seguidores, os novos em 30 dias e os trazidos que ficaram). A seção
  * Fã-clubes não conta os seguidores ao vivo: o `count()` do grupo pede a
- * seção Fãs (34.6).
+ * seção Fãs (34.6). Desde a Fase 2, a taxa de engajamento de 30 dias (37.11):
+ * as reações e os comentários do mapa `days` dos shards sobre os seguidores
+ * da cópia da noite.
  */
 export function NumbersSection({ club, shards, now }: { club: FanClub; shards: LoadResult<ShardNumbers>; now: Date }) {
   const counts = club.counts;
@@ -75,6 +82,15 @@ export function NumbersSection({ club, shards, now }: { club: FanClub; shards: L
           <MetricCard label="Visitas pelo link" value={live ? formatNumber(live.visits) : ""} loading={!live && shards.state.status !== "error"} />
           <MetricCard label="Cadastros pelo link" value={live ? formatNumber(live.signups) : ""} loading={!live && shards.state.status !== "error"} />
         </MetricGrid>
+        <MetricGrid columns={2}>
+          <MetricCard
+            label="Engajamento em 30 dias"
+            value={live ? engagementView(live.days, counts, now).value : ""}
+            loading={!live && shards.state.status !== "error"}
+            hint={live ? engagementView(live.days, counts, now).detail : "Reações e comentários dos fãs sobre os seguidores da cópia."}
+          />
+        </MetricGrid>
+        <p className="m-0 text-[12.5px] leading-snug text-fg/60">{ENGAGEMENT_NOTE}</p>
         {shards.state.status === "error" ? <p className="m-0 text-[13px] text-danger">Os números de agora não carregaram: {shards.state.message}</p> : null}
       </div>
     </SectionCard>
@@ -360,22 +376,28 @@ export function RewardsSection({
 /**
  * As publicações em todos os status, da enviada mais nova, com Ocultar (a no
  * ar) e Reexibir (a oculta pela equipe). A em análise se decide na aba
- * "Publicações para revisar".
+ * "Publicações para revisar". A que já foi ao ar mostra os totais de reações
+ * e de comentários e o "Comentários (N)", que abre os comentários dela em
+ * todos os status (37.10, item 2).
  */
 export function PostsSection({
   club,
   artist,
   viewer,
+  seesFans,
   now,
   round,
   onDecide,
+  onComments,
 }: {
   club: FanClub;
   artist: string;
   viewer: { uid: string; canEdit: boolean };
+  seesFans: boolean;
   now: Date;
   round: number;
   onDecide: (post: FanClubPost, decision: "hide" | "restore") => void;
+  onComments: (post: FanClubPost) => void;
 }) {
   const load = useCallback((after: PageCursor | null) => getClubPostsPage(club.id, after), [club.id]);
   const list = usePagedList(load, (post: FanClubPost) => post.id, { one: "publicação carregada", many: "publicações carregadas" }, round);
@@ -393,6 +415,22 @@ export function PostsSection({
           <ul className="m-0 list-none divide-y divide-line p-0">
             {list.state.data.map((post) => {
               const decisions = postDecisions(post, viewer);
+              const published = postWasPublished(post);
+              const decision = decisions.includes("hide") ? (
+                <Button size="sm" variant="danger" onClick={() => onDecide(post, "hide")} aria-haspopup="dialog">
+                  <EyeOff aria-hidden="true" className="size-4" />
+                  Ocultar<span className="sr-only"> a publicação</span>
+                </Button>
+              ) : decisions.includes("restore") ? (
+                <Button size="sm" variant="secondary" onClick={() => onDecide(post, "restore")} aria-haspopup="dialog">
+                  <Eye aria-hidden="true" className="size-4" />
+                  Reexibir<span className="sr-only"> a publicação</span>
+                </Button>
+              ) : post.status === "pending" && viewer.canEdit ? (
+                <ButtonLink href="/fa-clubes?aba=publicacoes" size="sm" variant="ghost">
+                  Revisar na fila
+                </ButtonLink>
+              ) : null;
               return (
                 <li key={post.id}>
                   <PostCard
@@ -400,21 +438,21 @@ export function PostsSection({
                     artist={artist}
                     now={now}
                     showClub={false}
+                    seesFans={seesFans}
+                    extra={
+                      published ? (
+                        <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-fg/75">
+                          <ReactionTotals total={post.reactionCount} counts={post.reactionCounts} />
+                          <span>{commentCountText(post.commentCount)}</span>
+                        </p>
+                      ) : null
+                    }
                     actions={
-                      decisions.includes("hide") ? (
-                        <Button size="sm" variant="danger" onClick={() => onDecide(post, "hide")} aria-haspopup="dialog">
-                          <EyeOff aria-hidden="true" className="size-4" />
-                          Ocultar<span className="sr-only"> a publicação</span>
-                        </Button>
-                      ) : decisions.includes("restore") ? (
-                        <Button size="sm" variant="secondary" onClick={() => onDecide(post, "restore")} aria-haspopup="dialog">
-                          <Eye aria-hidden="true" className="size-4" />
-                          Reexibir<span className="sr-only"> a publicação</span>
-                        </Button>
-                      ) : post.status === "pending" && viewer.canEdit ? (
-                        <ButtonLink href="/fa-clubes?aba=publicacoes" size="sm" variant="ghost">
-                          Revisar na fila
-                        </ButtonLink>
+                      published || decision ? (
+                        <>
+                          {published ? <CommentsButton post={post} onOpen={() => onComments(post)} /> : null}
+                          {decision}
+                        </>
                       ) : null
                     }
                   />

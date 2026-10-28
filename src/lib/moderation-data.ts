@@ -98,9 +98,18 @@ export async function getSuspendedPage(after: PageCursor | null): Promise<Page<F
   return { items: page.docs.map((item) => parseFanProfile(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
 }
 
-/** Quantos comentários visíveis o fã tem (o "Ocultar também os N"). */
-export function countVisibleComments(uid: string): Promise<number> {
-  return countOf(query(collectionGroup(db(), "postComments"), where("authorUid", "==", uid), where("status", "==", "visible")));
+/**
+ * Quantos comentários visíveis o fã tem (o "Ocultar também os N"): os do
+ * Mural e, num segundo `count()`, os dos fã-clubes que o `hideFanComments`
+ * também oculta (37.6), os visíveis e os ocultos pelo gestor, que o autor
+ * ainda vê (o mesmo `in`, pela junção dos índices de um campo).
+ */
+export async function countVisibleComments(uid: string): Promise<number> {
+  const [mural, fanClubs] = await Promise.all([
+    countOf(query(collectionGroup(db(), "postComments"), where("authorUid", "==", uid), where("status", "==", "visible"))),
+    countOf(query(collection(db(), "fanClubComments"), where("authorUid", "==", uid), where("status", "in", ["visible", "manager_hidden"]))),
+  ]);
+  return mural + fanClubs;
 }
 
 export interface PostInfo {

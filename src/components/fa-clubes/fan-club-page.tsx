@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CloseDialog } from "@/components/fa-clubes/fan-club-dialogs";
 import { FAN_CLUB_STYLES, FanClubName, FanClubsBackLink, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
+import { HideLogSection, PostCommentsDialog } from "@/components/fa-clubes/fan-club-comments";
 import { FeatureDialog, RewardDialog, type RewardAttempt } from "@/components/fa-clubes/fan-club-reward-dialogs";
 import { FollowersSection, MonthsSection, NumbersSection, PostsSection, QualitySection, RewardsSection } from "@/components/fa-clubes/fan-club-sections";
 import { SectionGate } from "@/components/painel/section-gate";
@@ -20,7 +21,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { useLoad } from "@/components/ui/use-load";
 import { logsHref } from "@/lib/audit";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
-import { decidePost, officializeFanClub, setFanClubPaused, unfeatureFanClub, unofficializeFanClub } from "@/lib/fan-club-api";
+import { decideFanClubComment, decidePost, officializeFanClub, setFanClubPaused, unfeatureFanClub, unofficializeFanClub } from "@/lib/fan-club-api";
 import { getApplication, getFanClub, getShardNumbers } from "@/lib/fan-club-data";
 import {
   FAN_CLUB_AUDIT_TEXT,
@@ -31,8 +32,11 @@ import {
   RESUME_TEXT,
   UNFEATURE_TEXT,
   authorLabel,
+  blocksCommentRetry,
   blocksDecisionRetry,
   clubDecisions,
+  commentDecisionText,
+  commentDoneText,
   fanClubLabel,
   fanClubStatusText,
   fanClubTarget,
@@ -42,6 +46,7 @@ import {
   ownerLabel,
   unofficializeText,
   type FanClub,
+  type FanClubComment,
   type FanClubPost,
 } from "@/lib/fan-clubs";
 import { formatNumber } from "@/lib/format";
@@ -53,7 +58,9 @@ import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/
  * oficialização (34.23; Encerrar e o selo só para admin); os números (os 16
  * shards e a cópia da noite), o mês e o mês passado e a qualidade dos
  * seguidores; os seguidores recentes (só com a seção Fãs); o Destaque e as
- * recompensas, com o histórico; as publicações com Ocultar e Reexibir; a
+ * recompensas, com o histórico; as publicações com Ocultar e Reexibir, os
+ * totais de reações e de comentários e o diálogo dos comentários; o registro
+ * do ocultar do gestor e a taxa de engajamento (a Fase 2, 37.10); a
  * candidatura de origem e o "Abrir nos Logs".
  */
 
@@ -97,6 +104,8 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
   // Uma instância do ConfirmDialog por pedido: o seguinte nunca herda o erro ou o "Tentar de novo" do anterior.
   const [confirmKey, setConfirmKey] = useState(0);
   const [dialog, setDialog] = useState<Dialogs>(null);
+  // A publicação com o diálogo dos comentários aberto (que tem a confirmação dele).
+  const [commentsPost, setCommentsPost] = useState<FanClubPost | null>(null);
   const [rewardAttempt, setRewardAttempt] = useState<RewardAttempt | null>(null);
   // O pedido que foi ao servidor pede a releitura, que só sai com nenhum
   // diálogo aberto (no molde da página do fã na Moderação).
@@ -112,7 +121,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       setDialog(null);
     }
   }
-  if (pendingRefresh && confirm === null && dialog === null) {
+  if (pendingRefresh && confirm === null && dialog === null && commentsPost === null) {
     setPendingRefresh(false);
     setRound((value) => value + 1);
   }
@@ -152,8 +161,10 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
   }
 
   /** A confirmação de uma decisão sem campo, no molde da `decideFanClub`: o estado da tela vai como `expected`. */
-  function ask(request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & { send: () => Promise<unknown> }) {
-    const { send, ...rest } = request;
+  function ask(
+    request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & { send: () => Promise<unknown>; blocksRetry?: (failure: unknown) => boolean },
+  ) {
+    const { send, blocksRetry, ...rest } = request;
     setConfirm({
       ...rest,
       body: `${request.body} ${FAN_CLUB_AUDIT_TEXT}`,
@@ -165,10 +176,25 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       onUncertain: markStale,
       uncertainText: UNCERTAIN_RETRY_TEXT,
       onError: markStale,
-      blocksRetry: blocksDecisionRetry,
+      blocksRetry: blocksRetry ?? blocksDecisionRetry,
       onOrphan: markStale,
     });
     setConfirmKey((value) => value + 1);
+  }
+
+  /** O Reexibir do registro do ocultar: sem a rodada, só o item aberto da fila é resolvido. */
+  function askRestoreComment(comment: FanClubComment) {
+    const { title, body } = commentDecisionText("restore", comment);
+    ask({
+      title,
+      body,
+      confirmLabel: "Reexibir",
+      busyLabel: "Reexibindo...",
+      tone: "default",
+      send: () => decideFanClubComment(comment.id, comment.status, "restore", null),
+      successMessage: commentDoneText("restore", comment.status),
+      blocksRetry: blocksCommentRetry,
+    });
   }
 
   function askPause(club: FanClub, paused: boolean) {
@@ -334,7 +360,7 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
         </Notice>
       ) : null}
       {refreshError ? <Notice tone="error">Não deu para atualizar: {refreshError}</Notice> : null}
-      {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa, encerra, oficializa, destaca, recompensa e decide as publicações dele.</Notice> : null}
+      {canEdit && self && club.status !== "closed" ? <Notice tone="info">Este fã-clube é seu. Outra pessoa da equipe pausa, reativa, encerra, oficializa, destaca, recompensa e decide as publicações e os comentários dele.</Notice> : null}
 
       <SectionCard id="titulo-fa-clube" title="Fã-clube">
         <div className="flex flex-col gap-4 px-5 py-4">
@@ -412,7 +438,18 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
       <QualitySection club={club} />
       {seesFans ? <FollowersSection clubId={club.id} now={date} round={round} seesModeration={seesModeration} /> : null}
       <RewardsSection club={club} now={date} round={round} seesRewards={seesRewards} actions={rewardActions} />
-      <PostsSection club={club} artist={artist} viewer={{ uid: member.uid, canEdit }} now={date} round={round} onDecide={askPost} />
+      <PostsSection club={club} artist={artist} viewer={{ uid: member.uid, canEdit }} seesFans={seesFans} now={date} round={round} onDecide={askPost} onComments={setCommentsPost} />
+      <HideLogSection club={club} member={member} now={date} round={round} onRestore={askRestoreComment} />
+
+      <PostCommentsDialog
+        post={commentsPost}
+        club={club}
+        member={member}
+        onClose={(changed) => {
+          setCommentsPost(null);
+          if (changed) markStale();
+        }}
+      />
 
       <ConfirmDialog
         key={`confirmar-${confirmKey}`}

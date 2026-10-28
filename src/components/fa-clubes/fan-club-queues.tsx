@@ -52,9 +52,9 @@ type Names = ReadonlyMap<string, ArtistName> | null;
 /**
  * As decisões das filas, no molde da ficha: a confirmação com o estado da
  * tela (`expected`), a releitura que só sai com o diálogo fechado, e o aviso
- * com o foco depois da decisão.
+ * com o foco depois da decisão. A aba Comentários usa o mesmo.
  */
-function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
+export function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
   const [round, setRound] = useState(0);
   // Cada releitura depois de uma decisão também conta de novo o cabeçalho (o `onChanged` é estável, o `reload` do `useLoad`).
   const [changes, setChanges] = useState(0);
@@ -96,8 +96,10 @@ function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
     setChanges((value) => value + 1);
   }
 
-  function ask(request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & { send: () => Promise<unknown> }) {
-    const { send, ...rest } = request;
+  function ask(
+    request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & { send: () => Promise<unknown>; blocksRetry?: (failure: unknown) => boolean },
+  ) {
+    const { send, blocksRetry, ...rest } = request;
     setConfirm({
       ...rest,
       body: `${request.body} ${FAN_CLUB_AUDIT_TEXT}`,
@@ -109,7 +111,7 @@ function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
       onUncertain: markStale,
       uncertainText: UNCERTAIN_RETRY_TEXT,
       onError: markStale,
-      blocksRetry: isStaleDecision,
+      blocksRetry: blocksRetry ?? isStaleDecision,
       onOrphan: markStale,
     });
     setConfirmKey((value) => value + 1);
@@ -157,7 +159,7 @@ function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
  * guardam só o id), relidos com a lista: o mapa; `null` carregando;
  * `"failed"` quando a leitura falhou, e a tela mostra o id.
  */
-function useClubs(ids: string[], refreshKey: string): Map<string, FanClub | null> | "failed" | null {
+export function useClubs(ids: string[], refreshKey: string): Map<string, FanClub | null> | "failed" | null {
   const key = [...new Set(ids)].sort().join("|");
   const clubs = useLoad(
     useCallback(() => getFanClubsByIds(key ? key.split("|") : []), [key]),
@@ -242,6 +244,7 @@ export function PostsTab({ member, canEdit, names, now, round, total, onChanged 
                     artist={artistNameOf(names, post.artistId)}
                     now={now}
                     photosOff={post.kind === "photo" && photoBoxes?.get(post.artistId) === false}
+                    seesFans={canSeeSection(member, "fans")}
                     actions={
                       allowed.includes("approve") ? (
                         <>

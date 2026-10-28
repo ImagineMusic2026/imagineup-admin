@@ -23,6 +23,7 @@ import {
   LIMIT_MAX,
   NO_POINTS_CONFIG_TEXT,
   POINTS_RULE_TEXT,
+  VALUE_HINTS,
   VALUE_MAX,
   VALUE_SOURCES,
   VALUE_LABELS,
@@ -229,7 +230,10 @@ function ValuesBlock({ config, canEdit, reloading, onChanged, onReload }: BlockP
             const rowErrors = errors[source] ?? {};
             return (
               <li key={source} className="grid gap-3 border-t border-line px-5 py-3.5 first:border-t-0 md:grid-cols-[minmax(0,1fr)_150px_260px] md:items-start md:gap-4 md:first:border-t">
-                <span className="pt-2 text-sm font-semibold text-fg">{VALUE_LABELS[source]}</span>
+                <span className="flex flex-col gap-0.5 pt-2">
+                  <span className="text-sm font-semibold text-fg">{VALUE_LABELS[source]}</span>
+                  {VALUE_HINTS[source] ? <span className="text-[12.5px] leading-snug text-fg/60">{VALUE_HINTS[source]}</span> : null}
+                </span>
                 <NumberCell
                   label={`Pontos por ${VALUE_LABELS[source].toLowerCase()}`}
                   value={row.points}
