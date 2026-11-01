@@ -1,5 +1,5 @@
 import { CLOSE_REASON_LABELS, POST_REJECT_REASON_LABELS, REJECT_REASON_LABELS, REPORT_RESOLUTION_LABELS, type ReportResolution } from "@/lib/fan-clubs";
-import { formatDay, joinPt } from "@/lib/format";
+import { countLabel, formatDay, joinPt } from "@/lib/format";
 import { PROFILE_RESOLUTION_LABELS, type ProfileResolution } from "@/lib/moderation";
 import { ROLES, SECTION_IDS, isRole, isSectionId, sectionInfo, toDate, type SectionId } from "@/lib/staff";
 
@@ -108,6 +108,9 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "fanClub.post.hidden": { label: "Publicação de fã-clube oculta", section: "fanClubs" },
   "fanClub.post.restored": { label: "Publicação de fã-clube reexibida", section: "fanClubs" },
   "fanClub.report.resolved": { label: "Denúncia de publicação de fã-clube resolvida", section: "fanClubs" },
+  "fanClub.comment.kept": { label: "Comentário de fã-clube mantido", section: "fanClubs" },
+  "fanClub.comment.hidden": { label: "Comentário de fã-clube ocultado", section: "fanClubs" },
+  "fanClub.comment.restored": { label: "Comentário de fã-clube reexibido", section: "fanClubs" },
 };
 
 /** As seções do filtro, na ordem: Equipe e as do painel, mais "Outros". */
@@ -186,6 +189,7 @@ export const TARGET_TYPES = [
   "artist",
   "fanClub",
   "fanClubPost",
+  "fanClubComment",
   "post",
   "event",
   "comment",
@@ -204,6 +208,7 @@ export const TARGET_LABELS: Record<TargetType, string> = {
   artist: "Central",
   fanClub: "Fã-clube",
   fanClubPost: "Publicação de fã-clube",
+  fanClubComment: "Comentário de fã-clube",
   post: "Post",
   event: "Show",
   comment: "Comentário",
@@ -246,13 +251,16 @@ export function normalizeTargetId(type: TargetType, text: string): string {
   return value;
 }
 
-const TARGET_ORDER: TargetType[] = ["fan", "redemption", "reward", "comment", "post", "event", "fanClubPost", "fanClub", "artist", "mission", "achievement", "season", "invite", "staff"];
+const TARGET_ORDER: TargetType[] = ["fan", "redemption", "reward", "comment", "post", "event", "fanClubComment", "fanClubPost", "fanClub", "artist", "mission", "achievement", "season", "invite", "staff"];
 
 /** Nas ações do fã-clube (34.8), o fã-clube vem antes do gestor (`fan`) e da central. */
 const FAN_CLUB_TARGET_ORDER: TargetType[] = ["fanClub", ...TARGET_ORDER.filter((type) => type !== "fanClub")];
 
 /** Nas da publicação e da denúncia, a publicação vem primeiro, e o fã-clube logo depois. */
 const FAN_CLUB_POST_TARGET_ORDER: TargetType[] = ["fanClubPost", "fanClub", ...TARGET_ORDER.filter((type) => type !== "fanClub" && type !== "fanClubPost")];
+
+/** Nas do comentário (37.8), o comentário vem primeiro, e não a publicação nem o autor. */
+const FAN_CLUB_COMMENT_TARGET_ORDER: TargetType[] = ["fanClubComment", "fanClubPost", "fanClub", ...TARGET_ORDER.filter((type) => type !== "fanClub" && type !== "fanClubPost" && type !== "fanClubComment")];
 
 /** O alvo principal de uma entrada, para a coluna "Alvo", e quantos mais há. */
 export function primaryTarget(
@@ -262,8 +270,9 @@ export function primaryTarget(
     return { target: entry.targetUid ? { type: "staff", id: entry.targetUid } : null, email: entry.targetEmail, more: Math.max(0, entry.targets.length - 1) };
   }
   const action = entry.action ?? "";
-  const order =
-    action.startsWith("fanClub.post.") || action === "fanClub.report.resolved"
+  const order = action.startsWith("fanClub.comment.")
+    ? FAN_CLUB_COMMENT_TARGET_ORDER
+    : action.startsWith("fanClub.post.") || action === "fanClub.report.resolved"
       ? FAN_CLUB_POST_TARGET_ORDER
       : action.startsWith("fanClub.")
         ? FAN_CLUB_TARGET_ORDER
@@ -453,6 +462,9 @@ const STATUS_LABELS: Record<string, string> = {
   hidden: "oculto",
   visible: "visível",
   kept: "mantido",
+  // O status de antes do comentário de fã-clube (37.8).
+  manager_hidden: "oculto pelo gestor",
+  staff_hidden: "oculto pela equipe",
 };
 
 const SUSPENSION_LABELS: Record<string, string> = { spam: "Spam", offensive: "Ofensivo", harassment: "Assédio", other: "Outro" };
@@ -513,6 +525,7 @@ const SKIPPED = new Set([
   "clubId",
   "fanUid",
   "fanClubPostId",
+  "fanClubCommentId",
   "grantId",
 ]);
 
@@ -632,6 +645,20 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
   const found = take("found");
   if (found === true) lines.push("Achou o fã");
   if (found === false) lines.push("Nenhum fã com esse e-mail");
+
+  // O ocultar em lote da Moderação: os do Mural e, desde a Fase 2 (37.6), os dos fã-clubes, em entradas separadas. Nunca o texto.
+  if (entry.action === "fan.comments.hidden") {
+    const ids = (key: string) => {
+      const value = take(key);
+      return Array.isArray(value) ? value.length : null;
+    };
+    const muralComments = ids("commentIds");
+    const muralPosts = ids("postIds");
+    if (muralComments !== null) lines.push(`${countLabel(muralComments, "comentário do Mural", "comentários do Mural")}${muralPosts !== null ? `, em ${countLabel(muralPosts, "post", "posts")}` : ""}`);
+    const clubComments = ids("fanClubCommentIds");
+    const clubPosts = ids("fanClubPostIds");
+    if (clubComments !== null) lines.push(`${countLabel(clubComments, "comentário de fã-clube", "comentários de fã-clube")}${clubPosts !== null ? `, em ${countLabel(clubPosts, "publicação", "publicações")}` : ""}`);
+  }
 
   const count = take("count") ?? take("hidden");
   if (typeof count === "number") lines.push(`Quantidade: ${number(count)}`);

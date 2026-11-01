@@ -183,6 +183,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   "owner-suspended": "O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.",
   "fan-club-post-not-found": "Essa publicação não existe mais.",
   "fan-club-report-not-found": "Essa publicação não está na fila de denúncias.",
+  // A Fase 2 (37.3).
+  "fan-club-comment-not-found": "Esse comentário não existe mais.",
   "feature-limit": "Este artista já tem 3 fã-clubes em destaque.",
   "prize-not-allowed": "O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão.",
   "grant-id-reused": "Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo.",

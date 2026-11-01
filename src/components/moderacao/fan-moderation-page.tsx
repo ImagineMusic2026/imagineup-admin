@@ -33,6 +33,7 @@ import { clearFanPhoto, clearFanProfileText, hideFanComments, moderateComment, r
 import {
   CLEAR_BIO_SOCIALS_TEXT,
   CLEAR_PHOTO_TEXT,
+  FAN_CLUB_COMMENTS_TOO_TEXT,
   FAN_NOT_FOUND_TEXT,
   HIDE_CONFIRM_TEXT,
   PROFILE_TEXT_FIELDS,
@@ -760,7 +761,7 @@ function HideCommentsBody({
       busy={running}
       onClose={close}
       title={suspend ? `Suspender ${name}?` : `Ocultar todos os comentários de ${name}?`}
-      description={suspend ? SUSPEND_TEXT : `${HIDE_CONFIRM_TEXT} Os ${visible} comentários visíveis saem do app, 24 por vez.`}
+      description={suspend ? SUSPEND_TEXT : `${HIDE_CONFIRM_TEXT} Os ${visible} comentários visíveis saem do app, 24 por vez. ${FAN_CLUB_COMMENTS_TOO_TEXT}`}
     >
       <form onSubmit={run} noValidate className="flex flex-col gap-4">
         {suspend ? (
@@ -793,7 +794,7 @@ function HideCommentsBody({
               )}
             </Field>
             {visible > 0 ? (
-              <Checkbox label={hideAlsoLabel(visible)} checked={alsoHide} disabled={running || phase === "done"} onChange={(event) => setAlsoHide(event.target.checked)} />
+              <Checkbox label={hideAlsoLabel(visible)} hint={FAN_CLUB_COMMENTS_TOO_TEXT} checked={alsoHide} disabled={running || phase === "done"} onChange={(event) => setAlsoHide(event.target.checked)} />
             ) : (
               <p className="m-0 text-[13px] text-fg/65">O fã não tem comentário visível agora.</p>
             )}

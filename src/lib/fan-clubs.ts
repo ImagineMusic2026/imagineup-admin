@@ -2,7 +2,8 @@ import { dayKey, shiftDay } from "@/lib/day";
 import { errorDetails, readError } from "@/lib/errors";
 import { socialHref, type FanSocial } from "@/lib/fan-profile";
 import { ADJUST_ADMIN_MAX, ADJUST_EDITOR_DAILY_MAX, ADJUST_EDITOR_MAX, newAdjustmentId } from "@/lib/fans";
-import { countLabel, formatDay, formatNumber, formatRelative, joinPt } from "@/lib/format";
+import { countLabel, formatDay, formatNumber, formatRelative, formatTime, joinPt } from "@/lib/format";
+import { REPORT_REASONS as COMMENT_REPORT_REASONS, REPORT_REASON_LABELS as COMMENT_REPORT_REASON_LABELS, type ReportReason as CommentReportReason } from "@/lib/moderation";
 import { toDate, type Role } from "@/lib/staff";
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from "@/lib/visible-line";
 import { isWhatsapp } from "@/lib/whatsapp";
@@ -14,7 +15,9 @@ import { isWhatsapp } from "@/lib/whatsapp";
  * frases das decisões. Toda decisão passa pela `decideFanClub`
  * (`fan-club-api.ts`), com os assuntos do servidor das etapas 1 a 5 (34.14 e
  * 34.22): a candidatura, o fã-clube (com o Destaque e o Recompensar), a
- * publicação e a denúncia.
+ * publicação e a denúncia. Desde a Fase 2 (seção 37), também o comentário:
+ * as reações e os comentários das publicações, os marcados, a fila dos
+ * comentários, o registro do ocultar do gestor e a taxa de engajamento.
  */
 
 /** Tamanho das páginas das listas da seção (o "Carregar mais"). */
@@ -732,6 +735,51 @@ export interface FanClubPost {
   publishedAt: Date | null;
   reviewedAt: Date | null;
   reviewedBy: { uid: string; name: string } | null;
+  /** As reações e os comentários que aparecem aos fãs (37.2); a publicação de antes da Fase 2 e a em análise não têm, e valem 0. */
+  reactionCount: number;
+  reactionCounts: Record<Reaction, number>;
+  commentCount: number;
+  /** Os marcados no texto do gestor, sem repetir o mesmo `id` (37.7). */
+  mentions: Mention[];
+}
+
+/** As cinco reações (37.1, R2), na ordem do app. */
+export const REACTIONS = ["heart", "fire", "laugh", "wow", "clap"] as const;
+export type Reaction = (typeof REACTIONS)[number];
+
+export const REACTION_EMOJIS: Record<Reaction, string> = { heart: "❤️", fire: "🔥", laugh: "😂", wow: "😮", clap: "👏" };
+
+/** O nome de cada emoji, escrito ao lado dele: o leitor de tela não ouve o emoji (a tela o esconde). */
+export const REACTION_LABELS: Record<Reaction, string> = { heart: "coração", fire: "fogo", laugh: "risada", wow: "espanto", clap: "aplauso" };
+
+/** Um marcado (`mentions`): o @ como foi escrito, um fã ou uma central, e o id resolvido no envio. */
+export interface Mention {
+  handle: string;
+  kind: "fan" | "artist";
+  id: string;
+}
+
+export const MENTION_KIND_LABELS: Record<Mention["kind"], string> = { fan: "fã", artist: "central" };
+
+function mentionsOf(value: unknown): Mention[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const mentions: Mention[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.handle !== "string" || !item.handle || typeof item.id !== "string" || !item.id) continue;
+    const kind = item.kind === "fan" || item.kind === "artist" ? item.kind : null;
+    if (!kind || seen.has(`${kind}:${item.id}`)) continue;
+    seen.add(`${kind}:${item.id}`);
+    mentions.push({ handle: item.handle.replace(/^@/, ""), kind, id: item.id });
+  }
+  return mentions;
+}
+
+function reactionCountsOf(value: unknown): Record<Reaction, number> {
+  const raw = isRecord(value) ? value : {};
+  const counts = {} as Record<Reaction, number>;
+  for (const reaction of REACTIONS) counts[reaction] = countOf(raw[reaction]);
+  return counts;
 }
 
 function imageOf(value: unknown): PostImage | null {
@@ -762,7 +810,35 @@ export function parsePost(id: string, data: Record<string, unknown>): FanClubPos
     publishedAt: toDate(data.publishedAt),
     reviewedAt: toDate(data.reviewedAt),
     reviewedBy: personOf(data.reviewedBy),
+    reactionCount: countOf(data.reactionCount),
+    reactionCounts: reactionCountsOf(data.reactionCounts),
+    commentCount: countOf(data.commentCount),
+    mentions: mentionsOf(data.mentions),
   };
+}
+
+/**
+ * A publicação que já foi ao ar, e por isso tem reações e comentários: a no
+ * ar, a oculta pela equipe e a tirada do ar. A em análise, a recusada e a
+ * retirada nunca foram vistas pelos fãs, e não mostram totais.
+ */
+export function postWasPublished(post: Pick<FanClubPost, "status">): boolean {
+  return post.status === "published" || post.status === "hidden" || post.status === "removed";
+}
+
+/** Cada emoji com o número, só os maiores que 0, na ordem do app. */
+export function reactionBreakdown(counts: Record<Reaction, number>): { reaction: Reaction; count: number; emoji: string; label: string }[] {
+  return REACTIONS.filter((reaction) => counts[reaction] > 0).map((reaction) => ({ reaction, count: counts[reaction], emoji: REACTION_EMOJIS[reaction], label: REACTION_LABELS[reaction] }));
+}
+
+/** "3 reações", "1 reação". */
+export function reactionCountText(total: number): string {
+  return countLabel(total, "reação", "reações");
+}
+
+/** "4 comentários", "1 comentário". */
+export function commentCountText(total: number): string {
+  return countLabel(total, "comentário", "comentários");
 }
 
 /** O autor como a tela mostra: o nome copiado, o @ ou a conta que saiu. */
@@ -956,6 +1032,399 @@ export function reportDoneText(item: Pick<FanClubReport, "status">, post: Report
     return `${head}: a publicação já não estava no ar.`;
   }
   return status === "published" ? `${head}: a publicação de ${author} segue no ar.` : `${head}: a denúncia ficou como Mantida, e a publicação segue como está.`;
+}
+
+// ---------------------------------------------------------------------------
+// Comentários (seção 37: 37.2, 37.6 e 37.10)
+// ---------------------------------------------------------------------------
+
+export const COMMENT_STATUSES = ["visible", "manager_hidden", "staff_hidden"] as const;
+export type CommentStatus = (typeof COMMENT_STATUSES)[number];
+
+export const COMMENT_STATUS_LABELS: Record<CommentStatus, string> = {
+  visible: "Visível",
+  manager_hidden: "Oculto pelo gestor",
+  staff_hidden: "Oculto pela equipe",
+};
+
+/**
+ * `fanClubComments/{commentId}`: o comentário, que vai ao ar na hora pelo
+ * filtro de texto. O gestor oculta (`manager_hidden`, que o autor ainda vê),
+ * e a equipe oculta para todos (`staff_hidden`) ou reexibe. A marca "Gestor"
+ * não está gravada: é o `authorUid` igual ao `ownerUid` do fã-clube.
+ */
+export interface FanClubComment {
+  id: string;
+  clubId: string;
+  postId: string;
+  artistId: string;
+  authorUid: string;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorPhotoURL: string | null;
+  text: string;
+  /** O comentário de cima, na resposta; `null` no de cima. */
+  replyToId: string | null;
+  /** No de cima: as respostas visíveis. */
+  replyCount: number;
+  status: CommentStatus;
+  hiddenAt: Date | null;
+  restoredByStaffAt: Date | null;
+  reviewRequestedAt: Date | null;
+  reviewOutcome: "kept" | null;
+  createdAt: Date | null;
+}
+
+/** O comentário lido. O status estranho vale `staff_hidden` (não aparece para ninguém), como no servidor. */
+export function parseComment(id: string, data: Record<string, unknown>): FanClubComment {
+  return {
+    id,
+    clubId: text(data.clubId),
+    postId: text(data.postId),
+    artistId: text(data.artistId),
+    authorUid: text(data.authorUid),
+    authorName: textOrNull(data.authorName),
+    authorUsername: textOrNull(data.authorUsername),
+    authorPhotoURL: textOrNull(data.authorPhotoURL),
+    text: text(data.text),
+    replyToId: textOrNull(data.replyToId),
+    replyCount: countOf(data.replyCount),
+    status: oneOf(COMMENT_STATUSES, data.status) ?? "staff_hidden",
+    hiddenAt: toDate(data.hiddenAt),
+    restoredByStaffAt: toDate(data.restoredByStaffAt),
+    reviewRequestedAt: toDate(data.reviewRequestedAt),
+    reviewOutcome: data.reviewOutcome === "kept" ? "kept" : null,
+    createdAt: toDate(data.createdAt),
+  };
+}
+
+/** O autor do comentário como a tela mostra: o nome copiado, o @ ou "Fã sem nome". */
+export function commentAuthorLabel(comment: Pick<FanClubComment, "authorName" | "authorUsername">): string {
+  return comment.authorName ?? (comment.authorUsername ? `@${comment.authorUsername}` : "Fã sem nome");
+}
+
+/** O autor é o gestor do fã-clube (decisão 19 de 37.1): a marca é calculada na leitura. */
+export function isManagerComment(comment: Pick<FanClubComment, "authorUid">, ownerUid: string | null | undefined): boolean {
+  return Boolean(ownerUid) && comment.authorUid === ownerUid;
+}
+
+function dayTime(date: Date, now: Date): string {
+  return `${formatDay(date, now)}, ${formatTime(date)}`;
+}
+
+/** "Visível", "Oculto pelo gestor em 27 out, 10:00", "Oculto pela equipe em 27 out, 11:00". */
+export function commentStatusText(comment: Pick<FanClubComment, "status" | "hiddenAt">, now: Date): string {
+  const label = COMMENT_STATUS_LABELS[comment.status];
+  return comment.status !== "visible" && comment.hiddenAt ? `${label} em ${dayTime(comment.hiddenAt, now)}` : label;
+}
+
+/**
+ * As marcas que vêm junto com o status: o Reexibir da equipe (desde então o
+ * gestor não oculta mais) e o "Manter oculto" da equipe num ocultar do
+ * gestor (o autor não pede revisão de novo deste ocultar).
+ */
+export function commentMarks(comment: Pick<FanClubComment, "status" | "restoredByStaffAt" | "reviewOutcome">, now: Date): string[] {
+  const marks: string[] = [];
+  if (comment.restoredByStaffAt) marks.push(`Reexibido pela equipe em ${dayTime(comment.restoredByStaffAt, now)}`);
+  if (comment.status === "manager_hidden" && comment.reviewOutcome === "kept") marks.push("A equipe manteve oculto");
+  return marks;
+}
+
+export const COMMENT_QUEUE_KINDS = ["report", "review"] as const;
+export type CommentQueueKind = (typeof COMMENT_QUEUE_KINDS)[number];
+
+export const COMMENT_RESOLUTIONS = ["kept", "hidden", "restored", "withdrawn", "author_deleted", "removed"] as const;
+export type CommentResolution = (typeof COMMENT_RESOLUTIONS)[number];
+
+/** As resoluções da equipe; as outras três fecham sem ela (37.6). */
+export const TEAM_COMMENT_RESOLUTIONS = ["kept", "hidden", "restored"] as const;
+
+export const COMMENT_RESOLUTION_LABELS: Record<CommentResolution, string> = {
+  kept: "Mantido",
+  hidden: "Ocultado pela equipe",
+  restored: "Reexibido",
+  withdrawn: "Encerrado sem decisão da equipe",
+  author_deleted: "Encerrado sem decisão da equipe",
+  removed: "Encerrado sem decisão da equipe",
+};
+
+/** Por que o item fechou sem a equipe. */
+export const COMMENT_CLOSED_REASONS: Record<"withdrawn" | "author_deleted" | "removed", string> = {
+  withdrawn: "As denúncias saíram ou o gestor reexibiu.",
+  author_deleted: "A conta do autor foi excluída.",
+  removed: "Saiu com a publicação ou com o comentário de cima.",
+};
+
+export { COMMENT_REPORT_REASONS, COMMENT_REPORT_REASON_LABELS, type CommentReportReason };
+
+/**
+ * `fanClubCommentQueue/{commentId}`: o item da fila, um por comentário, com a
+ * rodada (37.2). A denúncia abre com o `kind: 'report'`; o pedido de revisão
+ * do autor abre com o `kind: 'review'`, ou marca o `reviewRequested` no item
+ * aberto por denúncia. Sem cópia do texto, e nunca quem denunciou.
+ */
+export interface FanClubCommentItem {
+  commentId: string;
+  postId: string;
+  clubId: string;
+  artistId: string;
+  authorUid: string;
+  kind: CommentQueueKind;
+  reportCount: number;
+  reasons: Record<CommentReportReason, number>;
+  reviewRequested: boolean;
+  status: ReportStatus;
+  resolution: CommentResolution | null;
+  /** A rodada que a decisão manda (`round`). */
+  round: number;
+  openedAt: Date | null;
+  firstReportedAt: Date | null;
+  lastReportedAt: Date | null;
+  reviewRequestedAt: Date | null;
+  lastActivityAt: Date | null;
+  resolvedAt: Date | null;
+  resolvedBy: { uid: string; name: string } | null;
+}
+
+/** O item da fila lido. O status estranho vale `resolved` (nada a decidir), e o tipo estranho vale denúncia. */
+export function parseCommentItem(id: string, data: Record<string, unknown>): FanClubCommentItem {
+  const raw = isRecord(data.reasons) ? data.reasons : {};
+  const reasons = {} as Record<CommentReportReason, number>;
+  for (const reason of COMMENT_REPORT_REASONS) reasons[reason] = countOf(raw[reason]);
+  return {
+    commentId: id,
+    postId: text(data.postId),
+    clubId: text(data.clubId),
+    artistId: text(data.artistId),
+    authorUid: text(data.authorUid),
+    kind: data.kind === "review" ? "review" : "report",
+    reportCount: countOf(data.reportCount),
+    reasons,
+    reviewRequested: data.reviewRequested === true,
+    status: data.status === "open" ? "open" : "resolved",
+    resolution: oneOf(COMMENT_RESOLUTIONS, data.resolution),
+    round: countOf(data.round),
+    openedAt: toDate(data.openedAt),
+    firstReportedAt: toDate(data.firstReportedAt),
+    lastReportedAt: toDate(data.lastReportedAt),
+    reviewRequestedAt: toDate(data.reviewRequestedAt),
+    lastActivityAt: toDate(data.lastActivityAt),
+    resolvedAt: toDate(data.resolvedAt),
+    resolvedBy: personOf(data.resolvedBy),
+  };
+}
+
+/** A marca do tipo: "1 denúncia", "3 denúncias" (com denúncia na rodada) e "Revisão pedida". As duas podem vir juntas. */
+export function commentItemMarks(item: Pick<FanClubCommentItem, "kind" | "reportCount" | "reviewRequested">): string[] {
+  const marks: string[] = [];
+  if (item.reportCount > 0) marks.push(countLabel(item.reportCount, "denúncia", "denúncias"));
+  if (item.kind === "review" || item.reviewRequested) marks.push("Revisão pedida");
+  return marks;
+}
+
+/** A contagem por motivo, com os rótulos do Mural: "Spam: 1 · Ofensivo: 2"; sem denúncia, `null`. */
+export function commentReasonsText(reasons: Record<CommentReportReason, number>): string | null {
+  const parts = COMMENT_REPORT_REASONS.filter((reason) => reasons[reason] > 0).map((reason) => `${COMMENT_REPORT_REASON_LABELS[reason]}: ${formatNumber(reasons[reason])}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** O item fechou por decisão da equipe (Manter, Ocultar ou Reexibir). */
+export function decidedByTeam(item: Pick<FanClubCommentItem, "resolution">): boolean {
+  return (TEAM_COMMENT_RESOLUTIONS as readonly string[]).includes(item.resolution ?? "");
+}
+
+/** "2 comentários denunciados". */
+export function commentReportsCountText(total: number): string {
+  return countLabel(total, "comentário denunciado", "comentários denunciados");
+}
+
+/** "1 pedido de revisão". */
+export function reviewRequestsCountText(total: number): string {
+  return countLabel(total, "pedido de revisão", "pedidos de revisão");
+}
+
+export type CommentDecision = "keep" | "hide" | "restore";
+
+/** Quem vê a decisão: o uid e se edita a seção. */
+export interface CommentViewer {
+  uid: string;
+  canEdit: boolean;
+}
+
+/**
+ * Quem chama e é o autor do comentário ou o gestor do fã-clube recebe `self`
+ * do servidor (37.3): o gestor é parte do ocultar. Sem o fã-clube lido, só o
+ * autor se confere aqui, e o servidor recusa o resto.
+ */
+export function isCommentSelf(authorUid: string, ownerUid: string | null, viewer: Pick<CommentViewer, "uid">): boolean {
+  return authorUid === viewer.uid || (ownerUid !== null && ownerUid === viewer.uid);
+}
+
+/**
+ * As decisões que cabem no comentário fora da fila (o diálogo da ficha e o
+ * registro do ocultar), sem a rodada: Ocultar no visível e no oculto pelo
+ * gestor, Reexibir no oculto pelo gestor e no oculto pela equipe.
+ */
+export function commentDecisions(comment: Pick<FanClubComment, "status" | "authorUid">, ownerUid: string | null, viewer: CommentViewer): CommentDecision[] {
+  if (!viewer.canEdit || isCommentSelf(comment.authorUid, ownerUid, viewer)) return [];
+  if (comment.status === "visible") return ["hide"];
+  if (comment.status === "manager_hidden") return ["restore", "hide"];
+  return ["restore"];
+}
+
+/** O comentário do item como a tela o leu: `null` quando não existe mais; `"unknown"` quando a leitura falhou. */
+export type ItemCommentState = Pick<FanClubComment, "status"> | null | "unknown";
+
+/**
+ * As decisões do card da aba Comentários (37.10, item 1), com a rodada:
+ * no aberto, Manter e Ocultar no visível, Manter oculto, Reexibir e Ocultar
+ * no oculto pelo gestor, e Reexibir no oculto pela equipe; no resolvido pela
+ * equipe, só o que ainda cabe no status de agora (a rodada troca a resolução
+ * dela), sem Manter, que num item resolvido não faz nada. O encerrado sem a
+ * equipe, o comentário apagado e o que não carregou ficam sem botões. O
+ * autor e o gestor não decidem (`self`), nem o Leitor.
+ */
+export function commentItemDecisions(
+  item: Pick<FanClubCommentItem, "status" | "resolution" | "authorUid">,
+  comment: ItemCommentState,
+  ownerUid: string | null,
+  viewer: CommentViewer,
+): CommentDecision[] {
+  if (!viewer.canEdit || isCommentSelf(item.authorUid, ownerUid, viewer)) return [];
+  if (comment === null || comment === "unknown") return [];
+  if (item.status === "open") {
+    if (comment.status === "visible") return ["keep", "hide"];
+    if (comment.status === "manager_hidden") return ["keep", "restore", "hide"];
+    return ["restore"];
+  }
+  if (!decidedByTeam(item)) return [];
+  if (comment.status === "visible") return ["hide"];
+  if (comment.status === "manager_hidden") return ["restore", "hide"];
+  return ["restore"];
+}
+
+/** Os rótulos dos botões: o Manter do oculto pelo gestor é o "Manter oculto". */
+export function commentDecisionLabel(decision: CommentDecision, status: CommentStatus): string {
+  if (decision === "keep") return status === "manager_hidden" ? "Manter oculto" : "Manter";
+  return decision === "hide" ? "Ocultar" : "Reexibir";
+}
+
+const RESOLUTION_OF_DECISION: Record<CommentDecision, CommentResolution> = { keep: "kept", hide: "hidden", restore: "restored" };
+
+/**
+ * A confirmação de uma decisão de comentário (os textos são de comentário, e
+ * não de publicação): o título e o corpo pelo status mostrado. O comentário
+ * de cima leva as respostas visíveis junto, e o resolvido diz que a decisão
+ * da rodada muda.
+ */
+export function commentDecisionText(
+  decision: CommentDecision,
+  comment: Pick<FanClubComment, "status"> & Partial<Pick<FanClubComment, "replyToId" | "replyCount">>,
+  item?: Pick<FanClubCommentItem, "status" | "resolution" | "round"> | null,
+): { title: string; body: string } {
+  const replies = comment.replyToId === null && (comment.replyCount ?? 0) > 0 ? (comment.replyCount ?? 0) : 0;
+  let title: string;
+  let body: string;
+  if (decision === "keep") {
+    if (comment.status === "manager_hidden") {
+      title = "Manter o comentário oculto?";
+      body = "O autor vê que a equipe manteve oculto e não pode pedir revisão de novo deste ocultar.";
+    } else {
+      title = "Manter o comentário?";
+      body = comment.status === "visible" ? "A denúncia sai da fila, e o comentário continua visível." : "O item sai da fila, e o comentário continua como está.";
+    }
+  } else if (decision === "hide") {
+    title = "Ocultar o comentário?";
+    body = "O comentário some para todos, também para o autor. O gestor não pode reexibir.";
+    if (replies > 0) body += ` ${replies === 1 ? "A resposta visível embaixo dele também deixa" : `As ${formatNumber(replies)} respostas visíveis embaixo dele também deixam`} de aparecer.`;
+  } else {
+    title = "Reexibir o comentário?";
+    body = "O comentário volta a aparecer para todos, e o gestor não pode ocultá-lo de novo.";
+  }
+  if (item && item.status === "resolved" && item.resolution && decision !== "keep") {
+    body += ` A decisão da rodada ${formatNumber(item.round)} passa de ${COMMENT_RESOLUTION_LABELS[item.resolution]} para ${COMMENT_RESOLUTION_LABELS[RESOLUTION_OF_DECISION[decision]]}.`;
+  }
+  return { title, body };
+}
+
+/** O aviso depois da decisão. */
+export function commentDoneText(decision: CommentDecision, status: CommentStatus): string {
+  if (decision === "keep") return status === "manager_hidden" ? "Comentário mantido oculto." : "Comentário mantido.";
+  return decision === "hide" ? "Comentário ocultado." : "Comentário reexibido.";
+}
+
+/** O aviso de quem não decide porque é o autor ou o gestor. */
+export const COMMENT_SELF_TEXT = "O comentário é seu ou do seu fã-clube: outra pessoa da equipe decide.";
+
+/**
+ * As recusas do comentário que tiram o botão de confirmar: a decisão velha e
+ * o comentário que saiu no meio (`fan-club-comment-not-found`). Outra
+ * tentativa repetiria a mesma frase.
+ */
+export function blocksCommentRetry(failure: unknown): boolean {
+  const reason = readError(failure).reason;
+  return reason === "stale-decision" || reason === "fan-club-comment-not-found";
+}
+
+/** "3 comentários abertos" (denúncias e pedidos de revisão). */
+export function openCommentItemsText(total: number): string {
+  return countLabel(total, "comentário na fila", "comentários na fila");
+}
+
+// ---------------------------------------------------------------------------
+// O registro do ocultar do gestor (decisão 11 de 36.1, 37.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * `fanClubHideLog/{id}`: uma linha por ocultar e por reexibir do gestor, sem
+ * o texto. O Ocultar e o Reexibir da equipe vão à auditoria, não aqui. Na
+ * exclusão da conta do autor, a linha fica com o `authorUid` em `null`.
+ */
+export interface HideLogEntry {
+  id: string;
+  clubId: string;
+  postId: string;
+  commentId: string;
+  authorUid: string | null;
+  managerUid: string;
+  action: "hidden" | "restored";
+  at: Date | null;
+}
+
+export function parseHideLogEntry(id: string, data: Record<string, unknown>): HideLogEntry {
+  return {
+    id,
+    clubId: text(data.clubId),
+    postId: text(data.postId),
+    commentId: text(data.commentId),
+    authorUid: textOrNull(data.authorUid),
+    managerUid: text(data.managerUid),
+    action: data.action === "restored" ? "restored" : "hidden",
+    at: toDate(data.at),
+  };
+}
+
+export const HIDE_LOG_ACTION_LABELS: Record<HideLogEntry["action"], string> = { hidden: "Ocultou", restored: "Reexibiu" };
+
+/** "O gestor ocultou 3 vezes"; nenhuma, "O gestor ainda não ocultou nenhum comentário". */
+export function managerHidesText(total: number): string {
+  if (total === 0) return "O gestor ainda não ocultou nenhum comentário.";
+  return `O gestor ocultou ${total === 1 ? "1 vez" : `${formatNumber(total)} vezes`}.`;
+}
+
+/**
+ * As linhas que oferecem o Reexibir: a mais nova de cada comentário que
+ * ainda está oculto pelo gestor (o mesmo comentário pode ter várias linhas).
+ */
+export function hideLogRestorable(entries: readonly Pick<HideLogEntry, "id" | "commentId">[], statuses: ReadonlyMap<string, CommentStatus>): Set<string> {
+  const seen = new Set<string>();
+  const rows = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.commentId)) continue;
+    seen.add(entry.commentId);
+    if (statuses.get(entry.commentId) === "manager_hidden") rows.add(entry.id);
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -1204,6 +1673,70 @@ export const MONTH_FIELD_LABELS: Record<MonthField, string> = {
 
 const MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
+// ---------------------------------------------------------------------------
+// A taxa de engajamento de 30 dias (37.11)
+// ---------------------------------------------------------------------------
+
+/** O período da taxa: hoje e os 29 dias antes, no dia de São Paulo. */
+export const ENGAGEMENT_DAYS = 30;
+
+/** Um dia do mapa `days` dos shards, já somado entre os 16. */
+export interface EngagementDay {
+  reactions: number;
+  comments: number;
+}
+
+export interface Engagement {
+  reactions: number;
+  comments: number;
+  /** Em porcentagem, com uma casa; sem seguidor, `null`. */
+  rate: number | null;
+}
+
+/**
+ * A taxa, como a `fanClubEngagement` do servidor: as reações novas e os
+ * comentários dos dias do período (só as chaves `AAAA-MM-DD` de hoje e dos 29
+ * antes; o dia velho que a cópia da noite ainda não cortou e um dia depois de
+ * hoje ficam de fora), sobre os seguidores, com uma casa decimal arredondada a
+ * meia casa para cima. As somas nunca saem negativas.
+ */
+export function fanClubEngagement(days: Readonly<Record<string, EngagementDay>>, followers: number, now: number): Engagement {
+  const today = dayKey(now);
+  const first = shiftDay(today, -(ENGAGEMENT_DAYS - 1));
+  let reactions = 0;
+  let comments = 0;
+  for (const [day, value] of Object.entries(days)) {
+    if (!DAY_PATTERN.test(day) || day < first || day > today) continue;
+    reactions += value.reactions;
+    comments += value.comments;
+  }
+  reactions = Math.max(0, reactions);
+  comments = Math.max(0, comments);
+  return { reactions, comments, rate: followers > 0 ? Math.round(((reactions + comments) * 1000) / followers) / 10 : null };
+}
+
+const RATE = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** "450,0%". */
+export function formatRate(rate: number): string {
+  return `${RATE.format(rate)}%`;
+}
+
+/**
+ * A taxa da ficha: os seguidores são os da cópia da noite (a seção não conta
+ * quem segue sem a seção Fãs, decisão 29 de 34.1), com a data dela. O gestor
+ * vê no app a taxa sobre os seguidores de agora, e os números podem diferir.
+ */
+export function engagementView(days: Readonly<Record<string, EngagementDay>>, counts: Pick<FanClubCounts, "followers" | "at"> | null, now: Date): { value: string; detail: string } {
+  if (!counts?.at) return { value: "Sem cópia", detail: "Os seguidores ainda não foram copiados: a taxa aparece com a primeira cópia da noite." };
+  const engagement = fanClubEngagement(days, counts.followers, now.getTime());
+  const sums = `${reactionCountText(engagement.reactions)} e ${commentCountText(engagement.comments)}`;
+  if (engagement.rate === null) return { value: "Sem seguidores na cópia", detail: `${sums} em 30 dias.` };
+  return { value: formatRate(engagement.rate), detail: `${sums}, ${countLabel(counts.followers, "seguidor", "seguidores")} na cópia de ${formatDay(counts.at, now)}.` };
+}
+
+export const ENGAGEMENT_NOTE = "A taxa é só para acompanhar. Ela não decide prêmio. No app, o gestor vê a taxa sobre os seguidores de agora, e o número pode ser outro.";
+
 /** "outubro de 2026", de um `AAAA-MM`. */
 export function monthLabel(month: string): string {
   const [year, number] = month.split("-").map(Number);
@@ -1259,12 +1792,22 @@ export function followerSignals(follower: Pick<FanClubFollower, "newAccount" | "
 // O "Aguardando a equipe" (34.10, item 9)
 // ---------------------------------------------------------------------------
 
-/** O que espera a equipe: as candidaturas e as publicações em análise e as denúncias abertas. */
+/**
+ * O que espera a equipe: as candidaturas e as publicações em análise, as
+ * denúncias abertas e, desde a Fase 2, os itens abertos da fila dos
+ * comentários pelo tipo (o aberto por denúncia que recebeu o pedido depois
+ * continua denúncia).
+ */
 export interface WaitingCounts {
   applications: number;
   posts: number;
   reports: number;
+  commentReports: number;
+  commentReviews: number;
 }
+
+/** Os zeros de quem não vê a seção. */
+export const NO_WAITING: WaitingCounts = { applications: 0, posts: 0, reports: 0, commentReports: 0, commentReviews: 0 };
 
 // ---------------------------------------------------------------------------
 // Logs

@@ -1,4 +1,4 @@
-import { collection, collectionGroup, doc, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
+import { collection, collectionGroup, doc, documentId, orderBy, query, where, type QueryConstraint } from "firebase/firestore";
 
 import { fanClubBoxOpen, parseArtistPrivate } from "@/lib/artists";
 import {
@@ -6,21 +6,29 @@ import {
   FAN_CLUBS_PAGE_SIZE,
   parseApplication,
   parseApplicationPrivate,
+  parseComment,
+  parseCommentItem,
   parseContactWhatsapp,
   parseFanClub,
   parseFollower,
+  parseHideLogEntry,
   parsePost,
   parsePrize,
   parseReport,
   type ApplicationPrivate,
+  type CommentQueueKind,
+  type EngagementDay,
   type FanClub,
   type FanClubApplication,
+  type FanClubComment,
+  type FanClubCommentItem,
   type FanClubFollower,
   type FanClubOrder,
   type FanClubPost,
   type FanClubPrize,
   type FanClubReport,
   type FanClubStatus,
+  type HideLogEntry,
   type ReportStatus,
   type ResolvedApplicationStatus,
   type WaitingCounts,
@@ -37,9 +45,13 @@ import { parseRedemption, type Redemption } from "@/lib/rewards";
  * reconhecimentos. As regras liberam o que é da seção para quem a vê; o
  * privado e o contato, só para quem edita (o contato, só de quem tem
  * candidatura); os seguidores, o perfil e a central do gestor, só com a seção
- * Fãs; as recompensas e os pedidos, só com a seção Recompensas. Cada consulta
- * tem a forma de um índice de 34.6, porque o emulador não cobra índice. Nada
- * aqui grava: toda mudança passa pela `decideFanClub` (`fan-club-api.ts`).
+ * Fãs; as recompensas e os pedidos, só com a seção Recompensas. Desde a Fase 2
+ * (37.4), a fila dos comentários, os comentários e o registro do ocultar do
+ * gestor; quem reagiu (`fanClubReactions`) e quem denunciou
+ * (`fanClubCommentReports`) ficam fechados até para o admin. Cada consulta
+ * tem a forma de um índice de 34.6 ou de 37.4, porque o emulador não cobra
+ * índice. Nada aqui grava: toda mudança passa pela `decideFanClub`
+ * (`fan-club-api.ts`).
  */
 
 type Page<T> = { items: T[]; cursor: PageCursor | null; hasMore: boolean };
@@ -200,23 +212,37 @@ export interface ShardNumbers {
   visits: number;
   signups: number;
   joins: number;
+  /** As reações e os comentários por dia (o mapa `days` da Fase 2, 37.2), somados entre os shards; a taxa escolhe os dias. */
+  days: Record<string, EngagementDay>;
 }
 
 const SHARD_FIELDS = ["links", "visits", "signups", "joins"] as const;
 
+/** Um número dos shards: o que não é número conta 0, e a parte quebrada sai (o `shardNumber` do servidor). */
+function shardNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0;
+}
+
 /**
  * A soma dos 16 shards de `fanClubStats/{clubId}/fanClubShards` (uma
  * consulta), campo a campo e nunca negativa, como o `sumFanClubShards` do
- * servidor: os números de agora, sem esperar a cópia da noite.
+ * servidor: os números de agora, sem esperar a cópia da noite. O mapa `days`
+ * vem junto, dia a dia; o dia que não é um mapa fica de fora.
  */
 export async function getShardNumbers(clubId: string): Promise<ShardNumbers> {
   const snapshot = await readQuery(collection(db(), "fanClubStats", clubId, "fanClubShards"));
-  const sums: ShardNumbers = { links: 0, visits: 0, signups: 0, joins: 0 };
+  const sums: ShardNumbers = { links: 0, visits: 0, signups: 0, joins: 0, days: {} };
   for (const item of snapshot.docs) {
     const data = item.data();
-    for (const field of SHARD_FIELDS) {
-      const value = data[field];
-      if (typeof value === "number" && Number.isFinite(value)) sums[field] += Math.trunc(value);
+    for (const field of SHARD_FIELDS) sums[field] += shardNumber(data[field]);
+    const days = data.days;
+    if (!days || typeof days !== "object" || Array.isArray(days)) continue;
+    for (const [day, value] of Object.entries(days as Record<string, unknown>)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const row = value as Record<string, unknown>;
+      const sum = (sums.days[day] ??= { reactions: 0, comments: 0 });
+      sum.reactions += shardNumber(row.reactions);
+      sum.comments += shardNumber(row.comments);
     }
   }
   for (const field of SHARD_FIELDS) sums[field] = Math.max(0, sums[field]);
@@ -310,13 +336,83 @@ export async function countActionedReports(clubId: string, since: number): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Comentários (37.4 e 37.10)
+// ---------------------------------------------------------------------------
+
+/**
+ * A fila dos comentários: os abertos, da última atividade (a última denúncia
+ * ou o pedido de revisão; o índice `status, lastActivityAt` decrescente), ou
+ * os resolvidos, da decisão mais nova (`status, resolvedAt` decrescente).
+ */
+export async function getCommentQueuePage(status: ReportStatus, after: PageCursor | null): Promise<Page<FanClubCommentItem>> {
+  const field = status === "open" ? "lastActivityAt" : "resolvedAt";
+  const page = await getPage(query(collection(db(), "fanClubCommentQueue"), where("status", "==", status), orderBy(field, "desc")), {
+    size: FAN_CLUBS_PAGE_SIZE,
+    after,
+  });
+  return { items: page.docs.map((item) => parseCommentItem(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
+}
+
+/** Quantos itens abertos de um tipo (o `count()` com as duas igualdades, pela junção dos índices de um campo). */
+export function countOpenCommentItems(kind: CommentQueueKind): Promise<number> {
+  return countOf(query(collection(db(), "fanClubCommentQueue"), where("status", "==", "open"), where("kind", "==", kind)));
+}
+
+/**
+ * Os comentários citados pela página na tela (a fila e o registro do ocultar
+ * guardam só o id), um `in` pelo `documentId()` a cada 30 (o teto do
+ * Firestore). O comentário apagado (a conta do autor saiu, ou ele saiu com a
+ * publicação ou com o de cima) volta `null`.
+ */
+export async function getCommentsByIds(ids: readonly string[]): Promise<Map<string, FanClubComment | null>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const chunks: string[][] = [];
+  for (let start = 0; start < unique.length; start += ARTIST_FILTER_MAX) chunks.push(unique.slice(start, start + ARTIST_FILTER_MAX));
+  const snapshots = await Promise.all(chunks.map((chunk) => readQuery(query(collection(db(), "fanClubComments"), where(documentId(), "in", chunk)))));
+  const found = new Map<string, FanClubComment | null>(unique.map((id) => [id, null]));
+  for (const snapshot of snapshots) {
+    for (const item of snapshot.docs) found.set(item.id, parseComment(item.id, item.data()));
+  }
+  return found;
+}
+
+/** Os comentários de uma publicação em todos os status, do mais novo (o índice `postId, createdAt` decrescente). */
+export async function getPostCommentsPage(postId: string, after: PageCursor | null): Promise<Page<FanClubComment>> {
+  const page = await getPage(query(collection(db(), "fanClubComments"), where("postId", "==", postId), orderBy("createdAt", "desc")), {
+    size: FAN_CLUBS_PAGE_SIZE,
+    after,
+  });
+  return { items: page.docs.map((item) => parseComment(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
+}
+
+/** O registro do ocultar do gestor de um fã-clube, da linha mais nova (o índice `clubId, at` decrescente). */
+export async function getHideLogPage(clubId: string, after: PageCursor | null): Promise<Page<HideLogEntry>> {
+  const page = await getPage(query(collection(db(), "fanClubHideLog"), where("clubId", "==", clubId), orderBy("at", "desc")), {
+    size: FAN_CLUBS_PAGE_SIZE,
+    after,
+  });
+  return { items: page.docs.map((item) => parseHideLogEntry(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
+}
+
+/** Quantas vezes o gestor ocultou (o `count()` com as duas igualdades, pela junção). */
+export function countManagerHides(clubId: string): Promise<number> {
+  return countOf(query(collection(db(), "fanClubHideLog"), where("clubId", "==", clubId), where("action", "==", "hidden")));
+}
+
+// ---------------------------------------------------------------------------
 // O "Aguardando a equipe"
 // ---------------------------------------------------------------------------
 
-/** As três contagens do cartão da Visão geral (três `count()`). */
+/** As cinco contagens do cartão da Visão geral (cinco `count()`). */
 export async function countWaiting(): Promise<WaitingCounts> {
-  const [applications, posts, reports] = await Promise.all([countPendingApplications(), countPendingPosts(), countOpenReports()]);
-  return { applications, posts, reports };
+  const [applications, posts, reports, commentReports, commentReviews] = await Promise.all([
+    countPendingApplications(),
+    countPendingPosts(),
+    countOpenReports(),
+    countOpenCommentItems("report"),
+    countOpenCommentItems("review"),
+  ]);
+  return { applications, posts, reports, commentReports, commentReviews };
 }
 
 // ---------------------------------------------------------------------------
