@@ -31,26 +31,27 @@ export const GENDER_LABELS: Record<Gender, string> = {
   undisclosed: "Prefiro não dizer",
 };
 
-/** As redes do perfil novo, na ordem do app e do mapa gravado. */
-export const SOCIAL_NETWORKS = ["instagram", "tiktok", "linkedin", "x"] as const;
+/**
+ * As redes do perfil novo, na ordem do app e do mapa gravado. O LinkedIn saiu
+ * em 02/11/2026, a pedido do dono (28.20): o `linkedin` que ainda estiver
+ * guardado é ignorado, como chave estranha.
+ */
+export const SOCIAL_NETWORKS = ["instagram", "tiktok", "x"] as const;
 export type SocialNetwork = (typeof SOCIAL_NETWORKS)[number];
 
 export const SOCIAL_NETWORK_LABELS: Record<SocialNetwork, string> = {
   instagram: "Instagram",
   tiktok: "TikTok",
-  linkedin: "LinkedIn",
   x: "X (Twitter)",
 };
 
 /**
  * O usuário guardado de cada rede (28.3), cópia do `SOCIAL_PATTERNS` do
- * servidor. O LinkedIn aceita só as letras latinas acentuadas, em faixas
- * explícitas: o `\p{L}` deixaria passar letras invisíveis.
+ * servidor.
  */
 const SOCIAL_PATTERNS: Record<SocialNetwork, RegExp> = {
   instagram: /^(?!\.)(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$/,
   tiktok: /^(?!.*\.$)[a-z0-9._]{2,24}$/,
-  linkedin: /^[a-z0-9ß-öø-ÿĀ-ſ-]{3,100}$/u,
   x: /^[a-z0-9_]{1,15}$/,
 };
 
@@ -58,7 +59,6 @@ const SOCIAL_PATTERNS: Record<SocialNetwork, RegExp> = {
 const RESERVED_PATHS: Record<SocialNetwork, ReadonlySet<string>> = {
   instagram: new Set(["about", "accounts", "direct", "explore", "legal", "p", "reel", "reels", "stories", "tv", "web"]),
   tiktok: new Set(),
-  linkedin: new Set(),
   x: new Set(["compose", "explore", "home", "i", "login", "logout", "messages", "notifications", "privacy", "search", "settings", "signup", "tos"]),
 };
 
@@ -75,8 +75,6 @@ export function socialHref(network: SocialNetwork, handle: unknown): string | nu
       return `https://www.instagram.com/${handle}/`;
     case "tiktok":
       return `https://www.tiktok.com/@${handle}`;
-    case "linkedin":
-      return `https://www.linkedin.com/in/${encodeURIComponent(handle)}/`;
     case "x":
       return `https://x.com/${handle}`;
   }
@@ -106,7 +104,7 @@ export interface FanProfile {
   privateAccount: boolean;
   /** As redes que passam no padrão, na ordem fixa. */
   socials: FanSocial[];
-  /** Alguma das quatro chaves tem texto, mesmo fora do padrão: a `clearFanProfileText` apaga. */
+  /** Alguma das três chaves tem texto, mesmo fora do padrão: a `clearFanProfileText` apaga. */
   socialsStored: boolean;
   /** Até quando o fã não troca o próprio @ (24.1 e 32.3); `null` sem prazo gravado. */
   usernameChangeableAt: Date | null;
@@ -179,9 +177,9 @@ export function genderLabel(gender: Gender | null): string {
   return gender ? GENDER_LABELS[gender] : "Não informado";
 }
 
-/** O usuário como a rede mostra: com @, menos no LinkedIn, que usa o endereço depois de /in/. */
-export function socialHandleText(social: Pick<FanSocial, "network" | "handle">): string {
-  return social.network === "linkedin" ? social.handle : `@${social.handle}`;
+/** O usuário como a rede mostra, com @. */
+export function socialHandleText(social: Pick<FanSocial, "handle">): string {
+  return `@${social.handle}`;
 }
 
 /** Formato do uid de uma conta do Auth (28 letras e números). */

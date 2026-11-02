@@ -43,7 +43,7 @@ function seed() {
     bio: "Salvador.",
     gender: "undisclosed",
     privateAccount: true,
-    socials: { instagram: "bia.teste.up", tiktok: "bia.teste.up", linkedin: null, x: "https://x.com/golpe" },
+    socials: { instagram: "bia.teste.up", tiktok: "bia.teste.up", x: "https://x.com/golpe" },
   });
   firestore.set("users/r48", { displayName: "Renata", username: "renatatei", createdAt: at("2026-10-01T12:00:00Z"), suspendedAt: at("2026-10-07T12:00:00Z") });
   firestore.set("wallets/camila", { balance: 12480, xp: 12480 });
@@ -58,7 +58,8 @@ test("o perfil novo chega às linhas: bio, gênero, conta privada e só as redes
   const byUid = Object.fromEntries(page.items.map((row) => [row.uid, row.profile]));
   assert.equal(byUid.camila.gender, "woman");
   assert.equal(byUid.camila.bio, "Feira de Santana.\nFã do Netto desde o primeiro show.");
-  assert.deepEqual(byUid.camila.socials.map((social) => social.network), ["instagram", "tiktok", "linkedin", "x"]);
+  // O LinkedIn guardado antes de 02/11/2026 não aparece.
+  assert.deepEqual(byUid.camila.socials.map((social) => social.network), ["instagram", "tiktok", "x"]);
   assert.equal(byUid.bia.privateAccount, true);
   assert.equal(byUid.bia.gender, "undisclosed");
   assert.deepEqual(byUid.bia.socials.map((social) => social.href), ["https://www.instagram.com/bia.teste.up/", "https://www.tiktok.com/@bia.teste.up"]);
