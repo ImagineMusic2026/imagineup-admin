@@ -32,18 +32,6 @@ const HANDLE_CASES = [
   ["tiktok", "camila.", false],
   ["tiktok", "a".repeat(24), true],
   ["tiktok", "a".repeat(25), false],
-  ["linkedin", "thalita-teste-imagineup", true],
-  ["linkedin", "joão-teste", true],
-  ["linkedin", "žofia-teste", true],
-  ["linkedin", "Thalita-Teste", false],
-  ["linkedin", "ab", false],
-  ["linkedin", "thalitaㅤteste", false],
-  ["linkedin", "ᅟthalita-teste", false],
-  ["linkedin", "שלום-teste", false],
-  ["linkedin", "ｔｈａｌｉｔａ", false],
-  ["linkedin", "thalita÷teste", false],
-  ["linkedin", "a".repeat(100), true],
-  ["linkedin", "a".repeat(101), false],
   ["x", "thalitatesteup", true],
   ["x", "@thalitatesteup", false],
   ["x", "thalita.teste", false],
@@ -65,12 +53,10 @@ test("o usuário de cada rede pelo padrão do servidor, sem as páginas da rede"
   }
 });
 
-test("o link de cada rede, com domínio fixo e o LinkedIn codificado", () => {
+test("o link de cada rede, com domínio fixo", () => {
   const cases = [
     ["instagram", "camila.teste.up", "https://www.instagram.com/camila.teste.up/"],
     ["tiktok", "camila.teste.up", "https://www.tiktok.com/@camila.teste.up"],
-    ["linkedin", "camila-teste-imagineup", "https://www.linkedin.com/in/camila-teste-imagineup/"],
-    ["linkedin", "maria-joão", "https://www.linkedin.com/in/maria-jo%C3%A3o/"],
     ["x", "camilatesteup", "https://x.com/camilatesteup"],
     ["instagram", "https://golpe.example/camila", null],
     ["x", "explore", null],
@@ -92,6 +78,7 @@ test("o perfil novo lido: bio, gênero, conta privada e redes pela lista fixa", 
       x: "camilatesteup",
       instagram: "camila.teste.up",
       tiktok: "camila.teste.up",
+      // O LinkedIn saiu em 02/11/2026: o guardado de antes é ignorado.
       linkedin: "camila-teste-imagineup",
       site: "https://golpe.example",
     },
@@ -104,7 +91,6 @@ test("o perfil novo lido: bio, gênero, conta privada e redes pela lista fixa", 
     [
       ["instagram", "camila.teste.up", "https://www.instagram.com/camila.teste.up/"],
       ["tiktok", "camila.teste.up", "https://www.tiktok.com/@camila.teste.up"],
-      ["linkedin", "camila-teste-imagineup", "https://www.linkedin.com/in/camila-teste-imagineup/"],
       ["x", "camilatesteup", "https://x.com/camilatesteup"],
     ],
   );
@@ -122,6 +108,10 @@ test("o perfil novo lido: bio, gênero, conta privada e redes pela lista fixa", 
   assert.equal(vazia.socialsStored, false);
   assert.equal(vazia.privateAccount, true);
   assert.equal(profile.parseFanProfile("n", {}).socialsStored, false);
+
+  const soLinkedin = profile.parseFanProfile("l", { socials: { linkedin: "camila-teste-imagineup" } });
+  assert.deepEqual(soLinkedin.socials, []);
+  assert.equal(soLinkedin.socialsStored, false, "o LinkedIn de antes não é rede: a clearFanProfileText não o conta");
 });
 
 test("o prazo do @ lido de forma tolerante (32.3)", () => {
@@ -143,5 +133,6 @@ test("os rótulos do gênero e o usuário como a rede mostra", () => {
   assert.equal(profile.genderLabel(null), "Não informado");
   assert.equal(profile.SOCIAL_NETWORK_LABELS.x, "X (Twitter)");
   assert.equal(profile.socialHandleText({ network: "instagram", handle: "camila.teste.up" }), "@camila.teste.up");
-  assert.equal(profile.socialHandleText({ network: "linkedin", handle: "camila-teste-imagineup" }), "camila-teste-imagineup");
+  assert.equal(profile.socialHandleText({ network: "x", handle: "camilatesteup" }), "@camilatesteup");
+  assert.deepEqual(Object.keys(profile.SOCIAL_NETWORK_LABELS), ["instagram", "tiktok", "x"]);
 });
