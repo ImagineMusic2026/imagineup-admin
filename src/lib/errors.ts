@@ -191,6 +191,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   "reward-not-prize": "Essa recompensa não é só para prêmios de fã-clube.",
   "sold-out": "Essa recompensa não tem mais vaga. Aumente o estoque antes de dar o prêmio.",
   "reward-is-prize": "Essa recompensa é só para prêmios de fã-clube: ela não vai ao ar nem sai do ar.",
+  // Suporte (seção 38, a frase do servidor, de reserva).
+  "message-not-found": "Essa mensagem não existe mais.",
 };
 
 /** O `details.reason` de um erro, ou `null`. */

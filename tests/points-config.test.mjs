@@ -94,8 +94,8 @@ test("o level-in-use lista as conquistas que pedem o degrau que sai", () => {
 });
 
 test("os tetos novos na ordem do servidor, com o padrão dele na chave ausente ou fora da regra", () => {
-  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-9), ["photo_upload", "profile_save", "name_change", "fanclub_apply", "fanclub_post", "fanclub_upload", "fanclub_follow", "fanclub_reaction_set", "fanclub_comment_sent"]);
-  assert.equal(points.ACTION_CAP_KEYS.length, 19);
+  assert.deepEqual(points.ACTION_CAP_KEYS.slice(-10), ["photo_upload", "profile_save", "name_change", "fanclub_apply", "fanclub_post", "fanclub_upload", "fanclub_follow", "fanclub_reaction_set", "fanclub_comment_sent", "support_message"]);
+  assert.equal(points.ACTION_CAP_KEYS.length, 20);
   // As candidaturas a fã-clube (seção 34, decisão 11): 3 por dia no servidor.
   assert.equal(points.ACTION_CAP_LABELS.fanclub_apply, "Candidaturas a fã-clube");
   assert.equal(points.DEFAULT_ACTION_CAPS.fanclub_apply, 3);
@@ -161,4 +161,19 @@ test("as origens e os tetos do fã-clube (37.5): o padrão do servidor na chave 
   assert.deepEqual(points.validateValues(form, CONFIG).changes, {});
   assert.deepEqual(points.validateValues({ ...form, fanclub_comment: { points: "2", limited: true, limit: "20" } }, CONFIG).changes, { values: { fanclub_comment: 2 } });
   assert.deepEqual(points.validateCaps({ ...points.capsFormOf(CONFIG), fanclub_comment_sent: "80" }, CONFIG).changes, { fanclub_comment_sent: 80 });
+});
+
+test("o teto das mensagens de suporte (seção 38): 5 por dia somando os três tipos, no fim da lista", () => {
+  assert.equal(points.ACTION_CAP_KEYS.at(-1), "support_message");
+  assert.equal(points.ACTION_CAP_LABELS.support_message, "Mensagens de suporte");
+  assert.equal(points.DEFAULT_ACTION_CAPS.support_message, 5);
+  // O `config/points` de produção (o DOC) não tem a chave: vale o padrão do servidor.
+  assert.equal(CONFIG.actionCaps.support_message, 5);
+  const gravado = points.parsePointsConfig({ ...DOC, actionCaps: { ...DOC.actionCaps, support_message: 3 } });
+  assert.equal(gravado.actionCaps.support_message, 3);
+  // Sem mexer, nada vai; com o teto novo, só ele vai.
+  const form = points.capsFormOf(CONFIG);
+  assert.equal(form.support_message, "5");
+  assert.deepEqual(points.validateCaps(form, CONFIG).changes, {});
+  assert.deepEqual(points.validateCaps({ ...form, support_message: "8" }, CONFIG).changes, { support_message: 8 });
 });

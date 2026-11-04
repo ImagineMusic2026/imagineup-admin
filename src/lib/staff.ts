@@ -17,6 +17,7 @@ export const SECTION_IDS = [
   "missions",
   "rewards",
   "moderation",
+  "support",
   "audit",
 ] as const;
 
@@ -47,6 +48,7 @@ export const SECTIONS: readonly SectionInfo[] = [
   { id: "missions", route: "/missoes", label: "Missões", group: "operation", description: "Missões, conquistas e a régua de pontos." },
   { id: "rewards", route: "/recompensas", label: "Recompensas e resgates", group: "operation", description: "Catálogo de recompensas e pedidos de resgate." },
   { id: "moderation", route: "/moderacao", label: "Moderação", group: "operation", description: "Denúncias, comentários e as ferramentas de cada fã." },
+  { id: "support", route: "/suporte", label: "Suporte", group: "operation", description: "Problemas, sugestões e feedback que os fãs mandam pelos Ajustes do app." },
   { id: "audit", route: "/logs", label: "Logs e auditoria", group: "system", description: "Quem fez o quê no painel, e quando." },
 ];
 

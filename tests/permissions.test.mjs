@@ -30,11 +30,12 @@ const editor = { role: "editor", sections: ["missions", "fans"], status: "active
 const viewer = { role: "viewer", sections: ["audit", "growth"], status: "active" };
 
 test("as seções seguem a ordem e as rotas do contrato", () => {
-  // A `fanClubs` (seção 34, decisão 5) fica ao lado de Fãs e de Artistas, na mesma ordem do servidor.
-  assert.deepEqual(SECTION_IDS, ["overview", "growth", "ranking", "fans", "artists", "fanClubs", "missions", "rewards", "moderation", "audit"]);
+  // A `fanClubs` (seção 34, decisão 5) fica ao lado de Fãs e de Artistas, e a `support` (seção 38) depois da
+  // Moderação e antes dos Logs, na mesma ordem do servidor.
+  assert.deepEqual(SECTION_IDS, ["overview", "growth", "ranking", "fans", "artists", "fanClubs", "missions", "rewards", "moderation", "support", "audit"]);
   assert.deepEqual(
     SECTIONS.map((section) => section.route),
-    ["/", "/crescimento", "/ranking", "/fas", "/artistas", "/fa-clubes", "/missoes", "/recompensas", "/moderacao", "/logs"],
+    ["/", "/crescimento", "/ranking", "/fas", "/artistas", "/fa-clubes", "/missoes", "/recompensas", "/moderacao", "/suporte", "/logs"],
   );
   const fanClubs = SECTIONS.find((section) => section.id === "fanClubs");
   assert.equal(fanClubs.label, "Fã-clubes");
@@ -271,4 +272,32 @@ test("a escuta da equipe: servidor, cache e servidor de novo mantêm o mesmo res
   // Sem documento duas vezes seguidas: o mesmo resultado.
   const missing = { uid: "u1", attempt: 0, kind: "missing" };
   assert.equal(keepSameStaffResult(missing, { ...missing }), missing);
+});
+
+test("o Suporte (seção 38): na Operação, logo depois da Moderação, e o Leitor só lê", () => {
+  const support = SECTIONS.find((section) => section.id === "support");
+  assert.equal(support.label, "Suporte");
+  assert.equal(support.group, "operation");
+  assert.doesNotMatch(support.description, /[\u2013\u2014]/);
+
+  const operation = navGroupsFor(admin).find((group) => group.id === "operation");
+  assert.deepEqual(
+    operation.items.map((item) => item.label),
+    ["Missões", "Recompensas e resgates", "Moderação", "Suporte"],
+  );
+  assert.equal(pageForPathname("/suporte"), "support");
+  assert.equal(pageForPathname("/suporte/"), "support");
+
+  const supportEditor = { role: "editor", sections: ["support"], status: "active" };
+  const supportViewer = { role: "viewer", sections: ["support"], status: "active" };
+  assert.equal(canSeeSection(admin, "support"), true);
+  assert.equal(canEditSection(admin, "support"), true);
+  assert.equal(canSeeSection(supportEditor, "support"), true);
+  assert.equal(canEditSection(supportEditor, "support"), true);
+  assert.equal(canSeeSection(supportViewer, "support"), true);
+  assert.equal(canEditSection(supportViewer, "support"), false);
+  assert.equal(canSeeSection(editor, "support"), false);
+  assert.equal(firstAllowedRoute(supportViewer), "/suporte");
+  assert.equal(sectionsSummary("editor", ["support", "moderation"]), "Moderação e Suporte");
+  assert.deepEqual(parseStaffMember("u3", { role: "editor", status: "active", sections: ["audit", "support", "moderation"] }).sections, ["moderation", "support", "audit"]);
 });

@@ -44,6 +44,8 @@ export const FAN_DATA_PART_LABELS: Record<string, string> = {
   publicacoesDeFaClube: "publicações de fã-clube",
   comentariosDeFaClube: "comentários de fã-clube",
   reacoesDeFaClube: "reações de fã-clube",
+  // O Suporte (seção 38, 38.4): as mensagens que o fã mandou pelos Ajustes.
+  mensagensDeSuporte: "mensagens de suporte",
 };
 
 export function partLabel(part: string): string {
