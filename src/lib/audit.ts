@@ -111,7 +111,7 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "fanClub.post.rejected": { label: "Publicação de fã-clube recusada", section: "fanClubs" },
   "fanClub.post.hidden": { label: "Publicação de fã-clube oculta", section: "fanClubs" },
   "fanClub.post.restored": { label: "Publicação de fã-clube reexibida", section: "fanClubs" },
-  "fanClub.post.checked": { label: "Publicação conferida", section: "fanClubs" },
+  "fanClub.post.checked": { label: "Publicação de fã-clube conferida", section: "fanClubs" },
   "fanClub.report.resolved": { label: "Denúncia de publicação de fã-clube resolvida", section: "fanClubs" },
   "fanClub.comment.kept": { label: "Comentário de fã-clube mantido", section: "fanClubs" },
   "fanClub.comment.hidden": { label: "Comentário de fã-clube ocultado", section: "fanClubs" },

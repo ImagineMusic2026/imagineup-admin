@@ -181,7 +181,7 @@ test("os erros: o not-official com a frase do servidor, e as recusas que tiram o
 test("os Logs: as três ações novas com o rótulo, o alvo principal e os details de sempre, sem linha", () => {
   assert.equal(audit.AUDIT_ACTIONS["fanClub.directPosts.allowed"].label, "Publicação sem revisão ligada");
   assert.equal(audit.AUDIT_ACTIONS["fanClub.directPosts.revoked"].label, "Publicação sem revisão tirada");
-  assert.equal(audit.AUDIT_ACTIONS["fanClub.post.checked"].label, "Publicação conferida");
+  assert.equal(audit.AUDIT_ACTIONS["fanClub.post.checked"].label, "Publicação de fã-clube conferida");
   for (const action of ["fanClub.directPosts.allowed", "fanClub.directPosts.revoked", "fanClub.post.checked"]) {
     assert.equal(audit.AUDIT_ACTIONS[action].section, "fanClubs", action);
     assert.doesNotMatch(audit.AUDIT_ACTIONS[action].label, DASHES, action);
