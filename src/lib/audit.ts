@@ -2,6 +2,7 @@ import { CLOSE_REASON_LABELS, POST_REJECT_REASON_LABELS, REJECT_REASON_LABELS, R
 import { countLabel, formatDay, joinPt } from "@/lib/format";
 import { PROFILE_RESOLUTION_LABELS, type ProfileResolution } from "@/lib/moderation";
 import { ROLES, SECTION_IDS, isRole, isSectionId, sectionInfo, toDate, type SectionId } from "@/lib/staff";
+import { isSupportKind, supportKindLabel } from "@/lib/support";
 
 /**
  * Logs e auditoria (26.8 e 26.16), puro: os rótulos das ações, as seções, os
@@ -111,6 +112,9 @@ export const AUDIT_ACTIONS: Record<string, AuditActionInfo> = {
   "fanClub.comment.kept": { label: "Comentário de fã-clube mantido", section: "fanClubs" },
   "fanClub.comment.hidden": { label: "Comentário de fã-clube ocultado", section: "fanClubs" },
   "fanClub.comment.restored": { label: "Comentário de fã-clube reexibido", section: "fanClubs" },
+  // O Suporte (seção 38, 38.3): resolver e reabrir uma mensagem que o fã mandou pelos Ajustes.
+  "support.message.resolved": { label: "Mensagem de suporte resolvida", section: "support" },
+  "support.message.reopened": { label: "Mensagem de suporte reaberta", section: "support" },
 };
 
 /** As seções do filtro, na ordem: Equipe e as do painel, mais "Outros". */
@@ -190,6 +194,7 @@ export const TARGET_TYPES = [
   "fanClub",
   "fanClubPost",
   "fanClubComment",
+  "supportMessage",
   "post",
   "event",
   "comment",
@@ -209,6 +214,7 @@ export const TARGET_LABELS: Record<TargetType, string> = {
   fanClub: "Fã-clube",
   fanClubPost: "Publicação de fã-clube",
   fanClubComment: "Comentário de fã-clube",
+  supportMessage: "Mensagem de suporte",
   post: "Post",
   event: "Show",
   comment: "Comentário",
@@ -251,7 +257,7 @@ export function normalizeTargetId(type: TargetType, text: string): string {
   return value;
 }
 
-const TARGET_ORDER: TargetType[] = ["fan", "redemption", "reward", "comment", "post", "event", "fanClubComment", "fanClubPost", "fanClub", "artist", "mission", "achievement", "season", "invite", "staff"];
+const TARGET_ORDER: TargetType[] = ["fan", "redemption", "reward", "comment", "post", "event", "fanClubComment", "fanClubPost", "fanClub", "supportMessage", "artist", "mission", "achievement", "season", "invite", "staff"];
 
 /** Nas ações do fã-clube (34.8), o fã-clube vem antes do gestor (`fan`) e da central. */
 const FAN_CLUB_TARGET_ORDER: TargetType[] = ["fanClub", ...TARGET_ORDER.filter((type) => type !== "fanClub")];
@@ -262,6 +268,9 @@ const FAN_CLUB_POST_TARGET_ORDER: TargetType[] = ["fanClubPost", "fanClub", ...T
 /** Nas do comentário (37.8), o comentário vem primeiro, e não a publicação nem o autor. */
 const FAN_CLUB_COMMENT_TARGET_ORDER: TargetType[] = ["fanClubComment", "fanClubPost", "fanClub", ...TARGET_ORDER.filter((type) => type !== "fanClub" && type !== "fanClubPost" && type !== "fanClubComment")];
 
+/** Nas do Suporte (38.3), a mensagem vem primeiro, e o fã que mandou (`fan`, do `fanUid`) logo depois. */
+const SUPPORT_TARGET_ORDER: TargetType[] = ["supportMessage", ...TARGET_ORDER.filter((type) => type !== "supportMessage")];
+
 /** O alvo principal de uma entrada, para a coluna "Alvo", e quantos mais há. */
 export function primaryTarget(
   entry: Pick<AuditEntry, "targets" | "targetEmail" | "targetUid"> & { action?: string },
@@ -270,13 +279,15 @@ export function primaryTarget(
     return { target: entry.targetUid ? { type: "staff", id: entry.targetUid } : null, email: entry.targetEmail, more: Math.max(0, entry.targets.length - 1) };
   }
   const action = entry.action ?? "";
-  const order = action.startsWith("fanClub.comment.")
-    ? FAN_CLUB_COMMENT_TARGET_ORDER
-    : action.startsWith("fanClub.post.") || action === "fanClub.report.resolved"
-      ? FAN_CLUB_POST_TARGET_ORDER
-      : action.startsWith("fanClub.")
-        ? FAN_CLUB_TARGET_ORDER
-        : TARGET_ORDER;
+  const order = action.startsWith("support.")
+    ? SUPPORT_TARGET_ORDER
+    : action.startsWith("fanClub.comment.")
+      ? FAN_CLUB_COMMENT_TARGET_ORDER
+      : action.startsWith("fanClub.post.") || action === "fanClub.report.resolved"
+        ? FAN_CLUB_POST_TARGET_ORDER
+        : action.startsWith("fanClub.")
+          ? FAN_CLUB_TARGET_ORDER
+          : TARGET_ORDER;
   const parsed = entry.targets.map(parseTarget);
   for (const type of order) {
     const found = parsed.find((target) => target.type === type);
@@ -527,6 +538,7 @@ const SKIPPED = new Set([
   "fanClubPostId",
   "fanClubCommentId",
   "grantId",
+  "supportMessageId",
 ]);
 
 /**
@@ -611,6 +623,12 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
     const hidden = take("postHidden");
     if (hidden === true) lines.push("A publicação saiu do ar com esta decisão");
     if (hidden === false && resolution === "actioned") lines.push("A publicação já não estava no ar");
+  }
+
+  // O Suporte (38.3): o tipo da mensagem por extenso; a mensagem e o fã já são alvos, e o texto nunca vem.
+  if (entry.action.startsWith("support.")) {
+    const kind = take("kind");
+    if (typeof kind === "string") lines.push(`Tipo: ${isSupportKind(kind) ? supportKindLabel(kind) : kind}`);
   }
 
   const reason = take("reason");

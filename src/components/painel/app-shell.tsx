@@ -5,6 +5,7 @@ import {
   Gift,
   HeartHandshake,
   LayoutGrid,
+  LifeBuoy,
   LogOut,
   Menu,
   Music,
@@ -39,6 +40,7 @@ const ICONS: Record<NavItem["key"], LucideIcon> = {
   missions: Target,
   rewards: Gift,
   moderation: Shield,
+  support: LifeBuoy,
   audit: FileText,
   team: UserCog,
 };

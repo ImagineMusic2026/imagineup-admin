@@ -256,6 +256,24 @@ function TargetCell({ entry, member, names }: { entry: AuditEntry; member: Staff
       </span>
     );
   }
+  if (target.type === "supportMessage") {
+    // A mensagem não tem página própria: o atalho vai à seção Suporte.
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate">
+          {TARGET_LABELS.supportMessage} <span className="font-mono text-[12px] text-fg/75">{target.id}</span>
+          {extra}
+        </span>
+        {canSeeSection(member, "support") ? (
+          <span className="relative z-10 flex flex-wrap gap-x-3 text-[12.5px]">
+            <Link href="/suporte" className="font-semibold text-cyan underline-offset-2 hover:underline">
+              Suporte
+            </Link>
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   if (target.type === "fan") {
     const seesFans = canSeeSection(member, "fans");
     const seesModeration = canSeeSection(member, "moderation");

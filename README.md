@@ -74,7 +74,7 @@ imagineup-admin/
     (painel)/                  tudo que fica atrás do login
       layout.tsx               AuthProvider, StaffProvider, guard e casca
       page.tsx                 Visão geral (/)
-      crescimento/ ranking/ fas/ artistas/ fa-clubes/ missoes/ recompensas/ moderacao/ logs/
+      crescimento/ ranking/ fas/ artistas/ fa-clubes/ missoes/ recompensas/ moderacao/ suporte/ logs/
       equipe/                  equipe e convites (só admin)
   src/components/
     ui/                        botão, campos (texto, lista, interruptor), avisos, diálogo,
@@ -102,6 +102,7 @@ imagineup-admin/
                                equipe" da Visão geral
     recompensas/               pedidos (com os contatos), catálogo e números
     moderacao/                 fila, resolvidos, ocultos, suspensos e a página do fã
+    suporte/                   as mensagens dos fãs (Abertas e Resolvidas), com o filtro de tipo
     logs/                      auditoria com os filtros e os detalhes
   src/lib/
     firebase.ts                inicialização preguiçosa e emuladores
@@ -145,6 +146,7 @@ imagineup-admin/
                                as fotos da publicação oculta lidas pelo caminho
     rewards.ts reward-data.ts reward-api.ts        Recompensas e resgates
     moderation.ts moderation-data.ts               a Moderação (puro e leituras)
+    support.ts support-data.ts support-api.ts      o Suporte: tipos, aparelho, consultas, perfis e a callable
     posts.ts post-data.ts post-api.ts post-media.ts   o Mural (o vídeo e a capa no navegador)
     events.ts event-data.ts event-api.ts           a Agenda (fusos e UFs copiados do servidor)
   tests/                       testes com node:test; fakes/firestore.mjs é o dublê das leituras
@@ -185,6 +187,7 @@ O contrato das telas novas é a seção 26 de `imagineup-app/docs/arquitetura-ap
 - **Recompensas e resgates** (`/recompensas`): pedidos por situação com a busca pelo código e os contatos (com o WhatsApp e o link da conversa; nos pedidos de prêmio de fã-clube, também o Instagram); o catálogo com foto, estoque e ordem, e embaixo as recompensas "Só para prêmios de fã-clube"; os números do período, com a coluna Prêmios.
 - **Moderação** (`/moderacao` e `/moderacao/fas/[uid]`): a fila, os resolvidos, os ocultos e os suspensos; na página do fã, suspender, ocultar em lote, trocar o @ e tirar a foto.
 - **Fã-clubes** (`/fa-clubes`, `/fa-clubes/candidaturas/[uid]` e `/fa-clubes/[id]`): as candidaturas, com Aprovar e Recusar na ficha; os fã-clubes com as colunas dos números e o selo de oficial ao lado do nome, com Pausar, Reativar, Destacar e Recompensar na ficha e, só para admin, Encerrar, Oficializar e Tirar a oficialização; as publicações para revisar; as denúncias; e os comentários. O `?aba=` do endereço abre uma aba (`publicacoes`, `denuncias`, `comentarios`). Detalhes em "Fã-clubes", abaixo.
+- **Suporte** (`/suporte`): o que os fãs mandam pelos Ajustes do app (problema, sugestão e feedback), nas abas Abertas e Resolvidas, com o filtro de tipo; Marcar como resolvida e Reabrir. Detalhes em "Suporte", abaixo.
 - **Logs e auditoria** (`/logs`): as entradas com os filtros por período, seção, pessoa, ação e alvo, e os detalhes de cada uma. O `?alvo=` do endereço (`/logs?alvo=fanClub:<id>`, o "Abrir nos Logs" de uma ficha) abre já filtrado pelo alvo, no período inteiro.
 - **Artistas** (`/artistas`, `/artistas/mural`, `/artistas/agenda`): as centrais; o mural com a mídia e os comentários; a agenda com o fuso de cada show.
 
@@ -233,6 +236,18 @@ O fã-clube gerido pelo fã é a seção 34 de `imagineup-app/docs/arquitetura-a
 - **Ordem.** O merge do painel vem depois da publicação do servidor do fã-clube (34.15, passos 5 e 7): antes dela, a seção, as coleções e a `decideFanClub` não existem no ar. Uma recompensa `prize` só nasce pelo painel novo: o de antes a leria como rascunho (34.19).
 - **Missões e régua** (a Fase 2, 37.5). As origens `fanclub_like` e `fanclub_comment` nascem em 0, valem só no fã-clube e não contam nas missões. O `config/points` de produção não tem as chaves: o painel mostra o padrão do servidor (0, os limites 50 e 20 pelo `DEFAULT_DAILY_LIMITS` e os tetos 300 e 100), e não "Sem limite", e manda só o que mudou.
 - **Ordem da Fase 2.** O merge entra no passo 7 de 37.14, depois das regras, dos índices e das 69 funções no ar: sem eles, as leituras das coleções novas são negadas, a `decideFanClub` não conhece o assunto `comment`, o `updatePointsConfig` recusa as origens e os tetos novos e o `hideFanComments` não oculta os comentários dos fã-clubes que a Moderação passa a contar.
+
+## Suporte
+
+O Suporte dos Ajustes é a seção 38 de `imagineup-app/docs/arquitetura-api.md` (aprovado pelo dono em 03/11/2026): o fã manda "Reportar problema", "Sugerir funcionalidade" ou "Feedback geral" pelo `POST /me/support` da `api`, que grava em `supportMessages/{id}`, e a equipe lê aqui. Onde o código do servidor e esta nota divergem, vale o código.
+
+- **Quem mexe.** A seção `support` (Suporte, grupo Operação, logo depois da Moderação). O admin vê sempre; o editor e o Leitor só com a seção liberada. Admin e editor com a seção marcam como resolvida e reabrem; o Leitor vê tudo, sem os botões (o servidor responde `no-section` à edição dele).
+- **A lista.** As abas Abertas (da mais nova, pelo `createdAt`) e Resolvidas (da resolução mais nova, pelo `resolvedAt`), com o filtro de tipo (Todos, Problema, Sugestão, Feedback) como mais um `==` no `kind`: as quatro consultas são os quatro índices compostos da seção 38. Páginas de 20 com "Carregar mais" e o "Atualizar"; o cabeçalho conta as abertas de todos os tipos (um `count()` só com o `==` do status).
+- **O card.** O tipo, a data e a hora de São Paulo, o texto inteiro como texto (as quebras de linha mantidas com `white-space: pre-wrap`, nunca como HTML) e, no problema, a linha do aparelho ("Android 14 · app 0.1.0 · update 01a1a459", sem os campos `null`; sem nada, "Aparelho não informado"). Nas resolvidas, quem resolveu e quando. O nome, o @ e a foto de quem mandou não ficam na mensagem: o card lê `users/{uid}` ao vivo, um `get` por fã (a regra dá à seção o `get`, nunca a lista), guardado enquanto a tela está aberta e lido de novo no "Atualizar"; sem o perfil, "Conta não encontrada". O "Abrir a ficha" (`/fas/[uid]`) só aparece para quem vê a seção Fãs.
+- **As ações.** "Marcar como resolvida" e "Reabrir" chamam a `resolveSupportMessage` (`{ id, action: 'resolve' | 'reopen' }`) depois da confirmação. Deu certo, a mensagem sai da aba na hora, como na fila da Moderação, e a contagem é lida de novo. A mensagem que já estava no estado pedido responde `ok` sem gravar, então a falha incerta oferece "Tentar de novo" e a lista é lida de novo quando o diálogo fecha. A recusa aparece no diálogo com a frase do servidor; o `message-not-found` ("Essa mensagem não existe mais.", a conta saiu, por exemplo) também tira o card da lista e desliga o botão de confirmar.
+- **Logs.** As ações `support.message.resolved` ("Mensagem de suporte resolvida") e `support.message.reopened` ("Mensagem de suporte reaberta"), na seção Suporte do filtro, com o tipo da mensagem por extenso nos detalhes (o texto nunca vai à auditoria). Os alvos são a mensagem (`supportMessage`, "Mensagem de suporte", a principal, com o atalho para `/suporte` para quem vê a seção) e o fã (`fan`, do `fanUid`).
+- **Régua e pedido de dados.** O teto do dia `support_message` ("Mensagens de suporte", padrão 5 somando os três tipos) entra no fim dos tetos da régua, e a parte `mensagensDeSuporte` ("mensagens de suporte") no progresso da exportação dos dados do fã.
+- **Ordem.** O merge do painel vem depois da publicação do servidor da seção 38 (regras, índices e a `resolveSupportMessage`, a 70ª função): antes dela, a seção `support` não existe no `staff/model.ts`, a leitura de `supportMessages` e do perfil é negada e a callable não existe.
 
 ## Publicação (Vercel)
 

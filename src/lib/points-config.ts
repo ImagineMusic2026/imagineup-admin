@@ -64,6 +64,7 @@ export const ACTION_CAP_KEYS = [
   "fanclub_follow",
   "fanclub_reaction_set",
   "fanclub_comment_sent",
+  "support_message",
 ] as const;
 export type ActionCapKey = (typeof ACTION_CAP_KEYS)[number];
 
@@ -87,12 +88,14 @@ export const ACTION_CAP_LABELS: Record<ActionCapKey, string> = {
   fanclub_follow: "Seguir fã-clubes",
   fanclub_reaction_set: "Reações no fã-clube",
   fanclub_comment_sent: "Comentários no fã-clube",
+  support_message: "Mensagens de suporte",
 };
 
 /**
  * O padrão de cada teto no servidor (`DEFAULT_ACTION_CAPS`, 22.3, 27.4 e
- * 28.3, os do fã-clube da 34.1, decisões 11 e 34, e os da Fase 2, 37.5: dar e
- * trocar de reação e comentar no fã-clube): vale quando o documento
+ * 28.3, os do fã-clube da 34.1, decisões 11 e 34, os da Fase 2, 37.5: dar e
+ * trocar de reação e comentar no fã-clube, e o do Suporte, seção 38: as
+ * mensagens dos Ajustes, somando os três tipos): vale quando o documento
  * gravado não tem a chave, ou tem um valor fora da regra, como o servidor faz
  * ao ler. Sem isso a chave ausente viraria 0, e o bloco inteiro dos tetos
  * deixaria de salvar.
@@ -117,6 +120,7 @@ export const DEFAULT_ACTION_CAPS: Record<ActionCapKey, number> = {
   fanclub_follow: 30,
   fanclub_reaction_set: 300,
   fanclub_comment_sent: 100,
+  support_message: 5,
 };
 
 export const VALUE_MAX = 10_000;

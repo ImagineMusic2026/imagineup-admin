@@ -14,7 +14,7 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 85);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 87);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
@@ -259,4 +259,43 @@ test("o details por extenso", () => {
     "Denúncias na rodada: 1",
     "Rodada: 1",
   ]);
+});
+
+test("o Suporte nos Logs (38.3): as duas ações, a mensagem e o fã como alvos, e o tipo por extenso", () => {
+  assert.deepEqual(audit.actionsOfSection("support"), ["support.message.resolved", "support.message.reopened"]);
+  assert.equal(audit.AUDIT_ACTIONS["support.message.resolved"].label, "Mensagem de suporte resolvida");
+  assert.equal(audit.AUDIT_ACTIONS["support.message.reopened"].label, "Mensagem de suporte reaberta");
+  assert.equal(audit.auditSectionLabel("support"), "Suporte");
+  // A seção entra no filtro depois da Moderação e antes dos Logs.
+  const sections = audit.AUDIT_SECTIONS;
+  assert.equal(sections.indexOf("support"), sections.indexOf("moderation") + 1);
+  assert.equal(sections.indexOf("audit"), sections.indexOf("support") + 1);
+
+  assert.ok(audit.isTargetType("supportMessage"));
+  assert.equal(audit.TARGET_LABELS.supportMessage, "Mensagem de suporte");
+  assert.deepEqual(audit.parseTarget("supportMessage:m1"), { type: "supportMessage", id: "m1" });
+  assert.equal(audit.normalizeTargetId("supportMessage", " m1 "), "m1");
+  assert.deepEqual(audit.filtersFromLink("supportMessage:m1"), { ...audit.EMPTY_FILTERS, period: "all", target: "supportMessage:m1" });
+
+  // A entrada como o servidor grava: `targetUid` null, a mensagem e o fã pelos campos do `details`.
+  const entry = audit.parseAuditEntry("s1", {
+    action: "support.message.resolved",
+    actorUid: "staff1",
+    actorName: "Camila",
+    targetEmail: "",
+    targetUid: null,
+    section: "support",
+    targets: ["supportMessage:m1", "fan:uidRenata"],
+    details: { supportMessageId: "m1", fanUid: "uidRenata", kind: "problem" },
+  });
+  assert.equal(entry.section, "support");
+  assert.deepEqual(audit.primaryTarget(entry), { target: { type: "supportMessage", id: "m1" }, email: null, more: 1 });
+  // Mesmo com o fã antes na lista, a mensagem é o alvo principal.
+  assert.deepEqual(audit.primaryTarget({ ...entry, targets: ["fan:uidRenata", "supportMessage:m1"] }).target, { type: "supportMessage", id: "m1" });
+  assert.equal(audit.actionLabel(entry), "Mensagem de suporte resolvida");
+  assert.deepEqual(audit.detailLines(entry), ["Tipo: Problema"]);
+  assert.deepEqual(audit.detailLines({ action: "support.message.reopened", details: { supportMessageId: "m2", fanUid: "u1", kind: "idea" } }), ["Tipo: Sugestão"]);
+  assert.deepEqual(audit.detailLines({ action: "support.message.reopened", details: { supportMessageId: "m3", fanUid: "u1", kind: "feedback" } }), ["Tipo: Feedback"]);
+  // O tipo que o painel não conhece aparece cru, e nada vira "tipo: problem".
+  assert.deepEqual(audit.detailLines({ action: "support.message.resolved", details: { supportMessageId: "m4", kind: "outro" } }), ["Tipo: outro"]);
 });
