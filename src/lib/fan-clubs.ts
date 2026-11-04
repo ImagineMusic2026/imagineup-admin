@@ -17,7 +17,9 @@ import { isWhatsapp } from "@/lib/whatsapp";
  * 34.22): a candidatura, o fã-clube (com o Destaque e o Recompensar), a
  * publicação e a denúncia. Desde a Fase 2 (seção 37), também o comentário:
  * as reações e os comentários das publicações, os marcados, a fila dos
- * comentários, o registro do ocultar do gestor e a taxa de engajamento.
+ * comentários, o registro do ocultar do gestor e a taxa de engajamento. Desde
+ * 34.25, a publicação sem revisão do fã-clube oficial: a chave do admin, a
+ * publicação que vai ao ar na hora (`direct`) e o "Conferida" da equipe.
  */
 
 /** Tamanho das páginas das listas da seção (o "Carregar mais"). */
@@ -430,6 +432,15 @@ export interface FanClub {
   official: boolean;
   officialAt: Date | null;
   officialBy: { uid: string; name: string } | null;
+  /**
+   * A publicação sem revisão (34.25): as publicações do gestor vão ao ar na
+   * hora, e a equipe confere depois. Só o admin liga, e só no oficial; vale só
+   * com o selo, como o servidor lê. A pausa mantém; tirar o selo, encerrar e a
+   * lápide tiram.
+   */
+  directPosts: boolean;
+  directPostsAt: Date | null;
+  directPostsBy: { uid: string; name: string } | null;
 }
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -461,7 +472,8 @@ function lastRewardOf(value: unknown): LastReward | null {
 
 /**
  * O fã-clube lido. O status estranho vale `closed` (nada a pausar nem
- * reativar), e o documento sem o `official` vale sem o selo, como no servidor.
+ * reativar), o documento sem o `official` vale sem o selo, e a chave da
+ * publicação sem revisão só vale com o selo (o `fanClubRecord` do servidor).
  */
 export function parseFanClub(id: string, data: Record<string, unknown>): FanClub {
   return {
@@ -496,6 +508,9 @@ export function parseFanClub(id: string, data: Record<string, unknown>): FanClub
     official: data.official === true,
     officialAt: toDate(data.officialAt),
     officialBy: personOf(data.officialBy),
+    directPosts: data.official === true && data.directPosts === true,
+    directPostsAt: toDate(data.directPostsAt),
+    directPostsBy: personOf(data.directPostsBy),
   };
 }
 
@@ -518,17 +533,18 @@ export function fanClubStatusText(club: Pick<FanClub, "status" | "statusReason">
   return `${label} ${STATUS_REASON_LABELS[club.statusReason]}`;
 }
 
-export type ClubDecision = "pause" | "resume" | "close" | "officialize" | "unofficialize";
+export type ClubDecision = "pause" | "resume" | "close" | "officialize" | "unofficialize" | "allowDirectPosts" | "revokeDirectPosts";
 
 /**
- * As decisões que cabem no fã-clube agora (34.5 e 34.23): pausar o ativo,
- * reativar o pausado (o servidor recusa o gestor suspenso e o artista
- * fechado), encerrar o ativo ou o pausado, oficializar o ativo sem o selo e
- * tirar o selo em qualquer status; as três últimas, só o admin
+ * As decisões que cabem no fã-clube agora (34.5, 34.23 e 34.25): pausar o
+ * ativo, reativar o pausado (o servidor recusa o gestor suspenso e o artista
+ * fechado), encerrar o ativo ou o pausado, oficializar o ativo sem o selo,
+ * tirar o selo em qualquer status, ligar a publicação sem revisão no ativo e
+ * oficial e tirá-la em qualquer status; as cinco últimas, só o admin
  * (`admin-only`). O gestor da equipe não decide o próprio fã-clube (`self`),
  * nem o Leitor.
  */
-export function clubDecisions(club: Pick<FanClub, "status" | "ownerUid" | "official">, viewer: { uid: string; canEdit: boolean; admin: boolean }): ClubDecision[] {
+export function clubDecisions(club: Pick<FanClub, "status" | "ownerUid" | "official" | "directPosts">, viewer: { uid: string; canEdit: boolean; admin: boolean }): ClubDecision[] {
   if (!viewer.canEdit || (club.ownerUid !== null && club.ownerUid === viewer.uid)) return [];
   const decisions: ClubDecision[] = [];
   if (club.status === "active") decisions.push("pause");
@@ -536,6 +552,8 @@ export function clubDecisions(club: Pick<FanClub, "status" | "ownerUid" | "offic
   if (club.status !== "closed" && viewer.admin) decisions.push("close");
   if (club.status === "active" && !club.official && viewer.admin) decisions.push("officialize");
   if (club.official && viewer.admin) decisions.push("unofficialize");
+  if (club.status === "active" && club.official && !club.directPosts && viewer.admin) decisions.push("allowDirectPosts");
+  if (club.directPosts && viewer.admin) decisions.push("revokeDirectPosts");
   return decisions;
 }
 
@@ -544,11 +562,34 @@ export const RESUME_TEXT = "O fã-clube volta ao app para os fãs. O servidor re
 
 export const OFFICIALIZE_TEXT = "O fã-clube ganha o selo de oficial ao lado do nome em todas as telas do app. Combine com o artista antes: o selo fala em nome dele e da Imagine.";
 
-/** O texto da confirmação de tirar o selo, pelo status: só o ativo está no ar para os fãs. */
-export function unofficializeText(status: FanClubStatus): string {
-  if (status === "active") return "O selo sai do app na hora. O fã-clube continua no ar.";
-  if (status === "paused") return "O fã-clube fica sem o selo e, quando for reativado, volta ao app sem ele.";
-  return "O fã-clube fica sem o selo.";
+/**
+ * O texto da confirmação de tirar o selo, pelo status: só o ativo está no ar
+ * para os fãs. Com a publicação sem revisão ligada, ela sai junto (o
+ * `OFFICIAL_OFF` do servidor leva a chave).
+ */
+export function unofficializeText(status: FanClubStatus, directPosts = false): string {
+  const base =
+    status === "active"
+      ? "O selo sai do app na hora. O fã-clube continua no ar."
+      : status === "paused"
+        ? "O fã-clube fica sem o selo e, quando for reativado, volta ao app sem ele."
+        : "O fã-clube fica sem o selo.";
+  return directPosts ? `${base} A publicação sem revisão sai junto, e as próximas publicações do gestor voltam a passar pela revisão.` : base;
+}
+
+/** A confirmação de ligar a publicação sem revisão (34.25): vai ao ar na hora, com a foto, e a equipe confere depois. */
+export const ALLOW_DIRECT_POSTS_TEXT =
+  "As publicações do gestor vão ao ar na hora, com a foto, sem a revisão antes. A equipe confere depois, na aba Publicadas sem revisão. Ligue só para um gestor combinado com o artista.";
+
+/** A confirmação de tirar a publicação sem revisão: o que já foi ao ar fica. */
+export const REVOKE_DIRECT_POSTS_TEXT =
+  "As próximas publicações do gestor voltam a passar pela revisão antes de ir ao ar. O que já foi ao ar fica, e o que ainda não foi conferido continua na aba Publicadas sem revisão.";
+
+/** "Publica sem revisão desde 4 nov, por Iara" (34.25); sem a chave valendo, `null`. */
+export function directPostsText(club: Pick<FanClub, "directPosts" | "directPostsAt" | "directPostsBy">, now: Date): string | null {
+  if (!club.directPosts) return null;
+  const since = club.directPostsAt ? ` desde ${formatDay(club.directPostsAt, now)}` : "";
+  return `Publica sem revisão${since}${club.directPostsBy?.name ? `, por ${club.directPostsBy.name}` : ""}`;
 }
 
 const GRAPHEMES = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("pt-BR", { granularity: "grapheme" }) : null;
@@ -584,14 +625,16 @@ export function isStaleDecision(failure: unknown): boolean {
 }
 
 /**
- * As recusas da ficha que tiram o botão de confirmar: o `stale-decision` e o
- * `admin-only`, quando a pessoa deixa de ser admin com o Encerrar ou o selo
- * aberto (o papel chega em tempo real, e só essas três decisões recebem essa
- * recusa). Outra tentativa repetiria a mesma frase.
+ * As recusas da ficha que tiram o botão de confirmar: o `stale-decision`; o
+ * `admin-only`, quando a pessoa deixa de ser admin com o Encerrar, o selo ou a
+ * publicação sem revisão aberto (o papel chega em tempo real, e só essas
+ * decisões recebem essa recusa); e o `not-official`, o selo que saiu enquanto
+ * a confirmação de ligar a publicação sem revisão estava aberta. Outra
+ * tentativa repetiria a mesma frase.
  */
 export function blocksDecisionRetry(failure: unknown): boolean {
   const reason = readError(failure).reason;
-  return reason === "stale-decision" || reason === "admin-only";
+  return reason === "stale-decision" || reason === "admin-only" || reason === "not-official";
 }
 
 // ---------------------------------------------------------------------------
@@ -735,6 +778,12 @@ export interface FanClubPost {
   publishedAt: Date | null;
   reviewedAt: Date | null;
   reviewedBy: { uid: string; name: string } | null;
+  /**
+   * Foi ao ar sem a revisão antes (34.25): até a equipe conferir, fica no ar
+   * com o `reviewedAt` nulo, na aba "Publicadas sem revisão". A de antes e a
+   * que passou pela revisão valem `false` (o campo ausente também).
+   */
+  direct: boolean;
   /** As reações e os comentários que aparecem aos fãs (37.2); a publicação de antes da Fase 2 e a em análise não têm, e valem 0. */
   reactionCount: number;
   reactionCounts: Record<Reaction, number>;
@@ -810,6 +859,7 @@ export function parsePost(id: string, data: Record<string, unknown>): FanClubPos
     publishedAt: toDate(data.publishedAt),
     reviewedAt: toDate(data.reviewedAt),
     reviewedBy: personOf(data.reviewedBy),
+    direct: data.direct === true,
     reactionCount: countOf(data.reactionCount),
     reactionCounts: reactionCountsOf(data.reactionCounts),
     commentCount: countOf(data.commentCount),
@@ -846,19 +896,38 @@ export function authorLabel(post: Pick<FanClubPost, "authorName" | "authorUserna
   return post.authorName ?? (post.authorUsername ? `@${post.authorUsername}` : "Gestor sem nome");
 }
 
-export type PostDecision = "approve" | "reject" | "hide" | "restore";
+export type PostDecision = "approve" | "reject" | "hide" | "restore" | "check";
 
 /**
- * As decisões que cabem na publicação agora (34.5): aprovar e recusar a em
- * análise (a fila de revisão), ocultar a no ar e reexibir a oculta. O autor
- * não decide a própria (`self`), nem o Leitor.
+ * A publicação foi ao ar sem revisão e a equipe ainda não conferiu (34.25):
+ * a marca "Sem revisão". O Conferida e o Ocultar gravam o `reviewedAt`.
  */
-export function postDecisions(post: Pick<FanClubPost, "status" | "authorUid">, viewer: { uid: string; canEdit: boolean }): PostDecision[] {
+export function awaitsCheck(post: Pick<FanClubPost, "direct" | "reviewedAt">): boolean {
+  return post.direct && post.reviewedAt === null;
+}
+
+/**
+ * As decisões que cabem na publicação agora (34.5 e 34.25): aprovar e recusar
+ * a em análise (a fila de revisão), ocultar a no ar, reexibir a oculta e
+ * marcar como conferida a que foi ao ar sem revisão e ainda espera a equipe.
+ * O autor não decide a própria (`self`), nem o Leitor.
+ */
+export function postDecisions(post: Pick<FanClubPost, "status" | "authorUid" | "direct" | "reviewedAt">, viewer: { uid: string; canEdit: boolean }): PostDecision[] {
   if (!viewer.canEdit || post.authorUid === viewer.uid) return [];
   if (post.status === "pending") return ["approve", "reject"];
-  if (post.status === "published") return ["hide"];
+  if (post.status === "published") return awaitsCheck(post) ? ["check", "hide"] : ["hide"];
   if (post.status === "hidden") return ["restore"];
   return [];
+}
+
+/**
+ * Quem decidiu, na linha da publicação: "Conferida por Iara" na que foi ao ar
+ * sem revisão e segue no ar (o Conferida, ou o Ocultar e o Reexibir depois);
+ * "Decidida por Iara" no resto. Sem decisão, ou na em análise, `null`.
+ */
+export function reviewedText(post: Pick<FanClubPost, "status" | "direct" | "reviewedBy">): string | null {
+  if (!post.reviewedBy?.name || post.status === "pending") return null;
+  return `${post.direct && post.status === "published" ? "Conferida" : "Decidida"} por ${post.reviewedBy.name}`;
 }
 
 /**
@@ -887,6 +956,30 @@ export function pendingPostsCountText(total: number): string {
 export const APPROVE_POST_TEXT = "A publicação vai ao ar na página do fã-clube e na Início de quem segue.";
 export const HIDE_POST_TEXT = "A publicação sai do app para todos, e as fotos deixam de abrir pelo endereço antigo. A equipe continua vendo as fotos aqui. Dá para reexibir depois.";
 export const RESTORE_POST_TEXT = "A publicação volta ao app, no lugar dela na lista do fã-clube.";
+
+// ---------------------------------------------------------------------------
+// Publicadas sem revisão (34.25)
+// ---------------------------------------------------------------------------
+
+/** "2 publicações sem revisão": as que foram ao ar sem revisão e esperam o Conferida. */
+export function directPostsCountText(total: number): string {
+  return countLabel(total, "publicação sem revisão", "publicações sem revisão");
+}
+
+export const CHECK_POST_TEXT = "A publicação continua no ar e sai da aba Publicadas sem revisão. Nada muda para os fãs nem para o gestor.";
+export const HIDE_DIRECT_POST_TEXT =
+  "A publicação sai do app para todos e desta aba, e as fotos deixam de abrir pelo endereço antigo. A equipe continua vendo as fotos na ficha do fã-clube, onde dá para reexibir depois.";
+
+/**
+ * A recusa que tira a publicação da aba "Publicadas sem revisão" e o botão de
+ * confirmar: o status mudou desde a leitura (`stale-decision`; o gestor tirou
+ * do ar, ou alguém ocultou) ou a publicação saiu (`fan-club-post-not-found`).
+ * Outra tentativa repetiria a mesma frase.
+ */
+export function isPostGone(failure: unknown): boolean {
+  const reason = readError(failure).reason;
+  return reason === "stale-decision" || reason === "fan-club-post-not-found";
+}
 
 // ---------------------------------------------------------------------------
 // Denúncias (decisão 18)
@@ -1794,20 +1887,21 @@ export function followerSignals(follower: Pick<FanClubFollower, "newAccount" | "
 
 /**
  * O que espera a equipe: as candidaturas e as publicações em análise, as
- * denúncias abertas e, desde a Fase 2, os itens abertos da fila dos
- * comentários pelo tipo (o aberto por denúncia que recebeu o pedido depois
- * continua denúncia).
+ * publicadas sem revisão que esperam o Conferida (34.25), as denúncias
+ * abertas e, desde a Fase 2, os itens abertos da fila dos comentários pelo
+ * tipo (o aberto por denúncia que recebeu o pedido depois continua denúncia).
  */
 export interface WaitingCounts {
   applications: number;
   posts: number;
+  directPosts: number;
   reports: number;
   commentReports: number;
   commentReviews: number;
 }
 
 /** Os zeros de quem não vê a seção. */
-export const NO_WAITING: WaitingCounts = { applications: 0, posts: 0, reports: 0, commentReports: 0, commentReviews: 0 };
+export const NO_WAITING: WaitingCounts = { applications: 0, posts: 0, directPosts: 0, reports: 0, commentReports: 0, commentReviews: 0 };
 
 // ---------------------------------------------------------------------------
 // Logs

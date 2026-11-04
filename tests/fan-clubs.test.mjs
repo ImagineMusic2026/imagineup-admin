@@ -235,35 +235,44 @@ test("o selo fica preso ao último caractere do nome, com o emoji inteiro, e o r
   assert.deepEqual(split(""), ["", ""]);
 });
 
-test("as decisões que cabem: o editor pausa e reativa, só o admin encerra e mexe no selo, e ninguém decide o próprio fã-clube", () => {
+test("as decisões que cabem: o editor pausa e reativa, só o admin encerra e mexe no selo e na publicação sem revisão, e ninguém decide o próprio fã-clube", () => {
   const editor = { uid: "e1", canEdit: true, admin: false };
   const admin = { uid: "a1", canEdit: true, admin: true };
   const viewer = { uid: "v1", canEdit: false, admin: false };
   const rows = [
-    // [status, oficial, quem, decisões]
-    ["active", false, editor, ["pause"]],
-    ["active", true, editor, ["pause"]],
-    ["paused", false, editor, ["resume"]],
-    ["paused", true, editor, ["resume"]],
-    ["closed", false, editor, []],
-    ["active", false, admin, ["pause", "close", "officialize"]],
-    ["active", true, admin, ["pause", "close", "unofficialize"]],
-    ["paused", false, admin, ["resume", "close"]],
-    ["paused", true, admin, ["resume", "close", "unofficialize"]],
-    ["closed", false, admin, []],
-    ["closed", true, admin, ["unofficialize"]],
-    ["active", false, viewer, []],
-    ["active", true, viewer, []],
-    ["paused", true, viewer, []],
+    // [status, oficial, publica sem revisão, quem, decisões]
+    ["active", false, false, editor, ["pause"]],
+    ["active", true, false, editor, ["pause"]],
+    ["active", true, true, editor, ["pause"]],
+    ["paused", false, false, editor, ["resume"]],
+    ["paused", true, true, editor, ["resume"]],
+    ["closed", false, false, editor, []],
+    ["active", false, false, admin, ["pause", "close", "officialize"]],
+    // Ligar a publicação sem revisão: só no ativo e oficial; tirar, em qualquer status (a pausa mantém a chave).
+    ["active", true, false, admin, ["pause", "close", "unofficialize", "allowDirectPosts"]],
+    ["active", true, true, admin, ["pause", "close", "unofficialize", "revokeDirectPosts"]],
+    ["paused", false, false, admin, ["resume", "close"]],
+    ["paused", true, false, admin, ["resume", "close", "unofficialize"]],
+    ["paused", true, true, admin, ["resume", "close", "unofficialize", "revokeDirectPosts"]],
+    ["closed", false, false, admin, []],
+    ["closed", true, false, admin, ["unofficialize"]],
+    ["active", false, false, viewer, []],
+    ["active", true, true, viewer, []],
+    ["paused", true, true, viewer, []],
   ];
-  for (const [status, official, who, expected] of rows) {
-    assert.deepEqual(model.clubDecisions({ status, ownerUid: "f1", official }, who), expected, `${status}, ${official ? "oficial" : "sem selo"}, ${who.uid}`);
+  for (const [status, official, directPosts, who, expected] of rows) {
+    assert.deepEqual(
+      model.clubDecisions({ status, ownerUid: "f1", official, directPosts }, who),
+      expected,
+      `${status}, ${official ? "oficial" : "sem selo"}, ${directPosts ? "sem revisão" : "com revisão"}, ${who.uid}`,
+    );
   }
-  // O gestor da equipe: `self`, também no selo.
-  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: false }, admin), []);
-  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: true }, admin), []);
+  // O gestor da equipe: `self`, também no selo e na publicação sem revisão.
+  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: false, directPosts: false }, admin), []);
+  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: true, directPosts: false }, admin), []);
+  assert.deepEqual(model.clubDecisions({ status: "active", ownerUid: "a1", official: true, directPosts: true }, admin), []);
   // A lápide pausada (sem gestor) não reativa: o servidor não acha o perfil.
-  assert.deepEqual(model.clubDecisions({ status: "paused", ownerUid: null, official: false }, admin), ["close"]);
+  assert.deepEqual(model.clubDecisions({ status: "paused", ownerUid: null, official: false, directPosts: false }, admin), ["close"]);
 });
 
 test("as confirmações do selo: oficializar pede combinar com o artista, e tirar fala do status", () => {

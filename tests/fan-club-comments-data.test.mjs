@@ -61,7 +61,7 @@ test("a fila: os abertos da última atividade e os resolvidos da decisão mais n
     { field: "status", op: "==", value: "open" },
     { field: "kind", op: "==", value: "review" },
   ]);
-  assert.deepEqual(await data.countWaiting(), { applications: 0, posts: 0, reports: 0, commentReports: 2, commentReviews: 1 });
+  assert.deepEqual(await data.countWaiting(), { applications: 0, posts: 0, directPosts: 0, reports: 0, commentReports: 2, commentReviews: 1 });
 });
 
 test("os comentários pelo id, um in pelo documentId a cada 30, com o apagado como null", async () => {

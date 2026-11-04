@@ -276,6 +276,49 @@ test("as publicações: as do fã-clube em todos os status, a fila de revisão d
   assert.deepEqual([...clubs.keys()], ["c1"]);
 });
 
+test("as publicadas sem revisão (34.25): no ar e sem o reviewedAt, da publicação mais antiga, com o Carregar mais e a contagem", async () => {
+  firestore.reset();
+  const post = (id, fields) => firestore.set(`fanClubPosts/${id}`, { clubId: "c1", artistId: "netto", authorUid: "u1", text: id, status: "published", direct: true, reviewedAt: null, reviewedBy: null, ...fields });
+  for (let index = 0; index < 26; index += 1) {
+    post(`d${String(index).padStart(2, "0")}`, { publishedAt: Timestamp.fromMillis(Date.parse("2026-11-04T10:00:00-03:00") + index * 60_000) });
+  }
+  // As que não entram: a conferida, a em análise, a oculta (o Ocultar grava o `reviewedAt`) e a tirada do ar pelo gestor.
+  post("conferida", { publishedAt: ts("2026-11-03T10:00:00"), reviewedAt: ts("2026-11-04T09:00:00"), reviewedBy: { uid: "staff1", name: "Iara" } });
+  post("analise", { status: "pending", direct: false, publishedAt: null });
+  post("oculta", { status: "hidden", publishedAt: ts("2026-11-03T11:00:00"), reviewedAt: ts("2026-11-04T09:30:00") });
+  post("tirada", { status: "removed", publishedAt: ts("2026-11-03T12:00:00") });
+
+  const first = await data.getDirectPostsPage(null);
+  assert.equal(first.items.length, 25);
+  assert.equal(first.items[0].id, "d00");
+  assert.equal(first.items[0].direct, true);
+  assert.equal(first.items[0].reviewedAt, null);
+  assert.equal(first.hasMore, true);
+  assert.deepEqual(firestore.queries.at(-1), {
+    source: { collection: "fanClubPosts" },
+    where: [
+      { field: "status", op: "==", value: "published" },
+      { field: "reviewedAt", op: "==", value: null },
+    ],
+    orderBy: [{ field: "publishedAt", direction: "asc" }],
+    startAfter: null,
+    startAt: null,
+    endAt: null,
+    limit: 26,
+  });
+  const second = await data.getDirectPostsPage(first.cursor);
+  assert.deepEqual(second.items.map((item) => item.id), ["d25"]);
+  assert.equal(second.hasMore, false);
+
+  // A contagem com as mesmas duas igualdades, e o "Aguardando a equipe" com ela ao lado das em análise.
+  assert.equal(await data.countDirectPosts(), 26);
+  assert.deepEqual(firestore.counts.at(-1).where, [
+    { field: "status", op: "==", value: "published" },
+    { field: "reviewedAt", op: "==", value: null },
+  ]);
+  assert.deepEqual(await data.countWaiting(), { applications: 0, posts: 1, directPosts: 26, reports: 0, commentReports: 0, commentReviews: 0 });
+});
+
 test("a caixa das fotos dos fãs de cada central, pelo privado, com a autorização de imagem na falta", async () => {
   firestore.reset();
   firestore.set("artistPrivate/aberta", { imageRightsConfirmed: true, fanClubs: { photosAllowed: true } });
@@ -315,7 +358,7 @@ test("as denúncias abertas da mais nova, as resolvidas da decisão mais nova, e
 
   application("a1", { submittedAt: ts("2026-10-19T10:00:00") });
   firestore.set("fanClubPosts/x1", { status: "pending" });
-  assert.deepEqual(await data.countWaiting(), { applications: 1, posts: 1, reports: 2, commentReports: 0, commentReviews: 0 });
+  assert.deepEqual(await data.countWaiting(), { applications: 1, posts: 1, directPosts: 0, reports: 2, commentReports: 0, commentReviews: 0 });
 });
 
 test("o registro dos reconhecimentos pela data e os pedidos de prêmio pelo grantId, 30 por consulta", async () => {

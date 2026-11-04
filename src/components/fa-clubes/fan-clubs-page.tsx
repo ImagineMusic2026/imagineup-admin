@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { APPLICATION_STYLES, FAN_CLUB_STYLES, FanClubName, PersonCell, shortWhen } from "@/components/fa-clubes/fan-club-bits";
 import { CommentsTab } from "@/components/fa-clubes/fan-club-comments";
-import { PostsTab, ReportsTab } from "@/components/fa-clubes/fan-club-queues";
+import { DirectPostsTab, PostsTab, ReportsTab } from "@/components/fa-clubes/fan-club-queues";
 import { PageHeader } from "@/components/painel/page-header";
 import { SectionGate } from "@/components/painel/section-gate";
 import { LoadError, LoadingRow, SectionCard } from "@/components/painel/section-card";
@@ -44,6 +44,7 @@ import {
   applicantLabel,
   commentReportsCountText,
   countsAtText,
+  directPostsCountText,
   fanClubCountText,
   fanClubLabel,
   featuredText,
@@ -77,15 +78,19 @@ const CLUBS_GRID =
 /** O valor do filtro "Centrais que eu cuido" (pelo `artistPrivate.managerUid`, só com a seção Artistas). */
 const MINE = "__minhas__";
 
-type FanClubsTab = "applications" | "clubs" | "posts" | "reports" | "comments";
+type FanClubsTab = "applications" | "clubs" | "posts" | "direct" | "reports" | "comments";
 
 type Names = ReadonlyMap<string, ArtistName> | null;
 
-/** As abas pelo endereço (`/fa-clubes?aba=publicacoes`): o atalho "Revisar na fila" da ficha abre a fila. */
+/**
+ * As abas pelo endereço (`/fa-clubes?aba=publicacoes`): o atalho "Revisar na
+ * fila" da ficha abre a fila, e o "Aguardando a equipe" abre cada aba.
+ */
 const TAB_BY_PARAM: Record<string, FanClubsTab> = {
   candidaturas: "applications",
   "fa-clubes": "clubs",
   publicacoes: "posts",
+  "sem-revisao": "direct",
   denuncias: "reports",
   comentarios: "comments",
 };
@@ -93,11 +98,12 @@ const TAB_BY_PARAM: Record<string, FanClubsTab> = {
 /**
  * Fã-clubes (`/fa-clubes`, seção 34, 34.10): as candidaturas (a aba padrão),
  * com as pendentes da mais antiga e as resolvidas; os fã-clubes, com as
- * colunas da decisão 36; as publicações para revisar; as denúncias; e os
- * comentários (a Fase 2, 37.10), em leitura única (25 por vez, "Carregar
- * mais" e o "Atualizar", que lê de novo com a lista na tela). A linha da
- * lista abre a ficha, onde ficam as decisões do fã-clube; as das publicações,
- * das denúncias e dos comentários ficam nas abas delas.
+ * colunas da decisão 36; as publicações para revisar; as publicadas sem
+ * revisão (34.25); as denúncias; e os comentários (a Fase 2, 37.10), em
+ * leitura única (25 por vez, "Carregar mais" e o "Atualizar", que lê de novo
+ * com a lista na tela). A linha da lista abre a ficha, onde ficam as decisões
+ * do fã-clube; as das publicações, das denúncias e dos comentários ficam nas
+ * abas delas.
  */
 export function FanClubsPage() {
   // A troca só do `?aba=` (a lateral de volta para `/fa-clubes`) não remonta a página: a `key` recomeça pela aba do endereço.
@@ -105,11 +111,16 @@ export function FanClubsPage() {
   return <SectionGate section="fanClubs">{(member) => <FanClubsContent key={aba ?? ""} member={member} initialTab={TAB_BY_PARAM[aba ?? ""] ?? "applications"} />}</SectionGate>;
 }
 
-/** "2 candidaturas em análise, 1 publicação em análise, nenhuma denúncia aberta, 1 comentário denunciado e 1 pedido de revisão." */
+/**
+ * "2 candidaturas em análise, 1 publicação em análise, 1 publicação sem
+ * revisão, nenhuma denúncia aberta, 1 comentário denunciado e 1 pedido de
+ * revisão."
+ */
 function waitingSubtitle(counts: WaitingCounts): string {
   return `${joinPt([
     pendingCountText(counts.applications),
     pendingPostsCountText(counts.posts),
+    counts.directPosts > 0 ? directPostsCountText(counts.directPosts) : "nenhuma publicação sem revisão",
     counts.reports > 0 ? openReportsCountText(counts.reports) : "nenhuma denúncia aberta",
     counts.commentReports > 0 ? commentReportsCountText(counts.commentReports) : "nenhum comentário denunciado",
     counts.commentReviews > 0 ? reviewRequestsCountText(counts.commentReviews) : "nenhum pedido de revisão",
@@ -154,6 +165,11 @@ function FanClubsContent({ member, initialTab }: { member: StaffMember; initialT
             id: "posts",
             label: "Publicações para revisar",
             render: () => <PostsTab member={member} canEdit={canEdit} names={artistNames} now={date} round={round} total={counts?.posts ?? null} onChanged={waiting.reload} />,
+          },
+          {
+            id: "direct",
+            label: "Publicadas sem revisão",
+            render: () => <DirectPostsTab member={member} canEdit={canEdit} names={artistNames} now={date} round={round} total={counts?.directPosts ?? null} onChanged={waiting.reload} />,
           },
           { id: "reports", label: "Denúncias", render: () => <ReportsTab member={member} canEdit={canEdit} names={artistNames} now={date} round={round} total={counts?.reports ?? null} onChanged={waiting.reload} /> },
           {
