@@ -13,12 +13,13 @@ import type { CloseReason, CommentDecision, CommentStatus, FanClubStatus, PostRe
  *
  * Os motivos da recusa (`details.reason`) que a seção trata, com a frase do
  * servidor (`REASON_MESSAGES` de `errors.ts`, de reserva): `self`,
- * `admin-only` (o Encerrar e o selo de oficial, só do admin), `not-staff`,
- * `no-section`, `invalid-request` (com o `field`),
+ * `admin-only` (o Encerrar, o selo de oficial e a publicação sem revisão, só
+ * do admin), `not-staff`, `no-section`, `invalid-request` (com o `field`),
  * `stale-decision`, `application-not-found`, `fan-club-not-found`,
  * `fan-club-post-not-found`, `fan-club-report-not-found`,
  * `fan-club-comment-not-found`, `artist-not-open`,
- * `owner-suspended`, `feature-limit`; e, no Recompensar, `prize-not-allowed`
+ * `owner-suspended`, `feature-limit`, `not-official` (ligar a publicação sem
+ * revisão num fã-clube sem o selo, 34.25); e, no Recompensar, `prize-not-allowed`
  * (com a trava em `details.problem`), `grant-id-reused`, `reward-not-prize`,
  * `reward-not-found`, `sold-out`, `fan-not-found`, `adjust-above-limit` e
  * `adjust-daily-limit`.
@@ -102,9 +103,27 @@ export function officializeFanClub(clubId: string, expected: FanClubStatus): Pro
   return call("decideFanClub", { subject: "club", id: clubId, decision: "officialize", expected });
 }
 
-/** Tira o selo de oficial (só admin), em qualquer status; sem o selo, `ok` sem gravar. */
+/**
+ * Tira o selo de oficial (só admin), em qualquer status; sem o selo, `ok` sem
+ * gravar. A publicação sem revisão sai junto.
+ */
 export function unofficializeFanClub(clubId: string, expected: FanClubStatus): Promise<DecisionResult> {
   return call("decideFanClub", { subject: "club", id: clubId, decision: "unofficialize", expected });
+}
+
+/**
+ * Liga a publicação sem revisão (só admin, 34.25): as publicações do gestor
+ * vão ao ar na hora, e a equipe confere depois. Só no fã-clube ativo (senão
+ * `invalid-request` com `field: 'decision'`) e oficial (senão
+ * `not-official`). Já ligada, `ok` sem gravar.
+ */
+export function allowFanClubDirectPosts(clubId: string, expected: FanClubStatus): Promise<DecisionResult> {
+  return call("decideFanClub", { subject: "club", id: clubId, decision: "allowDirectPosts", expected });
+}
+
+/** Tira a publicação sem revisão (só admin), em qualquer status; o que já foi ao ar fica. Sem a chave, `ok` sem gravar. */
+export function revokeFanClubDirectPosts(clubId: string, expected: FanClubStatus): Promise<DecisionResult> {
+  return call("decideFanClub", { subject: "club", id: clubId, decision: "revokeDirectPosts", expected });
 }
 
 export interface RewardGrant {
@@ -136,8 +155,13 @@ export function rewardFanClub(clubId: string, expected: FanClubStatus, grant: Re
   });
 }
 
-/** Aprova, oculta ou reexibe a publicação, com o status que a tela mostrou. */
-export function decidePost(postId: string, expected: PostStatus, decision: "approve" | "hide" | "restore"): Promise<DecisionResult> {
+/**
+ * Aprova, oculta, reexibe ou marca como conferida a publicação, com o status
+ * que a tela mostrou. O `check` (34.25) só vale na que foi ao ar sem revisão:
+ * grava quem conferiu e quando, sem mudar o status; já conferida, `ok` sem
+ * gravar; fora do ar, `stale-decision`.
+ */
+export function decidePost(postId: string, expected: PostStatus, decision: "approve" | "hide" | "restore" | "check"): Promise<DecisionResult> {
   return call("decideFanClub", { subject: "post", id: postId, decision, expected });
 }
 

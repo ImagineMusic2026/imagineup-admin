@@ -10,6 +10,7 @@ import { formatNumber } from "@/lib/format";
 const ROWS: { key: keyof WaitingCounts; label: string; href: string }[] = [
   { key: "applications", label: "Candidaturas em análise", href: "/fa-clubes" },
   { key: "posts", label: "Publicações em análise", href: "/fa-clubes?aba=publicacoes" },
+  { key: "directPosts", label: "Publicadas sem revisão", href: "/fa-clubes?aba=sem-revisao" },
   { key: "reports", label: "Denúncias abertas", href: "/fa-clubes?aba=denuncias" },
   { key: "commentReports", label: "Comentários denunciados", href: "/fa-clubes?aba=comentarios" },
   { key: "commentReviews", label: "Pedidos de revisão", href: "/fa-clubes?aba=comentarios" },
@@ -18,7 +19,9 @@ const ROWS: { key: keyof WaitingCounts; label: string; href: string }[] = [
 /**
  * O cartão "Aguardando a equipe" da Visão geral (34.10, item 9), só para quem
  * vê a seção Fã-clubes: as candidaturas e as publicações em análise, as
- * denúncias abertas e, desde a Fase 2 (37.10), os comentários denunciados e
+ * publicadas sem revisão que esperam o Conferida (34.25, no ar e com o
+ * `reviewedAt` nulo), as denúncias abertas e, desde a Fase 2 (37.10), os
+ * comentários denunciados e
  * os pedidos de revisão da fila dos comentários, cada um por `count()`. O
  * item aberto por denúncia que recebeu depois o pedido conta como
  * denunciado. É o alarme possível sem

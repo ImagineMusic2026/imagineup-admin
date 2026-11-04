@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, EyeOff, ShieldCheck, X } from "lucide-react";
+import { Check, CheckCheck, EyeOff, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -19,15 +19,19 @@ import { usePagedList } from "@/components/ui/use-paged-list";
 import { artistNameOf, type ArtistName } from "@/lib/artist-names-data";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
 import { decidePost, decideReport } from "@/lib/fan-club-api";
-import { getFanClubsByIds, getPendingPostsPage, getPhotoBoxes, getPostsByIds, getReportsPage } from "@/lib/fan-club-data";
+import { getDirectPostsPage, getFanClubsByIds, getPendingPostsPage, getPhotoBoxes, getPostsByIds, getReportsPage } from "@/lib/fan-club-data";
 import {
   APPROVE_POST_TEXT,
+  CHECK_POST_TEXT,
   FAN_CLUB_AUDIT_TEXT,
+  HIDE_DIRECT_POST_TEXT,
   REPORT_FILTER_LABELS,
   REPORT_RESOLUTION_LABELS,
   REPORT_STATUSES,
   authorLabel,
+  directPostsCountText,
   fanClubLabel,
+  isPostGone,
   isStaleDecision,
   openReportsCountText,
   pendingPostsCountText,
@@ -96,17 +100,35 @@ export function useQueueDecisions(canEdit: boolean, onChanged: () => void) {
     setChanges((value) => value + 1);
   }
 
+  /**
+   * A confirmação de uma decisão. Com o `onGone`, o card sai da lista na hora
+   * (no molde do Suporte): quando a decisão dá certo e quando a recusa diz que
+   * ele já não é da lista (`goneOn`), também com a resposta que chega com o
+   * diálogo fora da tela. A releitura vem depois, como sempre.
+   */
   function ask(
-    request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & { send: () => Promise<unknown>; blocksRetry?: (failure: unknown) => boolean },
+    request: Pick<ConfirmRequest, "title" | "body" | "confirmLabel" | "busyLabel" | "tone" | "successMessage"> & {
+      send: () => Promise<unknown>;
+      blocksRetry?: (failure: unknown) => boolean;
+      onGone?: () => void;
+      goneOn?: (failure: unknown) => boolean;
+    },
   ) {
-    const { send, blocksRetry, ...rest } = request;
+    const { send, blocksRetry, onGone, goneOn, ...rest } = request;
     setConfirm({
       ...rest,
       body: `${request.body} ${FAN_CLUB_AUDIT_TEXT}`,
       cancelLabel: "Voltar",
-      action: () => {
+      action: async () => {
         markStale();
-        return send();
+        try {
+          const result = await send();
+          onGone?.();
+          return result;
+        } catch (failure) {
+          if (goneOn?.(failure)) onGone?.();
+          throw failure;
+        }
       },
       onUncertain: markStale,
       uncertainText: UNCERTAIN_RETRY_TEXT,
@@ -255,6 +277,113 @@ export function PostsTab({ member, canEdit, names, now, round, total, onChanged 
                           <Button size="sm" variant="danger" onClick={() => decisions.reject(post)} aria-haspopup="dialog">
                             <X aria-hidden="true" className="size-4" />
                             Recusar<span className="sr-only"> a publicação de {author}</span>
+                          </Button>
+                        </>
+                      ) : canEdit && post.authorUid === member.uid ? (
+                        <span className="text-[12.5px] text-fg/60">A publicação é sua: outra pessoa da equipe decide.</span>
+                      ) : null
+                    }
+                  />
+                </li>
+              );
+            })}
+          </ul>
+          <LoadMore onClick={list.loadMore} busy={list.loadingMore} hasMore={list.hasMore} announcement={list.announcement} error={list.loadMoreError} />
+        </>
+      )}
+      {decisions.dialogs}
+    </SectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Publicadas sem revisão (34.25)
+// ---------------------------------------------------------------------------
+
+/**
+ * As publicações que foram ao ar sem revisão (os fã-clubes oficiais com a
+ * chave do admin) e esperam a equipe conferir, da mais antiga para a mais
+ * nova, no molde da fila de revisão: a foto e a miniatura lado a lado, o
+ * texto, o fã-clube, o autor, a central e a data de publicação, com Conferida
+ * e Ocultar para quem edita a seção. O Leitor vê sem botões. A publicação sai
+ * da lista na hora depois da decisão, e também quando a recusa diz que ela já
+ * não é daqui (`stale-decision` e `fan-club-post-not-found`); a lista é lida
+ * de novo em seguida.
+ */
+export function DirectPostsTab({ member, canEdit, names, now, round, total, onChanged }: { member: StaffMember; canEdit: boolean; names: Names; now: Date; round: number; total: number | null; onChanged: () => void }) {
+  const decisions = useQueueDecisions(canEdit, onChanged);
+  const load = useCallback((after: PageCursor | null) => getDirectPostsPage(after), []);
+  const refreshKey = `${round}-${decisions.round}`;
+  const list = usePagedList(load, (post: FanClubPost) => post.id, { one: "publicação carregada", many: "publicações carregadas" }, refreshKey);
+
+  // As que saíram da aba, presas à leitura que está na tela: a próxima (a releitura depois da decisão, o "Atualizar") já vem sem elas.
+  const [removed, setRemoved] = useState<{ at: Date | null; ids: string[] }>({ at: null, ids: [] });
+  const loadedAt = useRef(list.loadedAt);
+  useEffect(() => {
+    loadedAt.current = list.loadedAt;
+  }, [list.loadedAt]);
+  const gone = removed.at !== null && removed.at === list.loadedAt ? removed.ids : [];
+  const posts = list.state.status === "ready" ? list.state.data.filter((post) => !gone.includes(post.id)) : [];
+  const clubs = useClubs(
+    posts.map((post) => post.clubId),
+    refreshKey,
+  );
+
+  function leave(id: string) {
+    const at = loadedAt.current;
+    setRemoved((current) => (current.at === at ? { at, ids: [...current.ids, id] } : { at, ids: [id] }));
+  }
+
+  function ask(post: FanClubPost, decision: "check" | "hide") {
+    const author = authorLabel(post);
+    decisions.ask({
+      title: decision === "check" ? `Marcar a publicação de ${author} como conferida?` : `Ocultar a publicação de ${author}?`,
+      body: decision === "check" ? CHECK_POST_TEXT : HIDE_DIRECT_POST_TEXT,
+      confirmLabel: decision === "check" ? "Conferida" : "Ocultar",
+      busyLabel: decision === "check" ? "Marcando..." : "Ocultando...",
+      tone: decision === "check" ? "default" : "danger",
+      send: () => decidePost(post.id, post.status, decision),
+      successMessage: decision === "check" ? `Publicação de ${author} conferida.` : `Publicação de ${author} oculta.`,
+      blocksRetry: isPostGone,
+      onGone: () => leave(post.id),
+      goneOn: isPostGone,
+    });
+  }
+
+  return (
+    <SectionCard id="titulo-sem-revisao" title="Publicadas sem revisão" meta={total !== null ? `${directPostsCountText(total)}, da mais antiga para a mais nova` : "Da mais antiga para a mais nova."}>
+      {decisions.noticeView}
+      {list.state.status === "error" ? (
+        <LoadError message={list.state.message} headingId="titulo-sem-revisao" onRetry={list.reload} />
+      ) : list.state.status === "loading" ? (
+        <LoadingRow label="Carregando as publicações..." />
+      ) : posts.length === 0 ? (
+        <EmptyState>Nenhuma publicação no ar esperando a conferência.</EmptyState>
+      ) : (
+        <>
+          {list.refreshError ? <p className="m-0 px-5 pt-4 text-[13px] text-danger">Não deu para atualizar: {list.refreshError}</p> : null}
+          <ul className="m-0 list-none divide-y divide-line p-0">
+            {posts.map((post) => {
+              const allowed = postDecisions(post, { uid: member.uid, canEdit });
+              const author = authorLabel(post);
+              return (
+                <li key={post.id}>
+                  <PostCard
+                    post={post}
+                    club={clubs === "failed" ? null : clubs ? (clubs.get(post.clubId) ?? null) : undefined}
+                    artist={artistNameOf(names, post.artistId)}
+                    now={now}
+                    seesFans={canSeeSection(member, "fans")}
+                    actions={
+                      allowed.includes("check") ? (
+                        <>
+                          <Button size="sm" variant="primary" onClick={() => ask(post, "check")} aria-haspopup="dialog">
+                            <CheckCheck aria-hidden="true" className="size-4" />
+                            Conferida<span className="sr-only">: a publicação de {author}</span>
+                          </Button>
+                          <Button size="sm" variant="danger" onClick={() => ask(post, "hide")} aria-haspopup="dialog">
+                            <EyeOff aria-hidden="true" className="size-4" />
+                            Ocultar<span className="sr-only"> a publicação de {author}</span>
                           </Button>
                         </>
                       ) : canEdit && post.authorUid === member.uid ? (

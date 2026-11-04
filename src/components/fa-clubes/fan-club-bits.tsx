@@ -21,12 +21,14 @@ import {
   POST_REJECT_REASON_LABELS,
   POST_STATUS_LABELS,
   authorLabel,
+  awaitsCheck,
   fanClubLabel,
   lastCharStart,
   mediaGoneText,
   postMediaSource,
   reactionBreakdown,
   reactionCountText,
+  reviewedText,
   type ApplicationStatus,
   type CommentStatus,
   type FanClub,
@@ -230,8 +232,10 @@ export function ReactionTotals({ total, counts }: { total: number; counts: Recor
 
 /**
  * Uma publicação: o autor, o fã-clube, a central, a situação, o texto, os
- * marcados, as fotos e as datas, com as ações de quem decide no fim. O texto
- * e as fotos são do fã: nunca vão aos Logs.
+ * marcados, as fotos e as datas, com as ações de quem decide no fim. A que
+ * foi ao ar sem revisão (34.25) leva a marca "Sem revisão" até a equipe
+ * conferir, e depois o "Conferida por". O texto e as fotos são do fã: nunca
+ * vão aos Logs.
  */
 export function PostCard({
   post,
@@ -261,6 +265,7 @@ export function PostCard({
   actions?: React.ReactNode;
 }) {
   const author = authorLabel(post);
+  const reviewed = reviewedText(post);
   const Heading = headingLevel === 3 ? "h3" : "h4";
   return (
     <article className="flex flex-col gap-3 px-5 py-4">
@@ -275,6 +280,7 @@ export function PostCard({
         </span>
         <span className="flex flex-wrap items-center gap-1.5">
           <Badge tone="neutral">{post.kind === "photo" ? "Com foto" : "Só texto"}</Badge>
+          {awaitsCheck(post) ? <Badge tone="cyan">Sem revisão</Badge> : null}
           {photosOff ? <Badge tone="danger">Fotos não autorizadas</Badge> : null}
           <StatusChip status={post.status} map={POST_STYLES} />
         </span>
@@ -300,7 +306,7 @@ export function PostCard({
         <span>Central {artist}</span>
         <span>Enviada {shortWhen(post.submittedAt, now)}</span>
         {post.publishedAt ? <span>{post.status === "published" ? "No ar desde" : "Publicada em"} {shortWhen(post.publishedAt, now)}</span> : null}
-        {post.reviewedBy?.name && post.status !== "pending" ? <span>Decidida por {post.reviewedBy.name}</span> : null}
+        {reviewed ? <span>{reviewed}</span> : null}
       </p>
       <p className="m-0 whitespace-pre-line break-words text-[14.5px] leading-relaxed text-fg/90">{post.text || <Missing>Sem texto</Missing>}</p>
       <PostMentions mentions={post.mentions} seesFans={seesFans} />

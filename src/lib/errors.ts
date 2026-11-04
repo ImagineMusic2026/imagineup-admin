@@ -191,6 +191,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   "reward-not-prize": "Essa recompensa não é só para prêmios de fã-clube.",
   "sold-out": "Essa recompensa não tem mais vaga. Aumente o estoque antes de dar o prêmio.",
   "reward-is-prize": "Essa recompensa é só para prêmios de fã-clube: ela não vai ao ar nem sai do ar.",
+  // A publicação sem revisão do fã-clube oficial (34.25).
+  "not-official": "Só um fã-clube oficial publica sem revisão.",
   // Suporte (seção 38, a frase do servidor, de reserva).
   "message-not-found": "Essa mensagem não existe mais.",
 };

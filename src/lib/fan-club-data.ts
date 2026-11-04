@@ -48,9 +48,10 @@ import { parseRedemption, type Redemption } from "@/lib/rewards";
  * Fãs; as recompensas e os pedidos, só com a seção Recompensas. Desde a Fase 2
  * (37.4), a fila dos comentários, os comentários e o registro do ocultar do
  * gestor; quem reagiu (`fanClubReactions`) e quem denunciou
- * (`fanClubCommentReports`) ficam fechados até para o admin. Cada consulta
- * tem a forma de um índice de 34.6 ou de 37.4, porque o emulador não cobra
- * índice. Nada aqui grava: toda mudança passa pela `decideFanClub`
+ * (`fanClubCommentReports`) ficam fechados até para o admin. Desde 34.25, as
+ * publicadas sem revisão. Cada consulta tem a forma de um índice de 34.6, de
+ * 37.4 ou de 34.25, porque o emulador não cobra índice. Nada aqui grava: toda
+ * mudança passa pela `decideFanClub`
  * (`fan-club-api.ts`).
  */
 
@@ -289,6 +290,29 @@ export function countPendingPosts(): Promise<number> {
   return countOf(query(collection(db(), "fanClubPosts"), where("status", "==", "pending")));
 }
 
+/**
+ * As publicadas sem revisão que esperam o Conferida (34.25): no ar e com o
+ * `reviewedAt` nulo (o servidor grava o nulo no envio). O Conferida e o
+ * Ocultar gravam o `reviewedAt`, e a publicação sai daqui.
+ */
+function directPostsConstraints(): QueryConstraint[] {
+  return [where("status", "==", "published"), where("reviewedAt", "==", null)];
+}
+
+/** A aba "Publicadas sem revisão", da mais antiga para a mais nova (o índice `status, reviewedAt, publishedAt`). */
+export async function getDirectPostsPage(after: PageCursor | null): Promise<Page<FanClubPost>> {
+  const page = await getPage(query(collection(db(), "fanClubPosts"), ...directPostsConstraints(), orderBy("publishedAt", "asc")), {
+    size: FAN_CLUBS_PAGE_SIZE,
+    after,
+  });
+  return { items: page.docs.map((item) => parsePost(item.id, item.data())), cursor: page.cursor, hasMore: page.hasMore };
+}
+
+/** Quantas publicadas sem revisão esperam o Conferida (o `count()` com as mesmas duas igualdades). */
+export function countDirectPosts(): Promise<number> {
+  return countOf(query(collection(db(), "fanClubPosts"), ...directPostsConstraints()));
+}
+
 /** As publicações citadas pela fila de denúncias (o id do item é o da publicação), um `readDoc` de cada. */
 export async function getPostsByIds(ids: readonly string[]): Promise<Map<string, FanClubPost | null>> {
   const unique = [...new Set(ids.filter(Boolean))];
@@ -403,16 +427,17 @@ export function countManagerHides(clubId: string): Promise<number> {
 // O "Aguardando a equipe"
 // ---------------------------------------------------------------------------
 
-/** As cinco contagens do cartão da Visão geral (cinco `count()`). */
+/** As seis contagens do cartão da Visão geral (seis `count()`). */
 export async function countWaiting(): Promise<WaitingCounts> {
-  const [applications, posts, reports, commentReports, commentReviews] = await Promise.all([
+  const [applications, posts, directPosts, reports, commentReports, commentReviews] = await Promise.all([
     countPendingApplications(),
     countPendingPosts(),
+    countDirectPosts(),
     countOpenReports(),
     countOpenCommentItems("report"),
     countOpenCommentItems("review"),
   ]);
-  return { applications, posts, reports, commentReports, commentReviews };
+  return { applications, posts, directPosts, reports, commentReports, commentReviews };
 }
 
 // ---------------------------------------------------------------------------

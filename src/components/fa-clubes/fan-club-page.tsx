@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Pause, Play, ShieldCheck, ShieldOff } from "lucide-react";
+import { Ban, Pause, Play, ShieldCheck, ShieldOff, Zap, ZapOff } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -21,15 +21,26 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { useLoad } from "@/components/ui/use-load";
 import { logsHref } from "@/lib/audit";
 import { UNCERTAIN_RETRY_TEXT } from "@/lib/errors";
-import { decideFanClubComment, decidePost, officializeFanClub, setFanClubPaused, unfeatureFanClub, unofficializeFanClub } from "@/lib/fan-club-api";
+import {
+  allowFanClubDirectPosts,
+  decideFanClubComment,
+  decidePost,
+  officializeFanClub,
+  revokeFanClubDirectPosts,
+  setFanClubPaused,
+  unfeatureFanClub,
+  unofficializeFanClub,
+} from "@/lib/fan-club-api";
 import { getApplication, getFanClub, getShardNumbers } from "@/lib/fan-club-data";
 import {
+  ALLOW_DIRECT_POSTS_TEXT,
   FAN_CLUB_AUDIT_TEXT,
   HIDE_POST_TEXT,
   OFFICIALIZE_TEXT,
   PAUSE_TEXT,
   RESTORE_POST_TEXT,
   RESUME_TEXT,
+  REVOKE_DIRECT_POSTS_TEXT,
   UNFEATURE_TEXT,
   authorLabel,
   blocksCommentRetry,
@@ -37,6 +48,7 @@ import {
   clubDecisions,
   commentDecisionText,
   commentDoneText,
+  directPostsText,
   fanClubLabel,
   fanClubStatusText,
   fanClubTarget,
@@ -54,8 +66,10 @@ import { canEditSection, canSeeSection, isAdmin, type StaffMember } from "@/lib/
 
 /**
  * A ficha do fã-clube (`/fa-clubes/[id]`, 34.10, item 5): o status com
- * Pausar, Reativar e Encerrar e o selo de oficial com Oficializar e Tirar a
- * oficialização (34.23; Encerrar e o selo só para admin); os números (os 16
+ * Pausar, Reativar e Encerrar, o selo de oficial com Oficializar e Tirar a
+ * oficialização (34.23) e a publicação sem revisão do oficial com Publicar
+ * sem revisão e Tirar a publicação sem revisão (34.25; Encerrar, o selo e a
+ * publicação sem revisão só para admin); os números (os 16
  * shards e a cópia da noite), o mês e o mês passado e a qualidade dos
  * seguidores; os seguidores recentes (só com a seção Fãs); o Destaque e as
  * recompensas, com o histórico; as publicações com Ocultar e Reexibir, os
@@ -227,12 +241,26 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
     const name = fanClubLabel(club);
     ask({
       title: official ? `Oficializar o fã-clube ${name}?` : `Tirar a oficialização do fã-clube ${name}?`,
-      body: official ? OFFICIALIZE_TEXT : unofficializeText(club.status),
+      body: official ? OFFICIALIZE_TEXT : unofficializeText(club.status, club.directPosts),
       confirmLabel: official ? "Oficializar" : "Tirar a oficialização",
       busyLabel: official ? "Oficializando..." : "Tirando...",
       tone: "default",
       send: () => (official ? officializeFanClub(club.id, club.status) : unofficializeFanClub(club.id, club.status)),
       successMessage: official ? `Fã-clube ${name} oficializado.` : `Oficialização de ${name} tirada.`,
+    });
+  }
+
+  /** A publicação sem revisão (34.25): o `not-official` e o `stale-decision` mostram a frase do servidor e tiram o confirmar. */
+  function askDirectPosts(club: FanClub, allow: boolean) {
+    const name = fanClubLabel(club);
+    ask({
+      title: allow ? `Deixar o fã-clube ${name} publicar sem revisão?` : `Tirar a publicação sem revisão do fã-clube ${name}?`,
+      body: allow ? ALLOW_DIRECT_POSTS_TEXT : REVOKE_DIRECT_POSTS_TEXT,
+      confirmLabel: allow ? "Publicar sem revisão" : "Tirar a publicação sem revisão",
+      busyLabel: allow ? "Ligando..." : "Tirando...",
+      tone: "default",
+      send: () => (allow ? allowFanClubDirectPosts(club.id, club.status) : revokeFanClubDirectPosts(club.id, club.status)),
+      successMessage: allow ? `O fã-clube ${name} publica sem revisão.` : `Publicação sem revisão de ${name} tirada.`,
     });
   }
 
@@ -345,6 +373,18 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
               Tirar a oficialização
             </Button>
           ) : null}
+          {decisions.includes("allowDirectPosts") ? (
+            <Button size="sm" variant="secondary" onClick={() => askDirectPosts(club, true)} aria-haspopup="dialog">
+              <Zap aria-hidden="true" className="size-3.5" />
+              Publicar sem revisão
+            </Button>
+          ) : null}
+          {decisions.includes("revokeDirectPosts") ? (
+            <Button size="sm" variant="secondary" onClick={() => askDirectPosts(club, false)} aria-haspopup="dialog">
+              <ZapOff aria-hidden="true" className="size-3.5" />
+              Tirar a publicação sem revisão
+            </Button>
+          ) : null}
           {decisions.includes("close") ? (
             <Button size="sm" variant="danger" onClick={() => setDialog("close")} aria-haspopup="dialog">
               <Ban aria-hidden="true" className="size-3.5" />
@@ -404,9 +444,10 @@ function FanClubContent({ clubId, member }: { clubId: string; member: StaffMembe
             ) : null}
             <Detail term="Publicações">
               {formatNumber(club.postCount)} no ar, {formatNumber(club.pendingPosts)} em análise
-              {club.lastPostAt ? `; a última aprovada em ${shortWhen(club.lastPostAt, date)}` : ""}
+              {club.lastPostAt ? `; a última foi ao ar em ${shortWhen(club.lastPostAt, date)}` : ""}
             </Detail>
             <Detail term="Oficialização">{officialText(club, date) ?? <Missing>Não oficializado</Missing>}</Detail>
+            <Detail term="Revisão">{directPostsText(club, date) ?? <Missing>As publicações passam pela revisão</Missing>}</Detail>
             <Detail term="Destaque">{featuring ?? <Missing>Sem Destaque</Missing>}</Detail>
             <Detail term="Último reconhecimento">{lastReward ?? <Missing>Nenhum ainda</Missing>}</Detail>
             <Detail term="Identificador">

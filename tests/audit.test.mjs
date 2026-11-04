@@ -14,7 +14,7 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
     assert.doesNotMatch(info.label, DASHES, action);
     assert.ok(sections.has(info.section), action);
   }
-  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 87);
+  assert.equal(Object.keys(audit.AUDIT_ACTIONS).length, 90);
   assert.equal(audit.auditSectionLabel("team"), "Equipe");
   assert.equal(audit.auditSectionLabel(null), "Outros");
   assert.equal(audit.auditSectionLabel("audit"), "Logs e auditoria");
@@ -23,8 +23,8 @@ test("todas as ações têm rótulo sem travessão e uma seção do painel", () 
   assert.equal(audit.AUDIT_ACTIONS["fan.account.deleted"].label, "Conta do fã excluída (LGPD)");
 });
 
-test("o fã-clube nos Logs: as 18 ações, os alvos, os detalhes e o endereço já filtrado", () => {
-  // As 18 ações que o servidor grava (34.8, 34.22, 34.23 e as do comentário da Fase 2, 37.8), na seção Fã-clubes, na ordem do `AuditAction`.
+test("o fã-clube nos Logs: as 21 ações, os alvos, os detalhes e o endereço já filtrado", () => {
+  // As 21 ações que o servidor grava (34.8, 34.22, 34.23, 34.25 e as do comentário da Fase 2, 37.8), na seção Fã-clubes, na ordem do `AuditAction`.
   assert.deepEqual(audit.actionsOfSection("fanClubs"), [
     "fanClub.application.approved",
     "fanClub.application.rejected",
@@ -35,11 +35,14 @@ test("o fã-clube nos Logs: as 18 ações, os alvos, os detalhes e o endereço j
     "fanClub.unfeatured",
     "fanClub.officialized",
     "fanClub.unofficialized",
+    "fanClub.directPosts.allowed",
+    "fanClub.directPosts.revoked",
     "fanClub.rewarded",
     "fanClub.post.approved",
     "fanClub.post.rejected",
     "fanClub.post.hidden",
     "fanClub.post.restored",
+    "fanClub.post.checked",
     "fanClub.report.resolved",
     "fanClub.comment.kept",
     "fanClub.comment.hidden",
