@@ -8,7 +8,7 @@ import { SectionCard } from "@/components/painel/section-card";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox, INPUT_CLASS } from "@/components/ui/field";
+import { Checkbox, INPUT_CLASS, Switch } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import type { Achievement } from "@/lib/achievements";
@@ -19,6 +19,17 @@ import {
   ACTION_CAP_KEYS,
   ACTION_CAP_LABELS,
   CAP_MAX,
+  CHECKIN_CONFIRM,
+  CHECKIN_CYCLE_TEXT,
+  CHECKIN_MILESTONES_TEXT,
+  CHECKIN_OFF_TEXT,
+  CHECKIN_ON_TEXT,
+  CHECKIN_SAVED_TEXT,
+  CHECKIN_UNCERTAIN_TEXT,
+  CHECKIN_UNCHANGED_TEXT,
+  CHECKIN_UNKNOWN_TEXT,
+  CHECKIN_VALUE_MAX,
+  CHECKIN_VALUE_MIN,
   LEVELS_CONFIRM_TEXT,
   LIMIT_MAX,
   NO_POINTS_CONFIG_TEXT,
@@ -29,16 +40,27 @@ import {
   VALUE_LABELS,
   addLevelRow,
   capsFormOf,
+  checkinDayLabel,
+  checkinFailureOf,
+  checkinFormOf,
+  checkinRequestOf,
+  checkinSaveStep,
+  checkinSaved,
+  cycleSummary,
   levelInUseList,
   levelsFormOf,
   sameLevels,
   validateCaps,
+  validateCheckin,
   validateLevelsForm,
   validateValues,
   valuesFormOf,
   versionText,
   type ActionCapKey,
   type CapsForm,
+  type CheckinErrors,
+  type CheckinForm,
+  type CheckinPending,
   type LevelErrors,
   type LevelRow,
   type PointsConfig,
@@ -61,7 +83,8 @@ interface BlockProps {
  * `expectedVersion`). Quando a página lê uma versão nova, o bloco sem edição
  * acompanha; o que tem edição fica na versão dele, e o servidor responde
  * `config-changed` ao salvar. Depois de salvar ou de "Recarregar dados", o
- * bloco segue a próxima versão lida.
+ * bloco segue a próxima versão lida (`following`, até ela chegar). O `adopt`
+ * troca a base na hora, pela régua que o servidor disse que já está gravada.
  */
 function useBlockForm<F>(config: PointsConfig, formOf: (config: PointsConfig) => F) {
   const [base, setBase] = useState(config);
@@ -73,7 +96,12 @@ function useBlockForm<F>(config: PointsConfig, formOf: (config: PointsConfig) =>
     setForm(formOf(config));
     setFollow(false);
   }
-  return { base, form, setForm, dirty, followNext: () => setFollow(true), discard: () => setForm(formOf(base)) };
+  const adopt = (next: PointsConfig) => {
+    setBase(next);
+    setForm(formOf(next));
+    setFollow(false);
+  };
+  return { base, form, setForm, dirty, following: follow, followNext: () => setFollow(true), adopt, discard: () => setForm(formOf(base)) };
 }
 
 /** O erro de um "Salvar": a configuração mudada vira o aviso com "Recarregar dados"; o resto, a frase do servidor. */
@@ -86,6 +114,7 @@ function SaveFooter({
   error,
   info,
   reloading,
+  waiting = false,
   onReload,
   onDiscard,
   label,
@@ -96,6 +125,8 @@ function SaveFooter({
   error: SaveError | null;
   info: string | null;
   reloading: boolean;
+  /** O bloco espera a releitura que ele pediu: o salvar fica ocupado, dizendo isso, e o descartar, desligado. */
+  waiting?: boolean;
   onReload: () => void;
   /** Volta o bloco aos valores gravados. */
   onDiscard: () => void;
@@ -110,14 +141,15 @@ function SaveFooter({
       <div className="flex flex-wrap items-center justify-end gap-3">
         {dirty ? (
           <>
-            <span className="text-[13px] text-fg/65">Mudanças sem salvar.</span>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={onDiscard}>
+            {/* Esperando a releitura, a mudança já foi salva: o aviso só volta se ela falhar. */}
+            {waiting ? null : <span className="text-[13px] text-fg/65">Mudanças sem salvar.</span>}
+            <Button variant="ghost" size="sm" disabled={busy || waiting} onClick={onDiscard}>
               Descartar
             </Button>
           </>
         ) : null}
-        <Button type="submit" variant="primary" size="sm" busy={busy} disabled={error?.kind === "changed"}>
-          {busy ? "Salvando..." : label}
+        <Button type="submit" variant="primary" size="sm" busy={busy || waiting} disabled={error?.kind === "changed"}>
+          {busy ? "Salvando..." : waiting ? "Recarregando..." : label}
         </Button>
       </div>
     </div>
@@ -293,6 +325,196 @@ function ValuesBlock({ config, canEdit, reloading, onChanged, onReload }: BlockP
           }}
         />
       </form>
+    </SectionCard>
+  );
+}
+
+/**
+ * O check-in diário: a chave e os pontos de cada dia do ciclo. O bloco vai
+ * inteiro ao servidor quando algo nele mudou; ligar e desligar pedem a
+ * confirmação antes, e mudar só os pontos salva direto. O pedido leva a versão
+ * da régua de que o bloco saiu, também o da confirmação.
+ */
+function CheckinBlock({ config, canEdit, reloading, onChanged, onReload }: BlockProps) {
+  const mounted = useMountedRef();
+  const { base, form, setForm, dirty, following, followNext, adopt, discard } = useBlockForm<CheckinForm>(config, checkinFormOf);
+  const [errors, setErrors] = useState<CheckinErrors>({});
+  const [error, setError] = useState<SaveError | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [pending, setPending] = useState<CheckinPending | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  // O bloco salvou ou pediu "Recarregar dados" e a releitura ainda não chegou: até lá, nada nele muda nem é
+  // salvo. Sem isso, o que a pessoa mexesse nesse meio sumiria quando a régua nova chegasse.
+  const waiting = following && reloading;
+  // A régua do bloco mudou por baixo da confirmação aberta: ela era de outra versão, e fecha sem pedido.
+  if (pending && !busy && pending.version !== base.version) {
+    setPending(null);
+    setInfo("Dados recarregados. Confira e salve de novo.");
+  }
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || waiting) return;
+    const checked = validateCheckin(form, base);
+    setErrors(checked.errors);
+    if (!checked.changes) return;
+    const checkin = checked.changes.checkin;
+    if (!checkin) {
+      setInfo("Nada mudou para salvar.");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setConfirmError(null);
+    // A chave que muda espera a confirmação, e nada vai ao servidor antes dela; só os pontos salvam direto. Nos
+    // dois casos o pedido fica com a versão da régua de agora.
+    const step = checkinSaveStep(checkin, base);
+    if (step.confirm) setPending(step.pending);
+    else void save(step.pending, false);
+  }
+
+  async function save(sent: CheckinPending, confirmed: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setConfirmError(null);
+    try {
+      const result = await updatePointsConfig(checkinRequestOf(sent));
+      if (!mounted.current) return;
+      setPending(null);
+      if (!checkinSaved(result, sent.version)) {
+        // A versão não andou: o bloco gravado já era igual ao mandado. O bloco assume esse estado, sem dizer
+        // "salvo", e a página lê de novo para a linha do estado acompanhar.
+        adopt({ ...base, checkin: sent.checkin });
+        setInfo(CHECKIN_UNCHANGED_TEXT);
+        onReload();
+        return;
+      }
+      followNext();
+      onChanged(CHECKIN_SAVED_TEXT);
+    } catch (failure) {
+      if (!mounted.current) return;
+      const refused = checkinFailureOf(failure);
+      if (refused.kind === "changed") {
+        setPending(null);
+        setError({ kind: "changed" });
+      } else if (refused.kind === "unknown") {
+        // O servidor de antes do check-in: a frase própria, e o formulário fica como está.
+        setPending(null);
+        setError({ kind: "message", text: CHECKIN_UNKNOWN_TEXT });
+      } else if (refused.kind === "day") {
+        setPending(null);
+        setErrors((current) => ({ ...current, [refused.day]: actionErrorMessage(failure) }));
+      } else {
+        // Na confirmação, a falha incerta manda conferir a linha do estado do bloco: a régua não tem lista.
+        if (confirmed) setConfirmError(refused.uncertain ? CHECKIN_UNCERTAIN_TEXT : actionErrorMessage(failure));
+        else setError({ kind: "message", text: actionErrorMessage(failure) });
+        if (refused.uncertain) onReload();
+      }
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+
+  const confirm = CHECKIN_CONFIRM[pending?.checkin.enabled ? "on" : "off"];
+  const turningOff = pending?.checkin.enabled === false;
+
+  return (
+    <SectionCard id="titulo-checkin" title="Check-in diário" meta="Os pontos de cada dia do ciclo, de 1 a 999.">
+      <form onSubmit={submit} noValidate>
+        <div className="flex flex-col gap-3 px-5 pt-4">
+          {/* O estado é o da última leitura do servidor, e não o do formulário: a chave mexida só vale depois de salvar. */}
+          <p className="m-0 text-sm font-semibold text-fg">{config.checkin.enabled ? CHECKIN_ON_TEXT : CHECKIN_OFF_TEXT}</p>
+          <Switch
+            label="Check-in ligado"
+            description={canEdit ? "Só muda depois de salvar, com a confirmação." : undefined}
+            checked={form.enabled}
+            disabled={!canEdit || busy || waiting}
+            onChange={(checked) => {
+              setForm((current) => ({ ...current, enabled: checked }));
+              setInfo(null);
+            }}
+            className="self-start"
+          />
+          <p className="m-0 text-[13px] leading-relaxed text-fg/70">{CHECKIN_CYCLE_TEXT}</p>
+          <p className="m-0 text-[13px] leading-relaxed text-fg/70">{CHECKIN_MILESTONES_TEXT}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-4 xl:grid-cols-7">
+          {form.days.map((value, index) => {
+            const day = index + 1;
+            return (
+              <div key={day} className="flex flex-col gap-1.5">
+                <span aria-hidden="true" className="text-[13px] font-semibold text-fg/80">
+                  Dia {day}
+                </span>
+                <NumberCell
+                  label={checkinDayLabel(day)}
+                  value={value}
+                  min={CHECKIN_VALUE_MIN}
+                  max={CHECKIN_VALUE_MAX}
+                  error={errors[day]}
+                  readOnly={!canEdit}
+                  disabled={busy || waiting}
+                  onChange={(next) => {
+                    setForm((current) => ({ ...current, days: current.days.map((text, position) => (position === index ? next : text)) }));
+                    setErrors((current) => ({ ...current, [day]: undefined }));
+                    setInfo(null);
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <SaveFooter
+          canEdit={canEdit}
+          busy={busy}
+          dirty={dirty}
+          error={error}
+          info={info}
+          reloading={reloading}
+          waiting={waiting}
+          label="Salvar check-in"
+          onDiscard={() => {
+            discard();
+            setErrors({});
+            setInfo(null);
+          }}
+          onReload={() => {
+            followNext();
+            setError(null);
+            onReload();
+          }}
+        />
+      </form>
+      <Dialog
+        open={canEdit && Boolean(pending)}
+        onClose={() => !busy && setPending(null)}
+        busy={busy}
+        size="sm"
+        tone={turningOff ? "danger" : "default"}
+        title={confirm.title}
+        description={confirm.text}
+      >
+        <div className="flex flex-col gap-4">
+          {pending?.checkin.enabled ? <p className="m-0 text-sm text-fg/85">{cycleSummary(pending.checkin.cycle)}</p> : null}
+          {confirmError ? <Notice tone="error">{confirmError}</Notice> : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setPending(null)} disabled={busy} data-autofocus>
+              Voltar
+            </Button>
+            <Button
+              variant={turningOff ? "danger" : "primary"}
+              busy={busy}
+              onClick={() => {
+                if (pending) void save(pending, true);
+              }}
+            >
+              {busy ? "Salvando..." : confirm.action}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </SectionCard>
   );
 }
@@ -604,6 +826,7 @@ export function PointsTab({
         {!canEdit ? <p className="m-0 text-fg/65">Você vê a régua sem poder mudar.</p> : null}
       </div>
       <ValuesBlock {...props} />
+      <CheckinBlock {...props} />
       <CapsBlock {...props} />
       <LevelsBlock {...props} achievements={achievements} />
     </div>

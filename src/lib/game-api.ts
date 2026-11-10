@@ -18,6 +18,11 @@ export interface PointsConfigChanges {
   dailyLimits?: Partial<Record<ValueSource, number | null>>;
   actionCaps?: Partial<Record<ActionCapKey, number>>;
   levels?: Level[];
+  /**
+   * O check-in diário: a chave e os 7 pontos do ciclo. O servidor aceita um
+   * dos dois sozinho e mantém o outro; o painel manda sempre os dois.
+   */
+  checkin?: { enabled?: boolean; cycle?: number[] };
 }
 
 export function updatePointsConfig(input: { expectedVersion: number } & PointsConfigChanges): Promise<Versioned> {

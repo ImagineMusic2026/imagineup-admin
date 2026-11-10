@@ -11,6 +11,8 @@ import { useMountedRef } from "@/components/ui/use-mounted-ref";
 import {
   ACHIEVEMENT_ICONS,
   ACHIEVEMENT_RANK_MAX,
+  ACHIEVEMENT_STREAK_MAX,
+  ACHIEVEMENT_STREAK_MIN,
   ACHIEVEMENT_TITLE_MAX,
   ACHIEVEMENT_TONES,
   EMPTY_ACHIEVEMENT_FORM,
@@ -18,15 +20,20 @@ import {
   FIRST_ACTION_LABELS,
   ICON_LABELS,
   RULE_TYPE_LABELS,
+  STREAK_DAYS_HINT,
+  STREAK_KEY_OFF_TEXT,
+  STREAK_RULE_UNKNOWN_TEXT,
   TONE_LABELS,
   achievementChanges,
   achievementFieldOf,
   achievementFormOf,
   isKnownIcon,
+  isStreakRuleUnknown,
   validateAchievement,
   type Achievement,
   type AchievementErrors,
   type AchievementForm,
+  type AchievementRule,
   type AchievementTone,
   type FirstAction,
   type RuleType,
@@ -44,28 +51,40 @@ export interface AchievementDialogRequest {
 export function AchievementDialog({
   request,
   levels,
+  checkinEnabled,
   onClose,
   onSaved,
 }: {
   request: AchievementDialogRequest | null;
   /** A régua de agora: os degraus que a regra de nível pode pedir. */
   levels: Level[] | null;
+  /** A chave do check-in diário na régua: desligada, a conquista de sequência não aparece para os fãs. */
+  checkinEnabled: boolean;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
   return request ? (
-    <AchievementDialogBody key={`${request.achievement?.id ?? "nova"}:${request.version}`} request={request} levels={levels} onClose={onClose} onSaved={onSaved} />
+    <AchievementDialogBody
+      key={`${request.achievement?.id ?? "nova"}:${request.version}`}
+      request={request}
+      levels={levels}
+      checkinEnabled={checkinEnabled}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
   ) : null;
 }
 
 function AchievementDialogBody({
   request,
   levels,
+  checkinEnabled,
   onClose,
   onSaved,
 }: {
   request: AchievementDialogRequest;
   levels: Level[] | null;
+  checkinEnabled: boolean;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -136,7 +155,7 @@ function AchievementDialogBody({
         await updateAchievement({ expectedVersion: version, achievementId: achievement.id, changes });
         if (mounted.current) onSaved(`Conquista ${input.title} salva.`);
       } catch (failure) {
-        if (mounted.current) fail(failure);
+        if (mounted.current) fail(failure, changes.rule);
       } finally {
         if (mounted.current) setBusy(false);
       }
@@ -147,20 +166,23 @@ function AchievementDialogBody({
       await createAchievement({ expectedVersion: version, achievement: input });
       if (mounted.current) onSaved(`Conquista ${input.title} criada como rascunho. Publique quando estiver pronta.`);
     } catch (failure) {
-      if (mounted.current) fail(failure);
+      if (mounted.current) fail(failure, input.rule);
     } finally {
       if (mounted.current) setBusy(false);
     }
   }
 
-  function fail(failure: unknown) {
+  /** `rule` é a regra que foi no pedido (na edição, só quando ela mudou). */
+  function fail(failure: unknown, rule: AchievementRule | undefined) {
     if (isConfigChanged(failure)) {
       setChanged(true);
       return;
     }
-    const field = reasonOf(failure) === "invalid-request" ? achievementFieldOf(errorDetails(failure).field) : null;
+    const refused = reasonOf(failure) === "invalid-request" ? errorDetails(failure).field : null;
+    const field = achievementFieldOf(refused);
     if (field) {
-      setErrors((current) => ({ ...current, [field]: actionErrorMessage(failure) }));
+      // O servidor de antes do check-in recusa a regra de sequência inteira: a frase própria, em vez de "Pedido inválido.".
+      setErrors((current) => ({ ...current, [field]: isStreakRuleUnknown(refused, rule) ? STREAK_RULE_UNKNOWN_TEXT : actionErrorMessage(failure) }));
       return;
     }
     setMessage({ tone: "error", text: actionErrorMessage(failure) });
@@ -270,7 +292,26 @@ function AchievementDialogBody({
               )}
             </Field>
           ) : null}
+          {form.ruleType === "streak" ? (
+            <Field label="Dias seguidos" error={errors.days} hint={STREAK_DAYS_HINT}>
+              {({ id, describedBy, invalid }) => (
+                <TextInput
+                  id={id}
+                  describedBy={describedBy}
+                  invalid={invalid}
+                  type="number"
+                  min={ACHIEVEMENT_STREAK_MIN}
+                  max={ACHIEVEMENT_STREAK_MAX}
+                  value={form.days}
+                  disabled={blocked || locked}
+                  onChange={(event) => set("days", event.target.value)}
+                />
+              )}
+            </Field>
+          ) : null}
         </div>
+
+        {form.ruleType === "streak" && !checkinEnabled ? <Notice tone="info">{STREAK_KEY_OFF_TEXT}</Notice> : null}
 
         {changed ? <ConfigChangedNotice onReload={() => void reloadData()} busy={reloadingData} /> : null}
         {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}

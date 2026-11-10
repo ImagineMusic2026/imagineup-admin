@@ -233,6 +233,8 @@ test("rótulos das origens e das campanhas", () => {
   assert.equal(stats.sourceLabel("fanclub_prize"), "Prêmio do fã-clube");
   assert.equal(stats.originKindLabel("fanclub"), "Fã-clube");
   assert.ok(stats.REWARD_KEYS.includes("prizes"));
+  // O check-in diário: os pontos do dia no extrato do fã e em "Pontos por origem", com o nome do extrato do app.
+  assert.equal(stats.sourceLabel("checkin"), "Check-in diário");
   assert.equal(stats.sourceLabel("nova_origem"), "nova_origem");
   assert.equal(stats.originKindLabel("code"), "Código digitado");
   assert.equal(stats.utmLabel("_none"), "Sem campanha");
