@@ -436,6 +436,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   fanclub_prize: "Prêmio do fã-clube",
   fanclub_like: "Reação no fã-clube",
   fanclub_comment: "Comentário no fã-clube",
+  checkin: "Check-in diário",
 };
 
 export function sourceLabel(source: string): string {

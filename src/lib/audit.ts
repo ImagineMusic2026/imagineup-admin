@@ -449,6 +449,7 @@ const FIELD_LABELS: Record<string, string> = {
   dailyLimits: "limites do dia",
   actionCaps: "tetos do dia",
   levels: "níveis",
+  checkin: "check-in diário",
   goal: "meta",
   period: "período",
   rewardPoints: "pontos",
@@ -564,6 +565,11 @@ export function detailLines(entry: Pick<AuditEntry, "action" | "details">): stri
 
   const changed = fieldList(take("changed")) ?? fieldList(take("fields"));
   if (changed) lines.push(`${entry.action === "fan.profile.cleared" ? "Campos apagados" : "Campos mudados"}: ${changed}`);
+
+  // A chave do check-in diário na régua: o `checkinEnabled` só vem quando o salvar ligou ou desligou.
+  const checkinEnabled = take("checkinEnabled");
+  if (checkinEnabled === true) lines.push("Check-in diário ligado");
+  if (checkinEnabled === false) lines.push("Check-in diário desligado");
 
   const from = take("from");
   const to = take("to");

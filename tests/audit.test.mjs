@@ -302,3 +302,27 @@ test("o Suporte nos Logs (38.3): as duas ações, a mensagem e o fã como alvos,
   // O tipo que o painel não conhece aparece cru, e nada vira "tipo: problem".
   assert.deepEqual(audit.detailLines({ action: "support.message.resolved", details: { supportMessageId: "m4", kind: "outro" } }), ["Tipo: outro"]);
 });
+
+test("o check-in diário nos Logs: o bloco nos campos mudados da régua e a chave ligada ou desligada por extenso", () => {
+  assert.equal(audit.AUDIT_ACTIONS["points.config.updated"].label, "Régua de pontos alterada");
+  assert.equal(audit.AUDIT_ACTIONS["points.config.updated"].section, "missions");
+  // Mudaram só os pontos do ciclo: o bloco entra nos campos, sem a linha da chave. As versões já saíam cruas.
+  assert.deepEqual(audit.detailLines({ action: "points.config.updated", details: { fields: ["checkin"], fromVersion: 4, toVersion: 5 } }), [
+    "Campos mudados: check-in diário",
+    "fromVersion: 4",
+    "toVersion: 5",
+  ]);
+  // A chave mudou: o `checkinEnabled` diz para onde ela foi, e nunca vira "checkinEnabled: sim".
+  const ligou = audit.detailLines({ action: "points.config.updated", details: { checkinEnabled: true, fields: ["checkin"] } });
+  assert.deepEqual(ligou, ["Campos mudados: check-in diário", "Check-in diário ligado"]);
+  const desligou = audit.detailLines({ action: "points.config.updated", details: { checkinEnabled: false, fields: ["checkin"] } });
+  assert.deepEqual(desligou, ["Campos mudados: check-in diário", "Check-in diário desligado"]);
+  // Ao lado dos outros blocos da régua, na ordem em que o servidor manda.
+  assert.deepEqual(audit.detailLines({ action: "points.config.updated", details: { fields: ["values", "dailyLimits", "levels", "actionCaps", "checkin"] } }), [
+    "Campos mudados: valores por ação, limites do dia, níveis, tetos do dia e check-in diário",
+  ]);
+  // Sem o `checkinEnabled`, ou com ele fora do formato, nenhuma linha da chave.
+  assert.deepEqual(audit.detailLines({ action: "points.config.updated", details: { fields: ["levels"] } }), ["Campos mudados: níveis"]);
+  assert.deepEqual(audit.detailLines({ action: "points.config.updated", details: { fields: ["checkin"], checkinEnabled: "sim" } }), ["Campos mudados: check-in diário"]);
+  for (const line of [...ligou, ...desligou]) assert.doesNotMatch(line, DASHES, line);
+});

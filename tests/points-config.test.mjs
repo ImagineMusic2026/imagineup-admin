@@ -6,6 +6,7 @@ import { Timestamp } from "./fakes/firestore.mjs";
 
 const points = await import("@/lib/points-config");
 
+const DASHES = /[\u2013\u2014]/;
 const sp = (local) => Date.parse(`${local}-03:00`);
 
 const DOC = {
@@ -176,4 +177,167 @@ test("o teto das mensagens de suporte (seção 38): 5 por dia somando os três t
   assert.equal(form.support_message, "5");
   assert.deepEqual(points.validateCaps(form, CONFIG).changes, {});
   assert.deepEqual(points.validateCaps({ ...form, support_message: "8" }, CONFIG).changes, { support_message: 8 });
+});
+
+// O ciclo padrão do check-in, igual ao `DEFAULT_CHECKIN_CONFIG` do servidor.
+const CYCLE = [3, 3, 4, 4, 5, 6, 15];
+
+test("o check-in diário sem o bloco gravado: o padrão do servidor, com a chave desligada", () => {
+  assert.deepEqual(points.DEFAULT_CHECKIN, { enabled: false, cycle: [3, 3, 4, 4, 5, 6, 15] });
+  assert.equal(points.CHECKIN_CYCLE_DAYS, 7);
+  assert.equal(points.CHECKIN_VALUE_MIN, 1);
+  // O teto é do check-in, mais baixo que o dos valores por ação: quatro dígitos são cortados na trilha do app.
+  assert.equal(points.CHECKIN_VALUE_MAX, 999);
+  assert.equal(points.VALUE_MAX, 10000);
+  // O `config/points` de produção (o DOC) não tem o bloco: a chave desligada e o ciclo padrão.
+  assert.deepEqual(CONFIG.checkin, { enabled: false, cycle: CYCLE });
+  assert.deepEqual(points.checkinFormOf(CONFIG), { enabled: false, days: ["3", "3", "4", "4", "5", "6", "15"] });
+
+  // Cada leitura recebe uma cópia: mexer nela não muda o padrão nem a leitura seguinte.
+  const lido = points.parsePointsConfig(DOC);
+  lido.checkin.enabled = true;
+  lido.checkin.cycle[6] = 99;
+  assert.deepEqual(points.DEFAULT_CHECKIN, { enabled: false, cycle: [3, 3, 4, 4, 5, 6, 15] });
+  assert.deepEqual(points.parsePointsConfig(DOC).checkin, { enabled: false, cycle: CYCLE });
+  // O ciclo gravado também chega como cópia.
+  const gravado = { enabled: true, cycle: [1, 2, 3, 4, 5, 6, 7] };
+  const copia = points.parsePointsConfig({ ...DOC, checkin: gravado }).checkin;
+  assert.deepEqual(copia, gravado);
+  assert.notEqual(copia.cycle, gravado.cycle);
+});
+
+test("o check-in diário lido como o servidor lê: a chave só com true e o ciclo só com 7 inteiros de 0 a 999", () => {
+  const checkinOf = (checkin) => points.parsePointsConfig({ ...DOC, checkin }).checkin;
+  // Só o `true` liga.
+  for (const enabled of ["true", 1, "sim", null, undefined, {}]) assert.equal(checkinOf({ enabled, cycle: CYCLE }).enabled, false, String(enabled));
+  // Um dos dois sozinho: o outro fica no padrão.
+  assert.deepEqual(checkinOf({ enabled: true }), { enabled: true, cycle: CYCLE });
+  assert.deepEqual(checkinOf({ cycle: [10, 10, 10, 10, 10, 10, 10] }), { enabled: false, cycle: [10, 10, 10, 10, 10, 10, 10] });
+  // O 0 e o 999 são tolerados ao ler.
+  assert.deepEqual(checkinOf({ enabled: true, cycle: [0, 0, 0, 0, 0, 0, 999] }), { enabled: true, cycle: [0, 0, 0, 0, 0, 0, 999] });
+  // O ciclo fora do formato vira o padrão inteiro, e a chave gravada continua valendo. O teto de ler segue o
+  // de salvar: um valor acima de 999 (o 10.000 que já valeu, inclusive) derruba o ciclo todo.
+  const tortos = [[3, 3, 4, 4, 5, 6], [3, 3, 4, 4, 5, 6, 15, 20], [3, 3, 4, 4, 5, 6, 1000], [3, 3, 4, 4, 5, 6, 10000], [1000, 3, 4, 4, 5, 6, 15], [3, 3, 4, 4, 5, 6, -1], [3, 3, 4, 4, 5, 6, 1.5], [3, 3, 4, 4, 5, 6, "15"], [3, 3, 4, 4, 5, 6, null], "3,3,4,4,5,6,15", { 0: 3 }, null];
+  for (const cycle of tortos) assert.deepEqual(checkinOf({ enabled: true, cycle }), { enabled: true, cycle: CYCLE }, JSON.stringify(cycle));
+  // O bloco fora do formato vira o padrão.
+  for (const bloco of [null, "ligado", 7, true, [true, CYCLE]]) assert.deepEqual(checkinOf(bloco), points.DEFAULT_CHECKIN, JSON.stringify(bloco));
+  // A chave que o painel não conhece dentro do bloco não atrapalha.
+  assert.deepEqual(checkinOf({ enabled: true, cycle: CYCLE, lembrete: "20:00" }), { enabled: true, cycle: CYCLE });
+});
+
+test("o check-in não entra nos valores por ação: sem linha, sem values.checkin e sem dailyLimits.checkin", () => {
+  assert.equal(points.VALUE_SOURCES.includes("checkin"), false);
+  assert.equal("checkin" in points.VALUE_LABELS, false);
+  assert.equal("checkin" in points.DEFAULT_DAILY_LIMITS, false);
+  assert.equal(points.ACTION_CAP_KEYS.includes("checkin"), false);
+  // O servidor novo grava `dailyLimits.checkin: null`, como o da missão; o painel não lê nem devolve.
+  const gravado = points.parsePointsConfig({ ...DOC, values: { ...DOC.values, checkin: 5 }, dailyLimits: { ...DOC.dailyLimits, checkin: null }, checkin: { enabled: true, cycle: [1, 2, 3, 4, 5, 6, 7] } });
+  assert.deepEqual(Object.keys(gravado.values), [...points.VALUE_SOURCES]);
+  assert.deepEqual(Object.keys(gravado.dailyLimits), [...points.VALUE_SOURCES]);
+  const form = points.valuesFormOf(gravado);
+  assert.deepEqual(Object.keys(form), [...points.VALUE_SOURCES]);
+  // Cada bloco manda só o dele: os valores sem o check-in, o check-in sem valores nem limites.
+  assert.deepEqual(points.validateValues({ ...form, comment: { points: "3", limited: true, limit: "20" } }, gravado).changes, { values: { comment: 3 } });
+  const checkin = points.validateCheckin({ ...points.checkinFormOf(gravado), enabled: false }, gravado).changes;
+  assert.deepEqual(Object.keys(checkin), ["checkin"]);
+  assert.deepEqual(checkin.checkin, { enabled: false, cycle: [1, 2, 3, 4, 5, 6, 7] });
+});
+
+test("o formulário do check-in: os sete dias de 1 a 999, e o bloco inteiro só quando algo mudou", () => {
+  const form = points.checkinFormOf(CONFIG);
+  // O nome de cada campo de dia é único na aba (o id do campo sai dele, como o `NumberCell` monta):
+  // os sete diferem entre si, e nenhum outro rótulo da régua fala de check-in.
+  const labels = form.days.map((_, index) => points.checkinDayLabel(index + 1));
+  assert.equal(labels[0], "Pontos do dia 1 do check-in");
+  assert.equal(labels[6], "Pontos do dia 7 do check-in");
+  assert.equal(new Set(labels.map((label) => label.replace(/\W+/g, "-").toLowerCase())).size, 7);
+  for (const other of [...Object.values(points.VALUE_LABELS), ...Object.values(points.ACTION_CAP_LABELS)]) assert.doesNotMatch(other, /check-in/i, other);
+
+  // Sem mexer, nada vai.
+  assert.deepEqual(points.validateCheckin(form, CONFIG), { errors: {}, changes: {} });
+  // O mesmo número escrito de outro jeito não é mudança.
+  assert.deepEqual(points.validateCheckin({ enabled: false, days: [" 3 ", "03", "4.0", "4", "5", "6", "15"] }, CONFIG), { errors: {}, changes: {} });
+  // Ligar a chave manda a chave e o ciclo, como estão na tela.
+  assert.deepEqual(points.validateCheckin({ ...form, enabled: true }, CONFIG).changes, { checkin: { enabled: true, cycle: CYCLE } });
+  // Mudar um dia também manda os dois.
+  const days = form.days.map((text, index) => (index === 6 ? "20" : text));
+  assert.deepEqual(points.validateCheckin({ ...form, days }, CONFIG).changes, { checkin: { enabled: false, cycle: [3, 3, 4, 4, 5, 6, 20] } });
+  // As pontas da faixa valem.
+  assert.deepEqual(points.validateCheckin({ enabled: true, days: ["1", "1", "1", "1", "1", "1", "999"] }, CONFIG).changes, { checkin: { enabled: true, cycle: [1, 1, 1, 1, 1, 1, 999] } });
+
+  // Os erros pelo dia do ciclo (de 1 a 7), com a frase da faixa; com erro, nada vai.
+  assert.deepEqual(points.validateCheckin({ enabled: true, days: ["0", "3", "", "4,5", "1000", "6", "1.5"] }, CONFIG), {
+    errors: { 1: "De 1 a 999.", 3: "De 1 a 999.", 4: "De 1 a 999.", 5: "De 1 a 999.", 7: "De 1 a 999." },
+    changes: null,
+  });
+  assert.deepEqual(points.validateCheckin({ ...form, days: form.days.map((text, index) => (index === 2 ? "-4" : text)) }, CONFIG).errors, { 3: "De 1 a 999." });
+  // O teto de antes, o 10.000 dos valores por ação, não vale mais para um dia do ciclo.
+  assert.deepEqual(points.validateCheckin({ ...form, days: form.days.map((text, index) => (index === 6 ? "10000" : text)) }, CONFIG), { errors: { 7: "De 1 a 999." }, changes: null });
+
+  // O 0 gravado é lido, mas não salva, nem para desligar: quem desliga é a chave, com o ciclo certo.
+  const zerado = points.parsePointsConfig({ ...DOC, checkin: { enabled: true, cycle: [0, 3, 4, 4, 5, 6, 15] } });
+  assert.deepEqual(points.checkinFormOf(zerado), { enabled: true, days: ["0", "3", "4", "4", "5", "6", "15"] });
+  assert.deepEqual(points.validateCheckin({ ...points.checkinFormOf(zerado), enabled: false }, zerado), { errors: { 1: "De 1 a 999." }, changes: null });
+
+  // Com a chave ligada no servidor, desligar manda o bloco inteiro também, e salvar igual não manda nada.
+  const ligado = points.parsePointsConfig({ ...DOC, checkin: { enabled: true, cycle: [1, 2, 3, 4, 5, 6, 7] } });
+  assert.deepEqual(points.validateCheckin(points.checkinFormOf(ligado), ligado).changes, {});
+  assert.deepEqual(points.validateCheckin({ ...points.checkinFormOf(ligado), enabled: false }, ligado).changes, { checkin: { enabled: false, cycle: [1, 2, 3, 4, 5, 6, 7] } });
+});
+
+test("a recusa do servidor no check-in: o dia apontado, e o servidor de antes, que não conhece o bloco", () => {
+  // O `checkin.cycle.<i>` é o dia i + 1.
+  assert.equal(points.checkinFieldOf("checkin.cycle.0"), 1);
+  assert.equal(points.checkinFieldOf("checkin.cycle.3"), 4);
+  assert.equal(points.checkinFieldOf("checkin.cycle.6"), 7);
+  for (const field of ["checkin.cycle.7", "checkin.cycle.-1", "checkin.cycle.x", "checkin.cycle.", "checkin.cycle", "checkin.cycle.1.2", "checkin.enabled", "checkin", "values.like", "", null, undefined, 3]) {
+    assert.equal(points.checkinFieldOf(field), null, String(field));
+  }
+  // O `checkin` sozinho é o servidor de antes; um campo de dentro é o servidor novo recusando o valor.
+  assert.equal(points.isCheckinUnknown("checkin"), true);
+  for (const field of ["checkin.enabled", "checkin.cycle", "checkin.cycle.0", "values", "", null, undefined]) assert.equal(points.isCheckinUnknown(field), false, String(field));
+});
+
+test("os textos do check-in diário, como combinados e sem travessão nem meia-risca", () => {
+  assert.equal(points.CHECKIN_OFF_TEXT, "Desligado: o app não mostra o check-in e o servidor não paga.");
+  assert.equal(points.CHECKIN_ON_TEXT, "Ligado: o app mostra o check-in e o servidor paga os pontos do dia.");
+  assert.deepEqual(points.CHECKIN_CONFIRM.on, {
+    title: "Ligar o check-in diário?",
+    text: "Os fãs passam a ver o check-in no app e a ganhar pontos por ele. A mudança vale em até 1 minuto.",
+    action: "Ligar check-in",
+  });
+  assert.deepEqual(points.CHECKIN_CONFIRM.off, {
+    title: "Desligar o check-in diário?",
+    text: "O check-in some do app e ninguém pontua por ele. Quem ainda não fez o check-in de hoje perde a sequência se ele não voltar antes da meia-noite (horário de Brasília). Com um dia inteiro desligado, todas as sequências recomeçam do dia 1.",
+    action: "Desligar check-in",
+  });
+  assert.equal(points.CHECKIN_SAVED_TEXT, "Check-in diário salvo.");
+  assert.equal(points.CHECKIN_UNKNOWN_TEXT, "O servidor ainda não conhece o check-in diário. Publique as funções antes de salvar.");
+  // A resposta com a versão parada: o bloco já estava assim no servidor, e a frase não manda salvar de novo.
+  assert.equal(points.CHECKIN_UNCHANGED_TEXT, "O check-in diário já estava assim no servidor. A tela foi atualizada.");
+  // A falha incerta na confirmação da chave manda conferir a linha do estado: a régua não tem lista.
+  assert.equal(points.CHECKIN_UNCERTAIN_TEXT, "Não deu para confirmar se a mudança foi gravada. Volte e confira a linha do estado do check-in antes de repetir.");
+  assert.doesNotMatch(points.CHECKIN_UNCERTAIN_TEXT, /lista/);
+  // O ciclo explica a volta ao dia 1, e os marcos são conquistas, sem pontos.
+  assert.match(points.CHECKIN_CYCLE_TEXT, /depois do dia 7, o ciclo volta ao dia 1/);
+  assert.match(points.CHECKIN_MILESTONES_TEXT, /são conquistas/);
+  assert.match(points.CHECKIN_MILESTONES_TEXT, /não dão pontos/);
+  // A confirmação de ligar repete os pontos que vão junto.
+  assert.equal(points.cycleSummary(CYCLE), "Pontos do dia 1 ao dia 7: 3, 3, 4, 4, 5, 6 e 15.");
+  assert.equal(points.cycleSummary([1, 1, 1, 1, 1, 1, 999]), "Pontos do dia 1 ao dia 7: 1, 1, 1, 1, 1, 1 e 999.");
+
+  const texts = [
+    points.CHECKIN_OFF_TEXT,
+    points.CHECKIN_ON_TEXT,
+    points.CHECKIN_CYCLE_TEXT,
+    points.CHECKIN_MILESTONES_TEXT,
+    ...Object.values(points.CHECKIN_CONFIRM).flatMap((confirm) => Object.values(confirm)),
+    points.CHECKIN_SAVED_TEXT,
+    points.CHECKIN_UNKNOWN_TEXT,
+    points.CHECKIN_UNCHANGED_TEXT,
+    points.CHECKIN_UNCERTAIN_TEXT,
+    points.cycleSummary(CYCLE),
+  ];
+  assert.equal(texts.length, 15);
+  for (const text of texts) assert.doesNotMatch(text, DASHES, text);
 });

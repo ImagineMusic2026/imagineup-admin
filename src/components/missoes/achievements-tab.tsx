@@ -15,18 +15,23 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { Detail, DetailList } from "@/components/ui/detail-list";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import { PeriodPicker, DEFAULT_PERIOD, type PeriodDays } from "@/components/ui/period-picker";
 import { StatusChip, type StatusStyle } from "@/components/ui/status-chip";
 import { useLoad } from "@/components/ui/use-load";
 import {
-  ACHIEVEMENT_STATUS_LABELS,
+  ACHIEVEMENT_STATE_LABELS,
   ICON_LABELS,
+  STREAK_KEY_OFF_TEXT,
   TONE_LABELS,
+  achievementState,
   achievementsUsage,
   isKnownIcon,
+  publishConfirmText,
+  publishedText,
   ruleText,
   type Achievement,
-  type AchievementStatus,
+  type AchievementState,
 } from "@/lib/achievements";
 import { applyOrder, moveId, positionAnnouncement } from "@/lib/artists";
 import { rangeEndingYesterday } from "@/lib/day";
@@ -35,10 +40,12 @@ import { formatDayRange, formatNumber } from "@/lib/format";
 import { reorderAchievements, setAchievementStatus } from "@/lib/game-api";
 import { getAchievementUnlocks, type GameConfigs } from "@/lib/game-data";
 
-const STATUS_STYLES: Record<AchievementStatus, StatusStyle> = {
-  draft: { label: ACHIEVEMENT_STATUS_LABELS.draft, tone: "muted", dot: true },
-  active: { label: ACHIEVEMENT_STATUS_LABELS.active, tone: "cyan", dot: true },
-  archived: { label: ACHIEVEMENT_STATUS_LABELS.archived, tone: "neutral", dot: true },
+const STATUS_STYLES: Record<AchievementState, StatusStyle> = {
+  draft: { label: ACHIEVEMENT_STATE_LABELS.draft, tone: "muted", dot: true },
+  active: { label: ACHIEVEMENT_STATE_LABELS.active, tone: "cyan", dot: true },
+  // Publicada, mas fora do app até a chave do check-in ligar: apagada, como a missão agendada.
+  waiting: { label: ACHIEVEMENT_STATE_LABELS.waiting, tone: "muted", dot: true },
+  archived: { label: ACHIEVEMENT_STATE_LABELS.archived, tone: "neutral", dot: true },
 };
 
 const GRID = "xl:grid xl:grid-cols-[84px_minmax(0,1.3fr)_96px_minmax(0,1.5fr)_112px_110px_44px] xl:items-center xl:gap-4";
@@ -62,6 +69,8 @@ export function AchievementsTab({
 }) {
   const catalog = configs.achievements;
   const levels = configs.points.config?.levels ?? null;
+  // A chave do check-in diário; sem a régua gravada, vale o padrão do servidor, desligada.
+  const checkinEnabled = configs.points.config?.checkin.enabled ?? false;
   const stored = catalog.version > 0;
   const editable = canEdit && stored;
   const [days, setDays] = useState<PeriodDays>(DEFAULT_PERIOD);
@@ -97,19 +106,16 @@ export function AchievementsTab({
 
   function askStatus(achievement: Achievement, status: "active" | "archived") {
     const publishing = status === "active";
+    // A de sequência com a chave desligada fica publicada, mas só chega aos fãs quando o check-in ligar: a confirmação e o aviso dizem isso.
     setConfirm({
       title: publishing ? `Publicar ${achievement.title}?` : `Arquivar ${achievement.title}?`,
-      body: publishing
-        ? achievement.activatedAt
-          ? "A conquista volta para o app com a mesma regra."
-          : "A conquista entra no app. Depois de publicada, a regra não muda; nome, ícone e cor continuam editáveis."
-        : "A conquista sai do app e do total de conquistas. Quem já ganhou continua com ela.",
+      body: publishing ? publishConfirmText(achievement, checkinEnabled) : "A conquista sai do app e do total de conquistas. Quem já ganhou continua com ela.",
       confirmLabel: publishing ? "Publicar" : "Arquivar",
       busyLabel: publishing ? "Publicando..." : "Arquivando...",
       cancelLabel: "Voltar",
       tone: publishing ? "default" : "danger",
       action: () => track(setAchievementStatus({ expectedVersion: version, achievementId: achievement.id, status })),
-      successMessage: publishing ? `Conquista ${achievement.title} no ar.` : `Conquista ${achievement.title} arquivada.`,
+      successMessage: publishing ? publishedText(achievement, checkinEnabled) : `Conquista ${achievement.title} arquivada.`,
       onUncertain: onReload,
     });
   }
@@ -190,7 +196,7 @@ export function AchievementsTab({
     },
     { key: "tone", header: "Cor", cell: (achievement) => TONE_LABELS[achievement.tone] },
     { key: "rule", header: "Regra", cell: (achievement) => ruleText(achievement.rule, levels) },
-    { key: "status", header: "Situação", cell: (achievement) => <StatusChip status={achievement.status} map={STATUS_STYLES} /> },
+    { key: "status", header: "Situação", cell: (achievement) => <StatusChip status={achievementState(achievement, checkinEnabled)} map={STATUS_STYLES} /> },
     {
       key: "unlocks",
       header: "Desbloqueios",
@@ -263,6 +269,7 @@ export function AchievementsTab({
       <AchievementDialog
         request={editable ? dialog : null}
         levels={levels}
+        checkinEnabled={checkinEnabled}
         onClose={() => setDialog(null)}
         onSaved={(message) => {
           setDialog(null);
@@ -277,7 +284,7 @@ export function AchievementsTab({
           onChanged(message);
         }}
       />
-      <Dialog open={Boolean(viewing)} onClose={() => setViewing(null)} size="sm" title={viewing?.title ?? ""} description={viewing ? ACHIEVEMENT_STATUS_LABELS[viewing.status] : undefined}>
+      <Dialog open={Boolean(viewing)} onClose={() => setViewing(null)} size="sm" title={viewing?.title ?? ""} description={viewing ? ACHIEVEMENT_STATE_LABELS[achievementState(viewing, checkinEnabled)] : undefined}>
         {viewing ? (
           <div className="flex flex-col gap-5">
             <AchievementBadgeIcon icon={viewing.icon} tone={viewing.tone} className="size-11" />
@@ -292,6 +299,7 @@ export function AchievementsTab({
                 <span className="font-mono text-[13px]">{viewing.id}</span>
               </Detail>
             </DetailList>
+            {achievementState(viewing, checkinEnabled) === "waiting" ? <Notice tone="info">{STREAK_KEY_OFF_TEXT}</Notice> : null}
             <div className="flex justify-end">
               <Button variant="secondary" onClick={() => setViewing(null)} data-autofocus>
                 Fechar
